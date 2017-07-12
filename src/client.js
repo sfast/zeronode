@@ -69,7 +69,7 @@ export default class Client extends DealerSocket {
         if (!_scope.server || !_scope.server.isOnline()) {
             return Promise.reject('server is Offline');
         }
-        return await super.request(event, data, timeout)
+        return await super.request(event, data, timeout, _scope.server.getId())
     }
 
     async tick (event, data) {
@@ -77,7 +77,7 @@ export default class Client extends DealerSocket {
         if (!_scope.server || !_scope.server.isOnline()) {
             return Promise.reject('server is offline');
         }
-        await super.tick(event, data)
+        await super.tick(event, data, _scope.server.getId())
     }
 }
 

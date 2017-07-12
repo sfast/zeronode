@@ -57,13 +57,13 @@ export default class DealerSocket extends Socket {
     }
 
     //** Polymorfic Functions
-    async request(event, data, timeout = 5000) {
-        let envelop = new Envelop({type: EnvelopType.SYNC, tag : event, data : data , owner : this.getId()});
+    async request(event, data, timeout = 5000, to) {
+        let envelop = new Envelop({type: EnvelopType.SYNC, tag : event, data : data , owner : this.getId(), recipient: to});
         return super.request(envelop, timeout);
     }
 
-    async tick(event, data) {
-        let envelop = new Envelop({type: EnvelopType.ASYNC, tag: event, data: data, owner: this.getId()});
+    async tick(event, data, to) {
+        let envelop = new Envelop({type: EnvelopType.ASYNC, tag: event, data: data, owner: this.getId(), recipient: to});
         return super.tick(envelop);
     }
 

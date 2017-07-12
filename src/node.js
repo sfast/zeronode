@@ -13,9 +13,9 @@ import { RequestWatcher, TickWatcher} from './sockets'
 
 import Server from './server';
 import Client from './client';
+import Metric from './metric';
 import globals from './globals';
-import { events } from './enum'
-import * as crypto from "crypto";
+import { events } from './enum';
 
 const _private = new WeakMap();
 
@@ -29,6 +29,8 @@ export default class Node extends EventEmitter {
         let _scope = {
             id,
             options,
+            metric: new Metric({id}),
+            watcher: null,
             nodeServer : new Server({id, bind, options}),
             nodeClients : new Map(),
             nodeClientsAddressIndex : new Map(),
@@ -37,6 +39,31 @@ export default class Node extends EventEmitter {
         };
         _scope.nodeServer.on('error', (err) => {
             this.emit('error', err);
+        });
+        _scope.nodeServer.on('sendTick', (id) => {
+            if (_scope.watcher) {
+                _scope.metric.sendTick(id)
+            }
+        });
+        _scope.nodeServer.on('gotTick', (id) => {
+            if (_scope.watcher) {
+                _scope.metric.gotTick(id)
+            }
+        });
+        _scope.nodeServer.on('sendRequest', (id) => {
+            if (_scope.watcher) {
+                _scope.metric.sendRequest(id)
+            }
+        });
+        _scope.nodeServer.on('gotRequest', (id) => {
+            if (_scope.watcher) {
+                _scope.metric.gotRequest(id)
+            }
+        });
+        _scope.nodeServer.on('gotReply', ({id, sendTime, getTime, replyTime, replyGetTime}) => {
+            if (_scope.watcher) {
+                _scope.metric.gotReply({id, sendTime, getTime, replyTime, replyGetTime})
+            }
         });
         _private.set(this, _scope);
     }
@@ -122,10 +149,40 @@ export default class Node extends EventEmitter {
         }
 
         let client = new Client({id: _scope.id, options: _scope.options});
-
+        if (_scope.watcher) client.setMetric(true);
         client.on(events.SERVER_FAILURE, this::_serverFailureHandler);
         client.on('error', (err) => {
             this.emit('error', err);
+        });
+        client.on(events.SEND_TICK, () => {
+            if (_scope.watcher) {
+                _scope.metric.sendTick(client.getServerActor().getId())
+            }
+        });
+        client.on(events.GOT_TICK, () => {
+            if (_scope.watcher) {
+                _scope.metric.gotTick(client.getServerActor().getId())
+            }
+        });
+        client.on(events.SEND_REQUEST, (id) => {
+            try {
+                if (_scope.watcher) {
+
+                    _scope.metric.sendRequest(id)
+                }
+            } catch (err) {
+                console.log(err);
+            }
+        });
+        client.on(events.GOT_REQUEST, () => {
+            if (_scope.watcher) {
+                _scope.metric.gotRequest(client.getServerActor().getId())
+            }
+        });
+        client.on(events.GOT_REPLY, ({id, sendTime, getTime, replyTime, replyGetTime}) => {
+            if (_scope.watcher) {
+                _scope.metric.gotReply({id, sendTime, getTime, replyTime, replyGetTime})
+            }
         });
         let {actorId, options} = await client.connect(address);
 
@@ -153,6 +210,11 @@ export default class Node extends EventEmitter {
         let client = _scope.nodeClients.get(nodeId);
 
         client.removeAllListeners(events.SERVER_FAILURE);
+        client.removeAllListeners(events.SEND_TICK);
+        client.removeAllListeners(events.GOT_TICK);
+        client.removeAllListeners(events.SEND_REQUEST);
+        client.removeAllListeners(events.GOT_REQUEST);
+        client.removeAllListeners(events.GOT_REPLY);
 
         await client.disconnect();
         this::_removeClientAllListeners(client);
@@ -263,11 +325,9 @@ export default class Node extends EventEmitter {
         if(clientActor) {
             return _scope.nodeServer.tick(clientActor.getId(), event, data);
         }
-
         if(_scope.nodeClients.has(nodeId)) {
             return _scope.nodeClients.get(nodeId).tick(event, data);
         }
-
         throw new Error(`Node with ${nodeId} is not found.`);
     }
 
@@ -296,6 +356,20 @@ export default class Node extends EventEmitter {
 
         return Promise.all(tickPromises);
     }
+
+    addMetricWatcher ({watcher, interval=1000}) {
+        let _scope = _private.get(this);
+        _scope.watcher = watcher;
+        _scope.nodeClients.forEach((client) => {
+            client.setMetric(true);
+        }, this);
+        _scope.nodeServer.setMetric(true);
+        setInterval(async () => {
+            await _scope.metric.getCpu();
+            watcher(_scope.metric);
+            _scope.metric.flush();
+        }, interval)
+    }
 }
 
 // ** PRIVATE FUNCTIONS
@@ -303,7 +377,7 @@ export default class Node extends EventEmitter {
 function _getClientByNode(nodeId) {
     let _scope = _private.get(this);
     let actors = _scope.nodeServer.getOnlineClients().filter((actor) => {
-        let { node } =  actor.getOptions();
+        let node =  actor.getId();
         return node == nodeId;
     });
 
