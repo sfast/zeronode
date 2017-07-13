@@ -6,7 +6,7 @@ import animal from 'animal-id';
 import EventEmitter from 'pattern-emitter'
 
 import Envelop from './envelope'
-import { EnvelopType, SEND_TICK, SEND_REQUEST, GOT_TICK, GOT_REQUEST, GOT_REPLY } from './enum'
+import Enum from './enum'
 import { RequestWatcher} from './watchers'
 
 let _private = new WeakMap();
@@ -92,11 +92,14 @@ export default class Socket extends EventEmitter {
                 if(_scope.requests.has(envelopId)) {
                     let requestObj = _scope.requests.get(envelopId);
                     _scope.requests.delete(envelopId);
+                    if (_scope.metric) {
+                        this.emit(Enum.REQUEST_TIMEOUTED, envelop.getRecipient());
+                    }
                     requestObj.reject(`Request ${envelopId} timeouted on socket ${this.getId()}`);
                 }
             }, reqTimeout);
 
-            _scope.requests.set(envelopId, {resolve : resolve, reject: reject, timeout : timeout, sendTime: Date.now()});
+            _scope.requests.set(envelopId, {resolve : resolve, reject: reject, timeout : timeout, sendTime: process.hrtime()});
            this.sendEnvelop(envelop);
         });
     }
@@ -117,11 +120,11 @@ export default class Socket extends EventEmitter {
         let self = this;
         if (_scope.metric) {
             switch (envelop.getType()) {
-                case EnvelopType.ASYNC:
-                    self.emit(SEND_TICK, envelop.getRecipient());
+                case Enum.EnvelopType.ASYNC:
+                    self.emit(Enum.SEND_TICK, envelop.getRecipient());
                     break;
-                case EnvelopType.SYNC:
-                    self.emit(SEND_REQUEST, envelop.getRecipient());
+                case Enum.EnvelopType.SYNC:
+                    self.emit(Enum.SEND_REQUEST, envelop.getRecipient());
                     break;
             }
         }
@@ -152,7 +155,7 @@ export default class Socket extends EventEmitter {
         if(_.isFunction(fn)) {
             let endpointWatcher = _scope.requestWatcherMap.get(endpoint);
             if (!endpointWatcher) return;
-            endpointWatcher.removeFn(fn)
+            endpointWatcher.removeFn(fn);
             return;
         }
 
@@ -187,16 +190,16 @@ function onSocketMessage(empty, envelopBuffer) {
     let envelopData = Envelop.readDataFromBuffer(envelopBuffer);
 
     switch (type) {
-        case EnvelopType.ASYNC:
-            if (_scope.metric) self.emit(GOT_TICK, owner);
+        case Enum.EnvelopType.ASYNC:
+            if (_scope.metric) self.emit(Enum.GOT_TICK, owner);
             _scope.tickEmitter.emit(tag, envelopData);
             break;
-        case EnvelopType.SYNC:
+        case Enum.EnvelopType.SYNC:
             envelop.setData(envelopData);
-            if (_scope.metric) self.emit(GOT_REQUEST, owner);
+            if (_scope.metric) self.emit(Enum.GOT_REQUEST, owner);
             this::syncEnvelopHandler(envelop);
             break;
-        case EnvelopType.RESPONSE:
+        case Enum.EnvelopType.RESPONSE:
             envelop.setData(envelopData);
             this::responseEnvelopHandler(envelop);
             break;
@@ -206,7 +209,7 @@ function onSocketMessage(empty, envelopBuffer) {
 function syncEnvelopHandler(envelop) {
     let self = this;
     let _scope = _private.get(this);
-    let getTime = Date.now();
+    let getTime = process.hrtime();
 
     let prevOwner = envelop.getOwner();
     let handlers = [];
@@ -224,8 +227,8 @@ function syncEnvelopHandler(envelop) {
         reply : (data) => {
             envelop.setRecipient(prevOwner);
             envelop.setOwner(self.getId());
-            envelop.setType(EnvelopType.RESPONSE);
-            envelop.setData({getTime, replyTime: Date.now(), data});
+            envelop.setType(Enum.EnvelopType.RESPONSE);
+            envelop.setData({getTime, replyTime: process.hrtime(), data});
             self.sendEnvelop(envelop);
         },
         next: (data) => {
@@ -249,7 +252,7 @@ function responseEnvelopHandler(envelop) {
         //** requestObj is like {resolve, reject, timeout : clearRequestTimeout}
         let requestObj = _scope.requests.get(id);
         let {getTime, replyTime, data} = envelop.getData();
-        if (_scope.metric) this.emit(GOT_REPLY, {id: envelop.getOwner(), sendTime: requestObj.sendTime, getTime, replyTime, replyGetTime: Date.now()})
+        if (_scope.metric) this.emit(Enum.GOT_REPLY, {id: envelop.getOwner(), sendTime: requestObj.sendTime, getTime, replyTime, replyGetTime: process.hrtime()})
         clearTimeout(requestObj.timeout);
         //** resolving request promise with response data
         requestObj.resolve(data);

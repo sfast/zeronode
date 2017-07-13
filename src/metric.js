@@ -12,8 +12,9 @@ class RequestsInfo {
         this.delay = {
             send: 0,
             reply: 0,
-            all: 0
-        }
+            process: 0
+        };
+        this.timeouted = 0;
     }
 
     sendRequest () {
@@ -25,9 +26,13 @@ class RequestsInfo {
     }
 
     addDelay({sendTime, getTime, replyTime, replyGetTime}) {
-        this.delay.send = ((getTime - sendTime) + this.count.out*this.delay.send) / (this.count.out + 1);
-        this.delay.reply = ((replyGetTime - replyTime) + this.count.out*this.delay.reply) / (this.count.out + 1);
-        this.delay.all = this.delay.send + this.delay.reply
+        this.delay.send = ((getTime - sendTime) + this.count.out * this.delay.send) / (this.count.out + 1);
+        this.delay.reply = ((replyGetTime - replyTime) + this.count.out * this.delay.reply) / (this.count.out + 1);
+        this.delay.process = ((replyTime - getTime) + this.count.out * this.delay.process) / (this.count.out + 1);
+    }
+
+    addTimeouted() {
+        this.timeouted++
     }
 }
 
@@ -67,7 +72,7 @@ export default class Metric {
         if (!this.requests.has(id)) {
             return;
         }
-        this.requests.get(id).addDelay({sendTime, getTime, replyTime, replyGetTime});
+        this.requests.get(id).addDelay({sendTime: sendTime[0] * 1000000000 + sendTime[1], getTime: getTime[0] * 1000000000 + getTime[1], replyTime: replyTime[0] * 1000000000 + replyTime[1], replyGetTime: replyGetTime[0] * 1000000000 + replyGetTime[1]});
     }
 
     sendTick(id) {
@@ -90,6 +95,13 @@ export default class Metric {
             return this.ticks.set(id, tickInfo);
         }
         this.ticks.get(id).in++;
+    }
+
+    requestTimeout(id) {
+        if (!this.requests.has(id)) {
+            return;
+        }
+        this.requests.get(id).addTimeouted();
     }
 
     flush() {

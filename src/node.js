@@ -16,6 +16,7 @@ import Client from './client';
 import Metric from './metric';
 import globals from './globals';
 import { events } from './enum';
+import {Enum as socketEvents} from './sockets'
 
 const _private = new WeakMap();
 
@@ -29,8 +30,11 @@ export default class Node extends EventEmitter {
         let _scope = {
             id,
             options,
-            metric: new Metric({id}),
-            watcher: null,
+            metric: {
+                status: false,
+                info: new Metric({id}),
+                interval: null
+            },
             nodeServer : new Server({id, bind, options}),
             nodeClients : new Map(),
             nodeClientsAddressIndex : new Map(),
@@ -40,29 +44,34 @@ export default class Node extends EventEmitter {
         _scope.nodeServer.on('error', (err) => {
             this.emit('error', err);
         });
-        _scope.nodeServer.on('sendTick', (id) => {
-            if (_scope.watcher) {
-                _scope.metric.sendTick(id)
+        _scope.nodeServer.on(socketEvents.SEND_TICK, (id) => {
+            if (_scope.metric.status) {
+                _scope.metric.info.sendTick(id)
             }
         });
-        _scope.nodeServer.on('gotTick', (id) => {
-            if (_scope.watcher) {
-                _scope.metric.gotTick(id)
+        _scope.nodeServer.on(socketEvents.GOT_TICK, (id) => {
+            if (_scope.metric.status) {
+                _scope.metric.info.gotTick(id)
             }
         });
-        _scope.nodeServer.on('sendRequest', (id) => {
-            if (_scope.watcher) {
-                _scope.metric.sendRequest(id)
+        _scope.nodeServer.on(socketEvents.SEND_REQUEST, (id) => {
+            if (_scope.metric.status) {
+                _scope.metric.info.sendRequest(id)
             }
         });
-        _scope.nodeServer.on('gotRequest', (id) => {
-            if (_scope.watcher) {
-                _scope.metric.gotRequest(id)
+        _scope.nodeServer.on(socketEvents.GOT_REQUEST, (id) => {
+            if (_scope.metric.status) {
+                _scope.metric.info.gotRequest(id)
             }
         });
-        _scope.nodeServer.on('gotReply', ({id, sendTime, getTime, replyTime, replyGetTime}) => {
-            if (_scope.watcher) {
-                _scope.metric.gotReply({id, sendTime, getTime, replyTime, replyGetTime})
+        _scope.nodeServer.on(socketEvents.REQUEST_TIMEOUT, (id) => {
+            if (_scope.metric.status) {
+                _scope.metric.info.requestTimeout(id)
+            }
+        });
+        _scope.nodeServer.on(socketEvents.GOT_REPLY, ({id, sendTime, getTime, replyTime, replyGetTime}) => {
+            if (_scope.metric.status) {
+                _scope.metric.info.gotReply({id, sendTime, getTime, replyTime, replyGetTime})
             }
         });
         _private.set(this, _scope);
@@ -149,39 +158,39 @@ export default class Node extends EventEmitter {
         }
 
         let client = new Client({id: _scope.id, options: _scope.options});
-        if (_scope.watcher) client.setMetric(true);
+        if (_scope.metric.status) client.setMetric(true);
         client.on(events.SERVER_FAILURE, this::_serverFailureHandler);
         client.on('error', (err) => {
             this.emit('error', err);
         });
-        client.on(events.SEND_TICK, () => {
-            if (_scope.watcher) {
-                _scope.metric.sendTick(client.getServerActor().getId())
+        client.on(socketEvents.SEND_TICK, () => {
+            if (_scope.metric.status) {
+                _scope.metric.info.sendTick(client.getServerActor().getId())
             }
         });
-        client.on(events.GOT_TICK, () => {
-            if (_scope.watcher) {
-                _scope.metric.gotTick(client.getServerActor().getId())
+        client.on(socketEvents.GOT_TICK, () => {
+            if (_scope.metric.status) {
+                _scope.metric.info.gotTick(client.getServerActor().getId())
             }
         });
-        client.on(events.SEND_REQUEST, (id) => {
-            try {
-                if (_scope.watcher) {
-
-                    _scope.metric.sendRequest(id)
-                }
-            } catch (err) {
-                console.log(err);
+        client.on(socketEvents.SEND_REQUEST, (id) => {
+            if (_scope.metric.status) {
+                _scope.metric.info.sendRequest(id)
             }
         });
-        client.on(events.GOT_REQUEST, () => {
-            if (_scope.watcher) {
-                _scope.metric.gotRequest(client.getServerActor().getId())
+        client.on(socketEvents.GOT_REQUEST, () => {
+            if (_scope.metric.status) {
+                _scope.metric.info.gotRequest(client.getServerActor().getId())
             }
         });
-        client.on(events.GOT_REPLY, ({id, sendTime, getTime, replyTime, replyGetTime}) => {
-            if (_scope.watcher) {
-                _scope.metric.gotReply({id, sendTime, getTime, replyTime, replyGetTime})
+        client.on(socketEvents.REQUEST_TIMEOUT, () => {
+            if (_scope.metric.status) {
+                _scope.metric.info.requestTimeout(client.getServerActor().getId())
+            }
+        });
+        client.on(socketEvents.GOT_REPLY, ({id, sendTime, getTime, replyTime, replyGetTime}) => {
+            if (_scope.metric.status) {
+                _scope.metric.info.gotReply({id, sendTime, getTime, replyTime, replyGetTime})
             }
         });
         let {actorId, options} = await client.connect(address);
@@ -210,11 +219,11 @@ export default class Node extends EventEmitter {
         let client = _scope.nodeClients.get(nodeId);
 
         client.removeAllListeners(events.SERVER_FAILURE);
-        client.removeAllListeners(events.SEND_TICK);
-        client.removeAllListeners(events.GOT_TICK);
-        client.removeAllListeners(events.SEND_REQUEST);
-        client.removeAllListeners(events.GOT_REQUEST);
-        client.removeAllListeners(events.GOT_REPLY);
+        client.removeAllListeners(socketEvents.SEND_TICK);
+        client.removeAllListeners(socketEvents.GOT_TICK);
+        client.removeAllListeners(socketEvents.SEND_REQUEST);
+        client.removeAllListeners(socketEvents.GOT_REQUEST);
+        client.removeAllListeners(socketEvents.GOT_REPLY);
 
         await client.disconnect();
         this::_removeClientAllListeners(client);
@@ -357,18 +366,29 @@ export default class Node extends EventEmitter {
         return Promise.all(tickPromises);
     }
 
-    addMetricWatcher ({watcher, interval=1000}) {
+    enableMetrics (interval = 1000) {
         let _scope = _private.get(this);
-        _scope.watcher = watcher;
+        _scope.metric.status = true;
         _scope.nodeClients.forEach((client) => {
             client.setMetric(true);
         }, this);
         _scope.nodeServer.setMetric(true);
-        setInterval(async () => {
-            await _scope.metric.getCpu();
-            watcher(_scope.metric);
-            _scope.metric.flush();
+        _scope.metric.interval = setInterval(() => {
+            this.emit(events.METRICS, _scope.metric.info);
+            _scope.metric.info.flush();
         }, interval)
+    }
+
+    disableMetrics () {
+        let _scope = _private.get(this);
+        _scope.metric.status = false;
+        _scope.nodeClients.forEach((client) => {
+            client.setMetric(false);
+        }, this);
+        _scope.nodeServer.setMetric(false,);
+        clearInterval(_scope.metric.interval);
+        _scope.metric.interval = null;
+        _scope.metric.info.flush();
     }
 }
 

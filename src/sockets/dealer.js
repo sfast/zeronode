@@ -8,7 +8,9 @@ import zmq from 'zmq'
 
 import  Socket from './socket'
 import Envelop from './envelope'
-import { EnvelopType } from './enum'
+import Enum from './enum'
+
+let EnvelopType = Enum.EnvelopType;
 
 let _private = new WeakMap();
 
