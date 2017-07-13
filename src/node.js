@@ -456,10 +456,10 @@ function _removeClientAllListeners(client) {
     }, this);
 }
 
-let _clientFailureHandler = (clientActor) => {
+let _clientFailureHandler = function (clientActor) {
     this.emit(events.CLIENT_FAILURE, clientActor.getOptions())
 };
 
-let _serverFailureHandler = (serverActor) => {
+let _serverFailureHandler = function (serverActor) {
     this.emit(events.SERVER_FAILURE, serverActor.getOptions());
 };
