@@ -20,8 +20,10 @@ const _private = new WeakMap();
 
 
 export default class Node extends EventEmitter {
-    constructor({id, bind, options = {}}) {
+    constructor(data) {
         super();
+
+        let {id, bind, options = {}} = data;
 
         id = id || _generateNodeId();
 

@@ -9,7 +9,9 @@ import { Router as RouterSocket } from './sockets';
 let _private = new WeakMap();
 
 export default class Server extends RouterSocket {
-    constructor({id, bind, logger,  options}) {
+    constructor(data) {
+        let {id, bind, logger,  options} = data;
+
         super({id, logger});
         this.setOptions(options);
         this.setAddress(bind);

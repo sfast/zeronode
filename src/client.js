@@ -6,7 +6,9 @@ import * as Errors from './errors'
 let _private = new WeakMap();
 
 export default class Client extends DealerSocket {
-    constructor({id, options, logger}) {
+    constructor(data) {
+        let {id, options, logger} = data;
+
         super({id, logger});
         let _scope = {
             server: null,
