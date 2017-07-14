@@ -16,7 +16,7 @@ $ npm install zeronode
 
 ### How To Use
 
-```ecmascript 6
+```javascript
 import Node from 'zeronode'
 
 let nodeA = new Node({ bind: 'tcp://127.0.0.1:6001', options: {layer: 'A'}});
@@ -52,7 +52,7 @@ console.log(responseFromB);
 You can create various layers(groups) of nodes, connect nodes together, tick and request messages from node to another.
 
 You can also listen events by patterns. 
-```ecmascript 6
+```javascript
 nodeB.onTick(/^foo/, handler);
 nodeA.tick(nodeB.getId(), 'foobar', {foo: 'bar'})
 
