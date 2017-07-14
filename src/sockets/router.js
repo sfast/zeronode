@@ -1,10 +1,6 @@
 /**
  * Created by artak on 3/2/17.
  */
-
-import debugFactory from 'debug';
-let debug = debugFactory('node::sockets::router');
-
 import zmq from 'zmq'
 import Promise from 'bluebird'
 
@@ -17,13 +13,14 @@ let EnvelopType = Enum.EnvelopType;
 let _private = new WeakMap();
 
 export default class RouterSocket extends Socket {
-    constructor({id}) {
+    constructor({id, logger}) {
         let socket = zmq.socket('router');
-        super({id, socket});
+        super({id, socket, logger});
 
         let _scope = {};
         _scope.socket = socket;
         _scope.bindAddress = null;
+        _scope.logger = logger || console;
         _private.set(this, _scope);
     }
 
@@ -54,7 +51,7 @@ export default class RouterSocket extends Socket {
         return new Promise((resolve, reject) => {
             _scope.socket.bind(this.getAddress(), (err) => {
                 if (err) {
-                    debug(err);
+                    _scope.logger.error(err);
                     return reject(err);
                 }
 

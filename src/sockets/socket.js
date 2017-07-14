@@ -20,12 +20,13 @@ class SocketIsNotOnline extends Error {
 
 
 export default class Socket extends EventEmitter {
-    constructor ({id, socket}) {
+    constructor ({id, socket, logger}) {
         super();
         let _scope = {};
         let socketId = id || Socket.generateSocketId();
         socket.identity = socketId;
 
+        _scope.logger = logger || console;
         _scope.id = socketId;
         _scope.metric = false;
         _scope.socket = socket;
@@ -259,6 +260,6 @@ function responseEnvelopHandler(envelop) {
         _scope.requests.delete(id);
     }
     else {
-        debug(`Response ${id} is probably time outed`);
+        _scope.logger.warn(`Response ${id} is probably time outed`);
     }
 }

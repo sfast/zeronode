@@ -1,9 +1,6 @@
 /**
  * Created by avar and dave on 2/14/17.
  */
-import debugFactory from 'debug';
-let debug = debugFactory('node::node');
-
 import _ from 'underscore';
 import  Promise from 'bluebird';
 import md5 from 'md5';
@@ -17,6 +14,7 @@ import Metric from './metric';
 import globals from './globals';
 import { events } from './enum';
 import {Enum as socketEvents} from './sockets'
+import winston from 'winston'
 
 const _private = new WeakMap();
 
@@ -27,15 +25,21 @@ export default class Node extends EventEmitter {
 
         id = id || _generateNodeId();
 
+        let logger = new (winston.Logger)({
+            transports: [
+                new (winston.transports.Console)({level: 'error'}),
+            ]
+        });
         let _scope = {
             id,
             options,
+            logger,
             metric: {
                 status: false,
                 info: new Metric({id}),
                 interval: null
             },
-            nodeServer : new Server({id, bind, options}),
+            nodeServer : new Server({id, bind, logger, options}),
             nodeClients : new Map(),
             nodeClientsAddressIndex : new Map(),
             tickWatcherMap: new Map(),
@@ -157,7 +161,7 @@ export default class Node extends EventEmitter {
             return _scope.nodeClientsAddressIndex.get(addressHash);
         }
 
-        let client = new Client({id: _scope.id, options: _scope.options});
+        let client = new Client({id: _scope.id, options: _scope.options, logger: _scope.logger});
         if (_scope.metric.status) client.setMetric(true);
         client.on(events.SERVER_FAILURE, this::_serverFailureHandler);
         client.on('error', (err) => {
@@ -195,7 +199,7 @@ export default class Node extends EventEmitter {
         });
         let {actorId, options} = await client.connect(address);
 
-         debug(`Node connected: ${this.getId()} -> ${actorId}`);
+        _scope.logger.info(`Node connected: ${this.getId()} -> ${actorId}`);
         _scope.nodeClientsAddressIndex.set(addressHash, actorId);
         _scope.nodeClients.set(actorId, client);
 
@@ -390,6 +394,16 @@ export default class Node extends EventEmitter {
         _scope.metric.interval = null;
         _scope.metric.info.flush();
     }
+
+    setLogLevel (level) {
+        let _scope = _private.get(this);
+        _scope.logger.transports.console.level = level;
+    }
+
+    addFileToLog ({filename, level}) {
+        let _scope = _private.get(this);
+        _scope.logger.add(winston.transports.File, {filename, level});
+    }
 }
 
 // ** PRIVATE FUNCTIONS
@@ -406,7 +420,7 @@ function _getClientByNode(nodeId) {
     }
 
     if(actors.length > 1) {
-        return debug(`We should have just 1 client from 1 node`);
+        return _scope.logger('warn', `We should have just 1 client from 1 node`);
     }
 
     return actors[0];
@@ -456,10 +470,10 @@ function _removeClientAllListeners(client) {
     }, this);
 }
 
-let _clientFailureHandler = function (clientActor) {
+function _clientFailureHandler (clientActor) {
     this.emit(events.CLIENT_FAILURE, clientActor.getOptions())
-};
+}
 
-let _serverFailureHandler = function (serverActor) {
+function _serverFailureHandler (serverActor) {
     this.emit(events.SERVER_FAILURE, serverActor.getOptions());
-};
+}

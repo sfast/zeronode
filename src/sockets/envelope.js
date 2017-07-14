@@ -1,6 +1,3 @@
-import debugFactory from 'debug';
-let debug = debugFactory('node::sockets::envelop');
-
 import crypto from 'crypto'
 
 class Parse {

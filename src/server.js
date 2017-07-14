@@ -1,6 +1,3 @@
-import debugFactory from 'debug';
-let debug = debugFactory('node::server');
-
 import _ from 'underscore';
 import { events } from './enum';
 import globals from './globals';
@@ -12,18 +9,19 @@ import { Router as RouterSocket } from './sockets';
 let _private = new WeakMap();
 
 export default class Server extends RouterSocket {
-    constructor({id, bind, options}) {
-        super({id});
+    constructor({id, bind, logger,  options}) {
+        super({id, logger});
         this.setOptions(options);
         this.setAddress(bind);
 
         let _scope = {
             clientModels : new Map(),
-            clientCheckInterval : null
+            clientCheckInterval : null,
+            logger: logger || console
         };
 
         _private.set(this, _scope);
-        debug(`Server ${this.getId()} started`);
+        _scope.logger.info(`Server ${this.getId()} started`);
     }
 
     getClientById(clientId) {
@@ -134,12 +132,13 @@ function _clientConnectedRequest(request) {
 // ** check clients heartbeat
 function _checkClientHeartBeat(){
     let context = this;
+    let _scope = _private.get(this);
     this.getOnlineClients().forEach((actor) => {
         if (!actor.isGhost()) {
             actor.markGhost();
         } else {
             actor.markFailed();
-            debug(`Server ${context.getId()} identifies client failure`, actor);
+            _scope.logger.warn(`Server ${context.getId()} identifies client failure`, actor);
             context.emit(events.CLIENT_FAILURE, actor);
         }
     }, this);

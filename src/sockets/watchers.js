@@ -1,10 +1,8 @@
 /**
  * Created by root on 7/11/17.
  */
-import debugFactory from 'debug';
 import _ from 'underscore'
 
-let debug = debugFactory('node::sockets::watcher');
 
 class WatcherData {
     constructor() {
@@ -13,19 +11,16 @@ class WatcherData {
     }
 
     getFnSet() {
-        debug(`getFnSet ${this._tag}`);
         return this._fnSet;
     }
 
     addFn(fn) {
-        debug(`addFn ${this._tag}`);
         if(_.isFunction(fn)) {
             this._fnSet.add(fn);
         }
     }
 
     removeFn(fn){
-        debug(`removeFn ${this._tag}`);
         if(_.isFunction(fn)) {
             this._fnSet.delete(fn);
             return;

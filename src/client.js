@@ -1,6 +1,3 @@
-import debugFactory from 'debug';
-let debug = debugFactory('node::client');
-
 import {events} from './enum';
 import globals from './globals';
 import ActorModel from './actor';
@@ -9,16 +6,17 @@ import * as Errors from './errors'
 let _private = new WeakMap();
 
 export default class Client extends DealerSocket {
-    constructor({id, options}) {
-        super({id});
+    constructor({id, options, logger}) {
+        super({id, logger});
         let _scope = {
             server: null,
-            pingInterval: null
+            pingInterval: null,
+            logger: logger || console
         };
 
         this.setOptions(options);
 
-        debug(`Client ${this.getId()} started`);
+        _scope.logger.info(`Client ${this.getId()} started`);
         _private.set(this, _scope);
     }
 

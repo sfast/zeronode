@@ -30,10 +30,11 @@
     "docdash": "^0.4.0",
     "jsdoc": "^3.4.3",
     "md5": "^2.2.1",
+    "pattern-emitter": "latest",
     "underscore": "^1.8.3",
     "uuid": "^3.0.1",
-    "zmq": "^2.15.3",
-    "pattern-emitter": "latest"
+    "winston": "^2.3.1",
+    "zmq": "^2.15.3"
   },
   "devDependencies": {
     "babel-cli": "^6.24.1",

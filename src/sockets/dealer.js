@@ -1,8 +1,6 @@
 /**
  * Created by artak on 3/2/17.
  */
-import debugFactory from 'debug';
-let debug = debugFactory('node::sockets::dealer');
 
 import zmq from 'zmq'
 
@@ -15,9 +13,9 @@ let EnvelopType = Enum.EnvelopType;
 let _private = new WeakMap();
 
 export default class DealerSocket extends Socket {
-    constructor({id}) {
+    constructor({id, logger}) {
         let socket =  zmq.socket('dealer');
-        super({id, socket});
+        super({id, socket, logger});
 
         let _scope = {};
         _scope.socket = socket;
