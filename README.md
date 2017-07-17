@@ -65,7 +65,7 @@ nodeA.tick(nodeB.getId(), 'foobar', {foo: 'bar'})
 #### Advanced Usage
 
 ```javascript
-import {Node, nodeEvents} from 'zeronode'
+import Node from 'zeronode'
 let layerA1 = new Node({ bind: 'tcp://127.0.0.1:6001', options: {layer: 'A'}});
 let layerA2 = new Node({ bind: 'tcp://127.0.0.1:6002', options: {layer: 'A'}});
 let layerB = new Node({ bind: 'tcp://127.0.0.1:6003', options: {layer: 'B'}});
@@ -90,7 +90,7 @@ customNode.tickAny('customEvent', {foo: 'bar'}, {layer: 'A'});
 //this will tick to all layer A nodes;
 customNode.tickAll('customEvent', {foo: 'bar'}, {layer: 'A'});
 
-//this will tick to all nodes that customNode connected or the connected to customNode
+//this will tick to all nodes that customNode connected to, or connected to customNode
 customNode.tickAll('customEvent', {foo: 'bar'});
 
 
