@@ -16,6 +16,8 @@ $ npm install zeronode
 
 ### How To Use
 
+#### Basic Usage
+
 ```javascript
 import Node from 'zeronode'
 
@@ -51,11 +53,49 @@ console.log(responseFromB);
 
 You can create various layers(groups) of nodes, connect nodes together, tick and request messages from node to another.
 
+#### Pattern Listeners
+
 You can also listen events by patterns. 
 ```javascript
 nodeB.onTick(/^foo/, handler);
 nodeA.tick(nodeB.getId(), 'foobar', {foo: 'bar'})
 
+```
+
+#### Advanced Usage
+
+```javascript
+import {Node, nodeEvents} from 'zeronode'
+let layerA1 = new Node({ bind: 'tcp://127.0.0.1:6001', options: {layer: 'A'}});
+let layerA2 = new Node({ bind: 'tcp://127.0.0.1:6002', options: {layer: 'A'}});
+let layerB = new Node({ bind: 'tcp://127.0.0.1:6003', options: {layer: 'B'}});
+let customNode = new Node({ bind: 'tcp://127.0.0.1:6004'});
+
+await customNode.bind();
+await layerA2.connect(customNode.getAddress());
+await layerA1.connect(customNode.getAddress());
+await layerB.connect(customNode.getAddress());
+
+layerA1.onTick('customEvent', (msg) => {
+    console.log(`go message in layerA1 ${msg}`)
+});
+
+layerA2.onTick('customEvent', (msg) => {
+    console.log(`go message in layerA2 ${msg}`)
+});
+
+//this will tick one of the layer A nodes;
+customNode.tickAny('customEvent', {foo: 'bar'}, {layer: 'A'});
+
+//this will tick to all layer A nodes;
+customNode.tickAll('customEvent', {foo: 'bar'}, {layer: 'A'});
+
+//this will tick to all nodes that customNode connected or the connected to customNode
+customNode.tickAll('customEvent', {foo: 'bar'});
+
+
+//you even can use regexp to filer nodes
+customNode.tickAll('customEvent', {foo: 'bar'}, {layer: /[A-Z]/})
 ```
 
 ### What We Are Using
