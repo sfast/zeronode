@@ -9,7 +9,7 @@
   "scripts": {
     "test": "mocha --require babel-core/register",
     "compile": "./node_modules/babel-cli/bin/babel.js -d dist/ src/",
-    "prepublish": "./compile.sh",
+    "prepublish": "npm run compile",
     "doc": "./node_modules/.bin/jsdoc -c jsdoc.json"
   },
   "repository": {
