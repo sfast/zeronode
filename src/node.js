@@ -375,12 +375,12 @@ export default class Node extends EventEmitter {
         return this.tick(nodeId, event, data)
     }
 
-    async tickDownAny(event, data, filter) {
-        return await this.requestAny(event, data, filter, true)
+    tickDownAny(event, data, filter) {
+        return this.tickAny(event, data, filter, true)
     }
 
-    async tickUpAny(event, data, filter) {
-        return await this.requestAny(event, data, filter, false, true)
+    tickUpAny(event, data, filter) {
+        return this.tickAny(event, data, filter, false, true)
     }
 
     tickAll(event, data, filter = {}, down, up) {
@@ -394,12 +394,12 @@ export default class Node extends EventEmitter {
         return Promise.all(tickPromises)
     }
 
-    async tickDownAll(event, data, filter) {
-        return await this.requestAny(event, data, filter, true)
+    tickDownAll(event, data, filter) {
+        return this.tickAll(event, data, filter, true)
     }
 
-    async tickUpAll(event, data, filter) {
-        return await this.requestAny(event, data, filter, false, true)
+    tickUpAll(event, data, filter) {
+        return this.tickAll(event, data, filter, false, true)
     }
 
     enableMetrics (interval = 1000) {
