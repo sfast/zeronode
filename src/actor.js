@@ -18,6 +18,14 @@ export default class ActorModel {
         this.options = options;
     }
 
+    toJSON () {
+        return {
+            address: this.address,
+            id: this.id,
+            options: this.options
+        }
+    }
+
     getId() {
         return this.id;
     }
