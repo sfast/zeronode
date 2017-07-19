@@ -1,0 +1,9 @@
+.gitignore
+.idea/*
+jsdoc.json
+node_modules/
+examples/
+test/
+docs/
+npm-debug.log
+tmp/
