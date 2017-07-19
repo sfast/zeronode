@@ -1,7 +1,14 @@
 /**
  * Created by root on 7/11/17.
  */
-export {default as Node} from './node'
-export {events as nodeEvents} from './enum'
-export {default as Server} from './server'
-export {default as Client} from './client'
+import Node from './node';
+import NodeEvents from './enum';
+import Server from './server';
+import Client from './client';
+
+export { Node as Node};
+export { NodeEvents as NodeEvents};
+export { Server as Server};
+export { Client as Client};
+
+export default Node;

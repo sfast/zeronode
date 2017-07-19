@@ -37,7 +37,7 @@ jspm_packages
 .node_repl_history
 
 .idea/*
-lib/
+dist/
 
 # Added for docdash documents genereted by npm run doc
 docs/
