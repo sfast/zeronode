@@ -1,6 +1,6 @@
 {
-  "name": "nodik-zmq",
-  "version": "1.0.17",
+  "name": "zeronode",
+  "version": "1.0.1",
   "description": "",
   "main": "./lib/node.js",
   "directories": {
@@ -14,14 +14,14 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/sfast/nodik-zmq.git"
+    "url": "git+https://github.com/sfast/zeronode.git"
   },
   "author": "Steadfast.tech",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/sfast/nodik-zmq/issues"
+    "url": "https://github.com/sfast/zeronode/issues"
   },
-  "homepage": "https://github.com/sfast/nodik-zmq#readme",
+  "homepage": "https://github.com/sfast/zeronode#readme",
   "dependencies": {
     "animal-id": "0.0.1",
     "bluebird": "^3.5.0",
