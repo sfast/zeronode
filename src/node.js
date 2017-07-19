@@ -359,7 +359,7 @@ export default class Node extends EventEmitter {
     }
 
     async requestDownAny(endpoint, data, timeout, filter) {
-        return await this.requestAny(endpoint, data, timeout, filter, true)
+        return await this.requestAny(endpoint, data, timeout, filter, true, false)
     }
 
     async requestUpAny(endpoint, data, timeout, filter) {
@@ -376,7 +376,7 @@ export default class Node extends EventEmitter {
     }
 
     tickDownAny(event, data, filter) {
-        return this.tickAny(event, data, filter, true)
+        return this.tickAny(event, data, filter, true, false)
     }
 
     tickUpAny(event, data, filter) {
@@ -395,7 +395,7 @@ export default class Node extends EventEmitter {
     }
 
     tickDownAll(event, data, filter) {
-        return this.tickAll(event, data, filter, true)
+        return this.tickAll(event, data, filter, true, false)
     }
 
     tickUpAll(event, data, filter) {
