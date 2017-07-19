@@ -103,7 +103,7 @@ export default class Node extends EventEmitter {
         return _scope.options
     }
 
-    getFilteredNodes(filter = {}){
+    getFilteredNodes({filter = {}, down = true, up = true} = {filter: {}, down: true, up: true}){
         let _scope = _private.get(this);
         let nodes = [];
 
@@ -121,11 +121,11 @@ export default class Node extends EventEmitter {
                 nodes.push(node.id)
             }
         }
-        if(_scope.nodeServer) {
+        if(_scope.nodeServer && down) {
             _scope.nodeServer.getOnlineClients().forEach(checkNode, this)
         }
 
-        if(_scope.nodeClients.size) {
+        if(_scope.nodeClients.size && up) {
             _scope.nodeClients.forEach((client) => {
                 let actorModel = client.getServerActor();
                 if(actorModel.isOnline()) {
@@ -336,7 +336,7 @@ export default class Node extends EventEmitter {
         throw new Error(`Node with ${nodeId} is not found.`)
     }
 
-    async tick(nodeId, event, data) {
+    tick(nodeId, event, data) {
         let _scope = _private.get(this);
 
         let clientActor = this::_getClientByNode(nodeId);
@@ -349,14 +349,25 @@ export default class Node extends EventEmitter {
         throw new Error(`Node with ${nodeId} is not found.`)
     }
 
-    async requestAny(endpoint, data, timeout = globals.REQUEST_TIMEOUT, filter = {}) {
-        let filteredNodes = this.getFilteredNodes(filter);
+    async requestAny(endpoint, data, timeout = globals.REQUEST_TIMEOUT, filter = {}, down, up) {
+        let filteredNodes = this.getFilteredNodes({filter, down, up});
+        if (!filteredNodes.length) {
+            throw 'there is no node with that filter'
+        }
         let nodeId = this::_getWinnerNode(filteredNodes, endpoint);
         return this.request(nodeId, endpoint, data, timeout)
     }
 
-    async tickAny(event, data, filter = {}) {
-        let filteredNodes = this.getFilteredNodes(filter);
+    async requestDownAny(endpoint, data, timeout, filter) {
+        return await this.requestAny(endpoint, data, timeout, filter, true, false)
+    }
+
+    async requestUpAny(endpoint, data, timeout, filter) {
+        return await this.requestAny(endpoint, data, timeout, filter, false, true)
+    }
+
+    tickAny(event, data, filter = {}, down, up) {
+        let filteredNodes = this.getFilteredNodes({filter, down, up});
         if (!filteredNodes.length) {
             throw 'there is no node with that filter'
         }
@@ -364,8 +375,16 @@ export default class Node extends EventEmitter {
         return this.tick(nodeId, event, data)
     }
 
-    async tickAll(event, data, filter = {}) {
-        let filteredNodes = this.getFilteredNodes(filter);
+    tickDownAny(event, data, filter) {
+        return this.tickAny(event, data, filter, true, false)
+    }
+
+    tickUpAny(event, data, filter) {
+        return this.tickAny(event, data, filter, false, true)
+    }
+
+    tickAll(event, data, filter = {}, down, up) {
+        let filteredNodes = this.getFilteredNodes({filter, down, up});
         let tickPromises = [];
 
         filteredNodes.forEach((nodeId)=> {
@@ -373,6 +392,14 @@ export default class Node extends EventEmitter {
         }, this);
 
         return Promise.all(tickPromises)
+    }
+
+    tickDownAll(event, data, filter) {
+        return this.tickAll(event, data, filter, true, false)
+    }
+
+    tickUpAll(event, data, filter) {
+        return this.tickAll(event, data, filter, false, true)
     }
 
     enableMetrics (interval = 1000) {
