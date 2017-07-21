@@ -70,7 +70,6 @@ export default class RouterSocket extends Socket {
         super.close();
         let _scope = _private.get(this);
         _scope.socket.unbindSync(_scope.bindAddress);
-        _scope.bindAddress = null;
         this.setOffline();
     }
 

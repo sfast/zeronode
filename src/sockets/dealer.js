@@ -71,7 +71,6 @@ export default class DealerSocket extends Socket {
         super.close();
         let _scope = _private.get(this);
         _scope.socket.disconnect(_scope.routerAddress);
-        _scope.routerAddress = null;
         this.setOffline();
     }
 

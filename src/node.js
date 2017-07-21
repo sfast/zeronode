@@ -27,7 +27,7 @@ export default class Node extends EventEmitter {
 
         id = id || _generateNodeId();
 
-        let logger = new (winston.Logger)({
+        this.logger = new (winston.Logger)({
             transports: [
                 new (winston.transports.Console)({level: 'error'}),
             ]
@@ -35,7 +35,6 @@ export default class Node extends EventEmitter {
         let _scope = {
             id,
             options,
-            logger,
             metric: {
                 status: false,
                 info: new Metric({id}),
@@ -149,7 +148,6 @@ export default class Node extends EventEmitter {
             return true
         }
         _scope.nodeServer.unbind();
-        _scope.nodeServer = null;
         return true
     }
 
@@ -166,7 +164,7 @@ export default class Node extends EventEmitter {
             return _scope.nodeClientsAddressIndex.get(addressHash)
         }
 
-        let client = new Client({id: _scope.id, options: _scope.options, logger: _scope.logger});
+        let client = new Client({id: _scope.id, options: _scope.options, logger: this.logger});
         if (_scope.metric.status) client.setMetric(true);
         client.on(events.SERVER_FAILURE, this::_serverFailureHandler);
         client.on('error', (err) => {
@@ -204,7 +202,7 @@ export default class Node extends EventEmitter {
         });
         let {actorId, options} = await client.connect(address);
 
-        _scope.logger.info(`Node connected: ${this.getId()} -> ${actorId}`);
+        this.logger.info(`Node connected: ${this.getId()} -> ${actorId}`);
         _scope.nodeClientsAddressIndex.set(addressHash, actorId);
         _scope.nodeClients.set(actorId, client);
 
@@ -429,12 +427,12 @@ export default class Node extends EventEmitter {
 
     setLogLevel (level) {
         let _scope = _private.get(this);
-        _scope.logger.transports.console.level = level;
+        this.logger.transports.console.level = level;
     }
 
     addFileToLog ({filename, level}) {
         let _scope = _private.get(this);
-        _scope.logger.add(winston.transports.File, {filename, level});
+        this.logger.add(winston.transports.File, {filename, level});
     }
 }
 
@@ -452,7 +450,7 @@ function _getClientByNode(nodeId) {
     }
 
     if(actors.length > 1) {
-        return _scope.logger('warn', `We should have just 1 client from 1 node`);
+        return this.logger('warn', `We should have just 1 client from 1 node`);
     }
 
     return actors[0];
