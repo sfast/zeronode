@@ -16,3 +16,7 @@ export class BindError extends Error {
         this.state = state;
     }
 }
+
+export default {
+    NO_NODE: 0
+}

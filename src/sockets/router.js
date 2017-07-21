@@ -80,7 +80,7 @@ export default class RouterSocket extends Socket {
         return super.request(envelop, timeout);
     }
 
-    async tick(to, event, data) {
+    tick(to, event, data) {
         let envelop = new Envelop({type: EnvelopType.ASYNC, tag: event, data: data, owner : this.getId(), recipient: to});
         return super.tick(envelop);
     }

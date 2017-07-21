@@ -10,6 +10,7 @@ import { RequestWatcher, TickWatcher} from './sockets'
 
 import Server from './server';
 import Client from './client';
+import Errors from './errors';
 import Metric from './metric';
 import globals from './globals';
 import { events } from './enum';
@@ -20,7 +21,7 @@ const _private = new WeakMap();
 
 
 export default class Node extends EventEmitter {
-    constructor(data) {
+    constructor(data = {}) {
         super();
 
         let {id, bind, options = {}} = data;
@@ -40,7 +41,7 @@ export default class Node extends EventEmitter {
                 info: new Metric({id}),
                 interval: null
             },
-            nodeServer : new Server({id, bind, logger, options}),
+            nodeServer : new Server({id, bind, logger: this.logger, options}),
             nodeClients : new Map(),
             nodeClientsAddressIndex : new Map(),
             tickWatcherMap: new Map(),
@@ -127,7 +128,7 @@ export default class Node extends EventEmitter {
         if(_scope.nodeClients.size && up) {
             _scope.nodeClients.forEach((client) => {
                 let actorModel = client.getServerActor();
-                if(actorModel.isOnline()) {
+                if(actorModel && actorModel.isOnline()) {
                     checkNode(actorModel)
                 }
             }, this)
@@ -200,6 +201,10 @@ export default class Node extends EventEmitter {
                 _scope.metric.info.gotReply({id, sendTime, getTime, replyTime, replyGetTime})
             }
         });
+        client.on(events.SERVER_STOP, (serverActor) => {
+            console.log('server stopped 2');
+            this.emit(events.SERVER_STOP, serverActor.toJSON())
+        });
         let {actorId, options} = await client.connect(address);
 
         this.logger.info(`Node connected: ${this.getId()} -> ${actorId}`);
@@ -243,6 +248,7 @@ export default class Node extends EventEmitter {
         let _scope = _private.get(this);
         let stopPromise = [];
         if(_scope.nodeServer.isOnline()) {
+            console.log('aaa');
             _scope.nodeServer.unbind()
         }
 
@@ -350,7 +356,7 @@ export default class Node extends EventEmitter {
     async requestAny(endpoint, data, timeout = globals.REQUEST_TIMEOUT, filter = {}, down, up) {
         let filteredNodes = this.getFilteredNodes({filter, down, up});
         if (!filteredNodes.length) {
-            throw 'there is no node with that filter'
+            throw {code: Errors.NO_NODE , message: 'there is no node with that filter'}
         }
         let nodeId = this::_getWinnerNode(filteredNodes, endpoint);
         return this.request(nodeId, endpoint, data, timeout)
@@ -367,7 +373,7 @@ export default class Node extends EventEmitter {
     tickAny(event, data, filter = {}, down, up) {
         let filteredNodes = this.getFilteredNodes({filter, down, up});
         if (!filteredNodes.length) {
-            throw 'there is no node with that filter'
+            throw {code: Errors.NO_NODE , message: 'there is no node with that filter'}
         }
         let nodeId = this::_getWinnerNode(filteredNodes, event);
         return this.tick(nodeId, event, data)
