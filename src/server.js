@@ -73,7 +73,6 @@ export default class Server extends RouterSocket {
             this.offRequest(events.CLIENT_STOP);
             this.offRequest(events.CLIENT_PING);
             _.each(this.getOnlineClients(), (client) => {
-                console.log(client);
                 this.tick(client.getId(), events.SERVER_STOP);
             });
             super.unbind();

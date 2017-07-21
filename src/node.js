@@ -202,7 +202,6 @@ export default class Node extends EventEmitter {
             }
         });
         client.on(events.SERVER_STOP, (serverActor) => {
-            console.log('server stopped 2');
             this.emit(events.SERVER_STOP, serverActor.toJSON())
         });
         let {actorId, options} = await client.connect(address);
@@ -248,7 +247,6 @@ export default class Node extends EventEmitter {
         let _scope = _private.get(this);
         let stopPromise = [];
         if(_scope.nodeServer.isOnline()) {
-            console.log('aaa');
             _scope.nodeServer.unbind()
         }
 

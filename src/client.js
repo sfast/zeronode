@@ -117,7 +117,6 @@ function _stopServerPinging() {
 
 function _serverStopHandler() {
     let _scope = _private.get(this);
-    console.log('server stopped');
     _scope.server.markStopped();
     this.emit(events.SERVER_STOP, _scope.server)
 }
