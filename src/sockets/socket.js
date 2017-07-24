@@ -105,7 +105,7 @@ export default class Socket extends EventEmitter {
         });
     }
 
-    async tick(envelop) {
+    tick(envelop) {
         let _scope = _private.get(this);
         if (!this.isOnline()) {
             let err = new Error(`Sending failed as socket ${this.getId()} is not online`);
@@ -113,7 +113,6 @@ export default class Socket extends EventEmitter {
         }
 
         this.sendEnvelop(envelop);
-        return Promise.resolve();
     }
 
     sendEnvelop(envelop) {

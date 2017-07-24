@@ -19,6 +19,7 @@ export default class Client extends DealerSocket {
         this.setOptions(options);
 
         _scope.logger.info(`Client ${this.getId()} started`);
+        this.onTick(events.SERVER_STOP, this::_serverStopHandler);
         _private.set(this, _scope);
     }
 
@@ -112,4 +113,10 @@ function _stopServerPinging() {
     if(_scope.pingInterval) {
         clearInterval(_scope.pingInterval);
     }
+}
+
+function _serverStopHandler() {
+    let _scope = _private.get(this);
+    _scope.server.markStopped();
+    this.emit(events.SERVER_STOP, _scope.server)
 }

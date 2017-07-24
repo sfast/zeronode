@@ -72,6 +72,9 @@ export default class Server extends RouterSocket {
             this.offRequest(events.CLIENT_CONNECTED);
             this.offRequest(events.CLIENT_STOP);
             this.offRequest(events.CLIENT_PING);
+            _.each(this.getOnlineClients(), (client) => {
+                this.tick(client.getId(), events.SERVER_STOP);
+            });
             super.unbind();
         } catch(err) {
             this.emit('error', new Errors.BindError({id: this.getId(), err, state: 'unbinding'}))
