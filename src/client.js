@@ -55,7 +55,7 @@ export default class Client extends DealerSocket {
             let serverId = await this.request(events.CLIENT_STOP, disconnectData);
             this::_stopServerPinging();
             super.disconnect();
-            _scope.server = null;
+            _scope.server.setOffline();
             return serverId;
         } catch (err) {
             this.emit('error', new Errors.ConnectionError({err, id: this.getId(), state: 'disconnecting'}));
