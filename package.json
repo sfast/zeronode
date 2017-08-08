@@ -1,5 +1,5 @@
 {
-  "name": "@sfast/zeronode",
+  "name": "zeronode",
   "version": "1.0.8",
   "description": "",
   "main": "./dist/index.js",
