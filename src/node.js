@@ -438,6 +438,15 @@ export default class Node extends EventEmitter {
         let _scope = _private.get(this);
         this.logger.add(winston.transports.File, {filename, level});
     }
+
+    setOptions (options) {
+        let _scope = _private.get(this);
+        _scope.options = options;
+        _scope.nodeServer.setOptions(options);
+        _scope.nodeClients.forEach((client) => {
+            client.setOptions(options);
+        }, this)
+    }
 }
 
 // ** PRIVATE FUNCTIONS
