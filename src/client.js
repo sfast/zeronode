@@ -1,8 +1,10 @@
 import {events} from './enum';
 import globals from './globals';
 import ActorModel from './actor';
-import {Dealer as DealerSocket} from './sockets';
 import * as Errors from './errors'
+
+import {Dealer as DealerSocket} from './sockets';
+
 let _private = new WeakMap();
 
 export default class Client extends DealerSocket {
@@ -16,15 +18,23 @@ export default class Client extends DealerSocket {
             logger: logger || console
         };
 
-        this.setOptions(options);
+        super.setOptions(options);
 
         _scope.logger.info(`Client ${this.getId()} started`);
+
         this.onTick(events.SERVER_STOP, this::_serverStopHandler);
+        this.onTick(events.OPTIONS_SYNC, this::_serverOptionsSync);
+
         _private.set(this, _scope);
     }
 
     getServerActor() {
         return _private.get(this).server;
+    }
+
+    setOptions (options) {
+        super.setOptions(options);
+        this.tick(events.OPTIONS_SYNC, {actorId: this.getId(), options});
     }
 
     // ** returns a promise which resolves with server model after server replies to events.CLIENT_CONNECTED
@@ -118,7 +128,26 @@ function _stopServerPinging() {
 }
 
 function _serverStopHandler() {
-    let _scope = _private.get(this);
-    _scope.server.markStopped();
-    this.emit(events.SERVER_STOP, _scope.server)
+    try {
+        let _scope = _private.get(this);
+        if (!_scope.server) {
+            throw new Error('client doesn\'t have server');
+        }
+        _scope.server.markStopped();
+        this.emit(events.SERVER_STOP, _scope.server);
+    } catch (err) {
+        console.error('error while handling serverStop', err);
+    }
+}
+
+function _serverOptionsSync({options, actorId}) {
+    try {
+        let _scope = _private.get(this);
+        if (!_scope.server) {
+            throw new Error('client doesn\'t have server');
+        }
+        _scope.server.setOptions(options);
+    } catch (err) {
+        console.error('error while handling server Options sync:', err);
+    }
 }

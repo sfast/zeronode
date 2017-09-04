@@ -1,4 +1,5 @@
 import _ from 'underscore';
+
 import { events } from './enum';
 import globals from './globals';
 import ActorModel from './actor';
@@ -13,7 +14,7 @@ export default class Server extends RouterSocket {
         let {id, bind, logger,  options} = data;
 
         super({id, logger});
-        this.setOptions(options);
+        super.setOptions(options);
         this.setAddress(bind);
 
         let _scope = {
@@ -47,6 +48,13 @@ export default class Server extends RouterSocket {
         return onlineClients;
     }
 
+    setOptions(options) {
+        super.setOptions();
+        _.each(this.getOnlineClients(), (client) => {
+            this.tick(client.id, events.OPTIONS_SYNC, {actorId: this.getId(), options});
+        })
+    }
+
     async bind(bindAddress) {
         try {
             if(_.isString(bindAddress)) {
@@ -61,6 +69,9 @@ export default class Server extends RouterSocket {
             // ** ATTACHING client ping
             this.onRequest(events.CLIENT_PING, this::_clientPingRequest);
 
+            // ** ATTACHING CLIENT OPTIONS SYNCING
+            this.onTick(events.OPTIONS_SYNC, this::_clientOptionsSync);
+
             return super.bind(this.getAddress());
         } catch (err) {
             this.emit('error', new Errors.BindError({id: this.getId(), err}))
@@ -72,6 +83,8 @@ export default class Server extends RouterSocket {
             this.offRequest(events.CLIENT_CONNECTED);
             this.offRequest(events.CLIENT_STOP);
             this.offRequest(events.CLIENT_PING);
+            this.offTick(events.OPTIONS_SYNC);
+
             _.each(this.getOnlineClients(), (client) => {
                 this.tick(client.getId(), events.SERVER_STOP);
             });
@@ -147,4 +160,17 @@ function _checkClientHeartBeat(){
             context.emit(events.CLIENT_FAILURE, actor);
         }
     }, this);
+}
+
+function _clientOptionsSync({actorId, options}){
+    try {
+        let _scope = _private.get(this);
+        let actorModel = _scope.clientModels.get(actorId);
+        if (!actorModel) {
+            throw new Error(`there is no client actor whit that id: ${actorId}`);
+        }
+        actorModel.setOptions(options);
+    } catch (err) {
+        console.error('error while handling clientOptionsSync:', err);
+    }
 }
