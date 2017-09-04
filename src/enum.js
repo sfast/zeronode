@@ -7,7 +7,8 @@ export let events = {
     CLIENT_FAILURE: 3,
     CLIENT_STOP : 4,
     CLIENT_PING : 5,
-    SERVER_FAILURE : 6,
-    SERVER_STOP: 7,
-    METRICS: 8
+    OPTIONS_SYNC: 6,
+    SERVER_FAILURE : 7,
+    SERVER_STOP: 8,
+    METRICS: 9
 };
