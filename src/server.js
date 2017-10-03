@@ -105,7 +105,6 @@ function _clientPingTick({actor, stamp, data}) {
     let _scope = _private.get(this);
     // ** PING DATA FROM CLIENT, actor is client id
 
-    console.log(actor, stamp, data);
     let actorModel = _scope.clientModels.get(actor);
 
     if(actorModel) {
