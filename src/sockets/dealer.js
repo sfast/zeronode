@@ -56,6 +56,8 @@ export default class DealerSocket extends Socket {
                 this.setAddress(routerAddress);
             }
 
+            _scope.socket.removeAllListeners('connect');
+
             let rejectionTimeout = setTimeout(() => {
                 _scope.socket.off('connect');
                 reject('connection timeouted');
