@@ -59,7 +59,7 @@ export default class DealerSocket extends Socket {
             _scope.socket.removeAllListeners('connect');
 
             let rejectionTimeout = setTimeout(() => {
-                _scope.socket.off('connect');
+                _scope.socket.removeAllListeners('connect');
                 reject('connection timeouted');
                 this.disconnect();
             }, Enum.CONNECTION_TIMEOUT);
@@ -98,6 +98,7 @@ export default class DealerSocket extends Socket {
         super.close();
         let _scope = _private.get(this);
         _scope.socket.disconnect(_scope.routerAddress);
+        _scope.socket.removeAllListeners('conenct');
         this.setOffline();
     }
 
