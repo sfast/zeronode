@@ -67,7 +67,7 @@ export default class Server extends RouterSocket {
             this.onRequest(events.CLIENT_STOP, this::_clientStopRequest);
 
             // ** ATTACHING client ping
-            this.onRequest(events.CLIENT_PING, this::_clientPingRequest);
+            this.onTick(events.CLIENT_PING, this::_clientPingTick);
 
             // ** ATTACHING CLIENT OPTIONS SYNCING
             this.onTick(events.OPTIONS_SYNC, this::_clientOptionsSync);
@@ -101,17 +101,15 @@ export default class Server extends RouterSocket {
 }
 
 // ** Request handlers
-function _clientPingRequest(request) {
+function _clientPingTick({actor, stamp, data}) {
     let _scope = _private.get(this);
     // ** PING DATA FROM CLIENT, actor is client id
-    let {actor, stamp, data} = request.body;
 
     let actorModel = _scope.clientModels.get(actor);
 
     if(actorModel) {
         actorModel.ping(stamp, data);
     }
-    request.reply(Date.now());
 }
 
 //TODO:: @dave, @avar why merge options when disconnecting

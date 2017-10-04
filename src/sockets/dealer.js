@@ -19,6 +19,13 @@ export default class DealerSocket extends Socket {
 
         let _scope = {};
         _scope.socket = socket;
+
+        // ** monitoring connect / disconnect
+
+        _scope.socket.on('disconnect', this::this.serverFailHandler);
+
+        _scope.socket.monitor(Enum.MONITOR_TIMEOUT, 0);
+
         _scope.routerAddress = null;
         _private.set(this, _scope);
     }
@@ -37,18 +44,38 @@ export default class DealerSocket extends Socket {
 
     // ** not actually connected
     connect(routerAddress) {
-        let _scope = _private.get(this);
+        return new Promise((resolve, reject) => {
+            let _scope = _private.get(this);
 
-        if(this.isOnline()) {
-            return true;
-        }
+            if(this.isOnline()) {
+                resolve(true);
+                return;
+            }
 
-        if(routerAddress) {
-            this.setAddress(routerAddress);
-        }
+            if(routerAddress) {
+                this.setAddress(routerAddress);
+            }
 
-        _scope.socket.connect(this.getAddress());
-        this.setOnline();
+            _scope.socket.removeAllListeners('connect');
+
+            let rejectionTimeout = setTimeout(() => {
+                _scope.socket.removeAllListeners('connect');
+                reject('connection timeouted');
+                this.disconnect();
+            }, Enum.CONNECTION_TIMEOUT);
+
+            _scope.socket.on('connect', () => {
+                clearTimeout(rejectionTimeout);
+                this.setOnline();
+                _scope.socket.removeAllListeners('connect');
+                _scope.socket.on('connect', this::this.handleReconnecting);
+                resolve();
+            });
+
+            _scope.socket.connect(this.getAddress());
+
+            this.setOnline();
+        });
     }
 
     // ** not actually disconnected
@@ -71,6 +98,7 @@ export default class DealerSocket extends Socket {
         super.close();
         let _scope = _private.get(this);
         _scope.socket.disconnect(_scope.routerAddress);
+        _scope.socket.removeAllListeners('conenct');
         this.setOffline();
     }
 

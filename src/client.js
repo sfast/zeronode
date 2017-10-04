@@ -41,7 +41,7 @@ export default class Client extends DealerSocket {
     async connect(serverAddress) {
         try {
             let _scope = _private.get(this);
-            super.connect(serverAddress);
+            await super.connect(serverAddress);
             let {actorId, options} = await this.request(events.CLIENT_CONNECTED, {actorId: this.getId(), options: this.getOptions()});
             // ** creating server model and setting it online
             _scope.server = new ActorModel( {id: actorId, options: options, online: true, address: serverAddress});
@@ -49,6 +49,24 @@ export default class Client extends DealerSocket {
             return {actorId, options}
         } catch (err) {
             this.emit('error', new Errors.ConnectionError({err, id: this.getId()}));
+        }
+    }
+
+    async handleReconnecting(fd, serverAddress) {
+        try {
+            this.setOnline();
+
+            let _scope = _private.get(this);
+            let {actorId, options} = await this.request(events.CLIENT_CONNECTED, {actorId: this.getId(), options: this.getOptions()});
+
+            if (!_scope.server) {
+                _scope.server = new ActorModel( {id: actorId, options: options, online: true, address: serverAddress});
+            }
+
+            _scope.server.setOnline();
+            this::_startServerPinging();
+        } catch (err) {
+            this.emit('error', new Errors.ConnectionError({err, id: this.getId(), state: 'reconnecting'}));
         }
     }
 
@@ -69,6 +87,24 @@ export default class Client extends DealerSocket {
             return serverId;
         } catch (err) {
             this.emit('error', new Errors.ConnectionError({err, id: this.getId(), state: 'disconnecting'}));
+        }
+    }
+
+    serverFailHandler() {
+        try {
+            let _scope = _private.get(this);
+
+            this::_stopServerPinging();
+
+            if (!_scope.server || !_scope.server.isOnline()) {
+                return;
+            }
+
+            _scope.server.markFailed();
+
+            this.emit(events.SERVER_FAILURE, _scope.server);
+        } catch (err) {
+            //handle error
         }
     }
 
@@ -95,27 +131,15 @@ export default class Client extends DealerSocket {
 }
 
 function _startServerPinging(){
-    let context = this;
-    let _scope = _private.get(context);
+    let _scope = _private.get(this);
 
     if(_scope.pingInterval) {
         clearInterval(_scope.pingInterval);
     }
 
-    _scope.pingInterval = setInterval(async ()=> {
-        let pingRequest = { actor: context.getId(), stamp : Date.now()};
-        let pingResponse = 0;
-        try {
-            await context.request(events.CLIENT_PING, pingRequest);
-        } catch (err) {
-            pingResponse = 1
-        }
-        if(_scope.server) {
-            _scope.server.ping(pingResponse);
-            if (pingResponse) {
-                context.emit(events.SERVER_FAILURE, _scope.server);
-            }
-        }
+    _scope.pingInterval = setInterval(()=> {
+        let pingData = { actor: this.getId(), stamp : Date.now()};
+        this.tick(events.CLIENT_PING, pingData);
     } , globals.CLIENT_PING_INTERVAL);
 }
 
