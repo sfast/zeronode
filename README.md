@@ -36,30 +36,42 @@ let node = new Node({
 
 All three parameters are optional.
 
-Basic methods:
+Basic methods
 1. `bind(address)` - Binds the node to the specified address. you can bind only in one address.
 2. `connect(address)` - Connects the node to the specified address. you can connect to many nodes.
 3. `unbind()` - Unbinds the node.
 4. `disconnect(address)` - Disconnects the node from specified address.
 5. `stop()` - Unbinds the node, and disconnects from all addresses.
 
-Simple messaging methods:
+Simple messaging methods
 6. `onRequest(endpoint: String, handler)` - adds request handler to given endpoint.
+
 7. `onTick(event: String, handler)` - adds event handler to given event.
-8. `offRequest(endpoint:String, handler)` - removes request handler from endpoint, if handler is not provided then removes all the listeners.
-9. `offTick(event: String, handler)` - removes given event handler from event listeners list, if handler is not provided then removes all the listeners.
+
+8. `offRequest(endpoint:String, handler)` - removes request handler from endpoint
+if handler is not provided then removes all the listeners.
+
+9. `offTick(event: String, handler)` - removes given event handler from event listeners list
+if handler is not provided then removes all the listeners.
+
 10. `request(id, endpoint, data, timeout)` - makes request to that endpoint of given node.
+
 11. `tick(id, event, data)` - emits event to given node.
 
-Load balancing methods:
+Load balancing methods
 12. `requestAny(endpoint, data, timeout, filter)` - send request to "only one" node from the nodes that satisfy given filter.
+
 13. `tickAny(event, data, filter)` - ticks to "only one" node from the nodes that satisfy given filter.
+
 14. `tickAll(event, data, filter)` - ticks to all nodes that satisfies to given filer.
 
-Debugging and troubleshooting:
+Debugging and troubleshooting
 15. `enableMetrics(interval)` - enables metrics, events will be triggered by given interval. Default interval is 1000 ms.
+
 16. `disableMetrics()` - disables metrics.
+
 17. `setLogLevel(level)` - sets log level to given level { error: 0, warn: 1, info: 2, verbose: 3, debug: 4, silly: 5 }.
+
 18. `addFileToLog(filename, level)` - writes all logs above given level to given file.
 
 
