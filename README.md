@@ -14,6 +14,13 @@ After that you can install zeronode.
 $ npm install zeronode
 ```
 
+### Abstract - What is a Node ?
+Think of every Node as an actor (participant) in a networking of entire system (server, vm, process, container etc ...)
+Data transfers between Node-s via both request/reply and tick (fire forget) manner.
+Node (as a server) can bind to a port and listen to requests and ticks from other Nodes
+Node (as a client) can connect to other server Node and send requests and ticks.
+Much more interesting patterns and features you can discover by reading the document or try to reach us via Drift Chat under [Steadfast.tech]: http://steadfast.tech  
+
 ### How To Use
 
 Creating new Node.
@@ -29,82 +36,92 @@ let node = new Node({
 
 All three parameters are optional.
 
-Methods:
+Basic methods:
 1. `bind(address)` - Binds the node to the specified address. you can bind only in one address.
 2. `connect(address)` - Connects the node to the specified address. you can connect to many nodes.
 3. `unbind()` - Unbinds the node.
 4. `disconnect(address)` - Disconnects the node from specified address.
 5. `stop()` - Unbinds the node, and disconnects from all addresses.
-6. `onRequest(endpoint, handler)` - adds request handler to given endpoint.
-7. `onTick(event, handler)` - adds event handler to given event.
-8. `offRequest(endpoint, handler)` - removes request handler from endpoint, if handler doesn't given then removes all handlers from endpoint.
-9. `offTick(event, handler)` - removes event handlers from event, if handler doesn't givent then removes all handlers.
+
+Simple messaging methods:
+6. `onRequest(endpoint: String, handler)` - adds request handler to given endpoint.
+7. `onTick(event: String, handler)` - adds event handler to given event.
+8. `offRequest(endpoint:String, handler)` - removes request handler from endpoint, if handler is not provided then removes all the listeners.
+9. `offTick(event: String, handler)` - removes given event handler from event listeners list, if handler is not provided then removes all the listeners.
 10. `request(id, endpoint, data, timeout)` - makes request to that endpoint of given node.
 11. `tick(id, event, data)` - emits event to given node.
-12. `requestAny(endpoint, data, timeout, filter)` - request one of the nodes that satisfies to given filter.
-13. `tickAny(event, data, filter)` - ticks one of the nodes that satisfies to given filter.
+
+Load balancing methods:
+12. `requestAny(endpoint, data, timeout, filter)` - send request to "only one" node from the nodes that satisfy given filter.
+13. `tickAny(event, data, filter)` - ticks to "only one" node from the nodes that satisfy given filter.
 14. `tickAll(event, data, filter)` - ticks to all nodes that satisfies to given filer.
+
+Debugging and troubleshooting:
 15. `enableMetrics(interval)` - enables metrics, events will be triggered by given interval. Default interval is 1000 ms.
 16. `disableMetrics()` - disables metrics.
 17. `setLogLevel(level)` - sets log level to given level { error: 0, warn: 1, info: 2, verbose: 3, debug: 4, silly: 5 }.
 18. `addFileToLog(filename, level)` - writes all logs above given level to given file.
 
 
-### Examples
+### Simple client server example
 
-Simple example, nodeA -> nodeB. nodeB binds and listens some events, nodeA connects to nodeB and emits events.
+Simple example: NodeServer is listening for events, NodeClient connects to NodeServer and sends events: 
+(myServiceClient) ----> (myServiceServer)
 
-nodeA.js
-```javascript
-import Node from 'zeronode'
+Lets create server first
 
-
-(async function() {
-   let nodeA = new Node({ options: { layer: 'A' } });
-   let nodeB_id = 'nodeB';
-   
-   //** connect one node to another node with address
-   await nodeA.connect('tcp://127.0.0.1:6000');
-   
-   // ** tick() is like firing an event to another node
-   nodeA.tick(nodeB_id, 'welcome', 'Hi node B!!!');
-   
-   
-   
-   // ** you request to another node and getting a promise
-   // ** which will be resolve after reply.
-   let responseFromB = await nodeA.request(nodeB_id, 'welcome', 'Hi node B!!!');
-   
-   console.log(`response from B is "${responseFromB}"`);
-   // response From B is "Hello A."
-}());
-
-```
-
-nodeB.js
+myServiceServer.js
 ```javascript
 import Node from 'zeronode';
 
 (async function() {
-   let nodeB = new Node({ id: 'nodeB',  bind: 'tcp://127.0.0.1:6000', options: { layer: 'B' } });
+   let myServiceServer = new Node({ id: 'myServiceServer',  bind: 'tcp://127.0.0.1:6000', options: { layer: 'LayerA' } });
    
-   // ** attach event listener to nodeB
-   nodeB.onTick('welcome', (data) => {
+   // ** attach event listener to myServiceServer
+   myServiceServer.onTick('welcome', (data) => {
        console.log('onTick - welcome', data);
    });
    
-   
-   // ** attach request listener to nodeB
-   nodeB.onRequest('welcome', ({ body, reply }) => {
+   // ** attach request listener to myServiceServer
+   myServiceServer.onRequest('welcome', ({ body, reply }) => {
        console.log('onRequest - welcome', body);
-       reply("Hello A.");
+       reply("Hello client");
    });
    
    // ** bind node to given address
-   await nodeB.bind();
+   await myServiceServer.bind();
 }());
 
 ```
+
+myServiceClient.js
+```javascript
+import Node from 'zeronode'
+
+(async function() {
+   let myServiceClient = new Node({ options: { layer: 'LayerA' } });
+   
+   //** connect one node to another node with address
+   await myServiceClient.connect('tcp://127.0.0.1:6000');
+   
+   let serverNodeId = 'myServiceServer';
+   
+   // ** tick() is like firing an event to another node
+   myServiceClient.tick(serverNodeId, 'welcome', 'Hi server!!!');
+   
+   // ** you request to another node and getting a promise
+   // ** which will be resolve after reply.
+   let responseFromServer = await myServiceClient.request(serverNodeId, 'welcome', 'Hi server, I am client !!!');
+   
+   console.log(`response from server is "${responseFromServer}"`);
+   // response from server is "Hello client."
+}());
+
+```
+
+### More of layering. 
+Nodes can be grouped in layers (and other options) and then allowing to send messages to only filtered nodes.
+The filtering is done on senders side which keeps all the information about the nodes (both connected to sender node and the ones that sender Node is conencted to)
 
 In this example, we will create one node that will bind in some address, and three nodes will connect to that node.
 2 connected nodes will be in same group, 1 in another.
@@ -133,6 +150,7 @@ import Node from 'zeronode'
         console.log(`go message in clientA1 ${msg}`);
     });
     
+    // ** connect to server address
     await clientA1.connect('tcp:://127.0.0.1:6000');
 }());
 ```
@@ -170,7 +188,7 @@ import Node from 'zeronode'
 
 Now that all connections are set, we can send events.
 ```javascript
-//this will tick one of the layer A nodes;
+//this will tick only one node of the layer A nodes;
 server.tickAny('foobar', { foo: 'bar' }, { layer: 'A' });
 
 //this will tick to all layer A nodes;
@@ -183,6 +201,9 @@ server.tickAll('foobar', { foo: 'bar' });
 //you even can use regexp to filer nodes
 server.tickAll('foobar', { foo: 'bar' }, {layer: /[A-Z]/})
 ```
+
+### You still have some questions ? Try to reach us
+Try to reach us via Drift Chat under [Steadfast.tech]: http://steadfast.tech 
 
 ### What We Are Using
 
