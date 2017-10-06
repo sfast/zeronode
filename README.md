@@ -15,11 +15,11 @@ $ npm install zeronode
 ```
 
 ### Abstract - What is a Node ?
-Think of every Node as an actor (participant) in a networking of entire system (server, vm, process, container etc ...)
-Data transfers between Node-s via both request/reply and tick (fire forget) manner.
-Node (as a server) can bind to a port and listen to requests and ticks from other Nodes
-Node (as a client) can connect to other server Node and send requests and ticks.
-Much more interesting patterns and features you can discover by reading the document or try to reach us via Drift Chat under [Steadfast.tech]: http://steadfast.tech  
+- Think of every Node as an actor (participant) in a networking of entire system (server, vm, process, container etc ...)
+- Data transfers between Node-s via both request/reply and tick (fire forget) manner.
+- Node (as a server) can bind to a port and listen to requests and ticks from other Nodes
+- Node (as a client) can connect to other server Node and send requests and ticks.
+- Much more interesting patterns and features you can discover by reading the document or try to reach us via Drift Chat under [Steadfast.tech]: http://steadfast.tech  
 
 ### How To Use
 
@@ -76,8 +76,7 @@ Debugging and troubleshooting
 
 
 ### Simple client server example
-
-Simple example: NodeServer is listening for events, NodeClient connects to NodeServer and sends events: 
+NodeServer is listening for events, NodeClient connects to NodeServer and sends events: 
 (myServiceClient) ----> (myServiceServer)
 
 Lets create server first
@@ -105,6 +104,7 @@ import Node from 'zeronode';
 }());
 
 ```
+Now lets create a client
 
 myServiceClient.js
 ```javascript
@@ -131,9 +131,10 @@ import Node from 'zeronode'
 
 ```
 
-### More of layering. 
-Nodes can be grouped in layers (and other options) and then allowing to send messages to only filtered nodes.
-The filtering is done on senders side which keeps all the information about the nodes (both connected to sender node and the ones that sender Node is conencted to)
+### More of layering and grouping of Nodes. 
+- Nodes can be grouped in layers (and other options) and then send messages to only filtered nodes by layers or other options.
+- The filtering is done on senders side which keeps all the information about the nodes (both connected to sender node and the ones that
+sender Node is conencted to)
 
 In this example, we will create one node that will bind in some address, and three nodes will connect to that node.
 2 connected nodes will be in same group, 1 in another.
