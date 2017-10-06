@@ -434,7 +434,7 @@ export default class Node extends EventEmitter {
         this.logger.transports.console.level = level;
     }
 
-    addFileToLog ({filename, level}) {
+    addFileToLog (filename, level) {
         let _scope = _private.get(this);
         this.logger.add(winston.transports.File, {filename, level});
     }

@@ -94,7 +94,7 @@ export default class Socket extends EventEmitter {
                     let requestObj = _scope.requests.get(envelopId);
                     _scope.requests.delete(envelopId);
                     if (_scope.metric) {
-                        this.emit(Enum.REQUEST_TIMEOUTED, envelop.getRecipient());
+                        this.emit(Enum.REQUEST_TIMEOUT, envelop.getRecipient());
                     }
                     requestObj.reject(`Request ${envelopId} timeouted on socket ${this.getId()}`);
                 }

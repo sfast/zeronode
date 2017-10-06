@@ -9,6 +9,12 @@ export default {
         RESPONSE  :3,
         PROXY : 4
     },
+
+
+    MONITOR_TIMEOUT: 500,
+    CONNECTION_TIMEOUT: 20000,
+
+
     SEND_TICK: 'sendTick',
     SEND_REQUEST: 'sendRequest',
     GOT_TICK: 'gotTick',
