@@ -44,6 +44,7 @@ Basic methods
 5. `stop()` - Unbinds the node, and disconnects from all addresses.
 
 Simple messaging methods
+
 6. `onRequest(endpoint: String, handler)` - adds request handler to given endpoint.
 
 7. `onTick(event: String, handler)` - adds event handler to given event.
@@ -59,6 +60,7 @@ if handler is not provided then removes all the listeners.
 11. `tick(id, event, data)` - emits event to given node.
 
 Load balancing methods
+
 12. `requestAny(endpoint, data, timeout, filter)` - send request to "only one" node from the nodes that satisfy given filter.
 
 13. `tickAny(event, data, filter)` - ticks to "only one" node from the nodes that satisfy given filter.
@@ -66,6 +68,7 @@ Load balancing methods
 14. `tickAll(event, data, filter)` - ticks to all nodes that satisfies to given filer.
 
 Debugging and troubleshooting
+
 15. `enableMetrics(interval)` - enables metrics, events will be triggered by given interval. Default interval is 1000 ms.
 
 16. `disableMetrics()` - disables metrics.
