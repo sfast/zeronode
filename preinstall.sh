@@ -61,8 +61,6 @@ fi
 
 pkg-config libzmq --exists
 
-haveZmq=$?
-
 if [ $haveZmq == 0 ]; then
     exit 0;
 fi
