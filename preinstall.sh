@@ -61,6 +61,8 @@ fi
 
 pkg-config libzmq --exists
 
+haveZmq=$?
+
 if [ $haveZmq == 0 ]; then
     exit 0;
 fi
@@ -76,6 +78,6 @@ elif [ "${OS}" == "linux" ]; then
         if [ -z "$(which apt)" ]; then
             exit 127
         fi
-        sudo apt-get install libzmq-dev
+        sudo apt-get -y install libzmq-dev
     fi
 fi
