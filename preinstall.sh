@@ -68,7 +68,7 @@ if [ "${OS}" != "mac" ] && [ "${DistroBasedOn}" != "debian" ] && [ "${DistroBase
 fi
 
 if [ -z "$(which pkg-config)" ]; then
-    sudo $packageManager install pkg-config
+    $packageManager install pkg-config
 fi
 
 pkg-config libzmq --exists
