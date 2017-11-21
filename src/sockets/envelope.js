@@ -1,4 +1,5 @@
-import crypto from 'crypto'
+import crypto from 'crypto';
+import BufferAlloc from 'buffer-alloc';
 
 class Parse {
     // serialize
@@ -77,23 +78,23 @@ export default class Envelop {
     getBuffer() {
         let bufferArray = [];
 
-        let typeBuffer = Buffer.alloc(1);
+        let typeBuffer = BufferAlloc(1);
         typeBuffer.writeInt8(this.type);
         bufferArray.push(typeBuffer);
 
-        let idBuffer = Buffer.alloc(20);
+        let idBuffer = BufferAlloc(20);
         idBuffer.write(this.id, 0, 20, 'hex');
         bufferArray.push(idBuffer);
 
-        let ownerBuffer = Buffer.alloc(20);
+        let ownerBuffer = BufferAlloc(20);
         ownerBuffer.write(this.owner.toString());
         bufferArray.push(ownerBuffer);
 
-        let recipientBuffer = Buffer.alloc(20);
+        let recipientBuffer = BufferAlloc(20);
         recipientBuffer.write(this.recipient.toString());
         bufferArray.push(recipientBuffer);
 
-        let tagBuffer = Buffer.alloc(20, '');
+        let tagBuffer = BufferAlloc(20, '');
         tagBuffer.write(this.tag.toString());
         bufferArray.push(tagBuffer);
 

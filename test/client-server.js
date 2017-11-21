@@ -73,11 +73,13 @@ describe('Client/Server', () => {
         let expectedMessage = 'xndzor';
         server.bind(address)
             .then(() => {
-                client.connect(address);
+                return client.connect(address);
+            })
+            .then(() => {
                 client.onTick('tandz', message => {
                     assert.equal(message, expectedMessage);
                     done()
-                })
+                });
                 server.tick(client.getId(), 'tandz', expectedMessage);
             })
     });
@@ -86,7 +88,9 @@ describe('Client/Server', () => {
         let expectedMessage = 'xndzor';
         server.bind(address)
             .then(() => {
-                client.connect(address);
+                return client.connect(address);
+            })
+            .then(() => {
                 return server.request(client.getId(), 'tandz', expectedMessage, 500);
             })
             .catch(err => {
@@ -99,11 +103,13 @@ describe('Client/Server', () => {
         let expectedMessage = 'xndzor';
         server.bind(address)
             .then(() => {
-                client.connect(address);
+                return client.connect(address);
+            })
+            .then(() => {
                 client.onRequest('tandz', ({body, reply}) => {
                     assert.equal(body, expectedMessage);
                     reply(body);
-                })
+                });
                 return server.request(client.getId(), 'tandz', expectedMessage);
             })
             .then(message => {
