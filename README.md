@@ -33,7 +33,7 @@ Much more interesting patterns and features you can discover by reading the docu
 
 ### Installation & Important notes 
 Zeronode depends on <a href="http://zeromq.org" target="_blank">zeromq</a>
-<br/>:loudspeaker::loudspeaker: For Debian, Ubuntu, MacOS, Fedora, Redhat, SUSE you can just run
+<br/>:loudspeaker::loudspeaker: For Debian, Ubuntu, MacOS, Fedora, Redhat you can just run
 ```bash
 $ npm install zeronode
 ```
