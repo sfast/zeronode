@@ -1,7 +1,7 @@
 ## Zeronode - minimal building block for NodeJS microservices
 ![Zeronode](https://i.imgur.com/NZVXZPo.png)
 
-### Why you need ZeroNode ? :neckbeard:
+### Why you need ZeroNode ? 
 Application backends are beckaming complex these days and there are lots of moving parts talking to each other through network.
 There is a great difference between sending a few bytes from A to B, and doing messaging in reliable way. :heavy_exclamation_mark::heavy_exclamation_mark::heavy_exclamation_mark:
 - How to handle dynamic components :question: (i.e., pieces that come and/or go away temporarily, scaling a microservice instances )
