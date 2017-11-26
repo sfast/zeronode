@@ -9,7 +9,7 @@ There is a great difference between sending a few bytes from A to B, and doing m
 - How to route messages in complex microservice architechture :question: (i.e. one to one, one to many, custom grouping messaging)
 - How we handle network errors :question: (i.e., reconnecting of various pieces)
 
-We created Zeronode on top of [zeromq](http://zeromq.org) as to address [these](http://zguide.zeromq.org/page:all#Why-We-Needed-ZeroMQ) 
+We created Zeronode on top of <a href="http://zeromq.org" target="_blank">zeromq</a> as to address <a href="http://zguide.zeromq.org/page:all#Why-We-Needed-ZeroMQ" target="_blank">these</a>
 and some more common problems that developers will face once building solid systems.
 <br/>
 With zeronode its just super simple to create complex server-to-server communications (i.e. build network topologies).
@@ -28,16 +28,17 @@ Think of every __node__ as an actor (i.e. _participant, minimal building block_)
 - :point_right: data transfers between __node__-s via both _request/reply_ and _tick_ (fire forget) patterns
 
 :mortar_board::mortar_board::mortar_board: <br/>
-Much more interesting patterns and features you can discover by reading the document or try to reach us via Drift Chat under [Steadfast.tech](http://steadfast.tech)
+Much more interesting patterns and features you can discover by reading the document or try to reach us via Drift Chat under 
+<a href="http://steadfast.tech" target="_blank">Steadfast.tech</a>
 
 ### Installation & Important notes 
-Zeronode depends on [zeromq](http://zeromq.org)
+Zeronode depends on <a href="http://zeromq.org" target="_blank">zeromq</a>
 <br/>:loudspeaker::loudspeaker: For Debian, Ubuntu, MacOS, Fedora, Redhat, SUSE you can just run
 ```bash
 $ npm install zeronode
 ```
 and it'll also install [zeromq](http://zeromq.org) for you. 
-<br/>Kudos :raised_hands: to [Dave](https://github.com/davidharutyunyan) for adding install scripts.
+<br/>Kudos :raised_hands: to <a href="https://github.com/davidharutyunyan" target="_blank">Dave</a> for adding install scripts.
 For other platforms please open an issue or feel free to contrubute.
 
 ### How To Use
@@ -264,7 +265,7 @@ server.tickAll('foobar', { foo: 'bar' }, {layer: /[A-Z]/})
 ```
 
 ### You still have questions ?
-Try to reach us via Drift Chat under [Steadfast.tech](http://steadfast.tech)
+Try to reach us via Drift Chat under <a href="http://steadfast.tech" target="_blank">Steadfast.tech</a>
 
 ### What We Are Using
-Under the hood we are using [zeromq](http://zeromq.org)-s Dealer and Router sockets.
+Under the hood we are using <a href="http://zeromq.org" target="_blank">zeromq</a>-s Dealer and Router sockets.
