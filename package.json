@@ -1,15 +1,35 @@
 {
   "name": "zeronode",
-  "version": "1.0.12",
-  "description": "",
+  "version": "1.0.13",
+  "description": "Minimal building block for NodeJS microservices",
   "main": "./dist/index.js",
   "directories": {
     "example": "examples"
   },
+  "keywords": [
+    "micro",
+    "service",
+    "microservice",
+    "micro-service",
+    "microservices",
+    "micro-services",
+    "services",
+    "micro services",
+    "micro service",
+    "networking",
+    "distributed",
+    "distributed-message",
+    "distributed message",
+    "loadbalancing",
+    "loadbalance"
+  ],
   "scripts": {
     "test": "mocha --require babel-core/register",
+    "rimraf": "rimraf",
+    "clear": "rimraf ./dist",
     "compile": "./node_modules/babel-cli/bin/babel.js -d dist/ src/",
-    "prepublish": "npm run compile",
+    "build": "npm run clear && npm run compile",
+    "prepublish": "npm run build",
     "preinstall": "bash preinstall.sh",
     "doc": "./node_modules/.bin/jsdoc -c jsdoc.json"
   },
@@ -50,6 +70,7 @@
     "babel-preset-es2017": "^6.24.1",
     "chai": "^4.0.2",
     "jsdoc-strip-async-await": "^0.1.0",
-    "mocha": "^3.4.2"
+    "mocha": "^3.4.2",
+    "rimraf": "^2.6.2"
   }
 }
