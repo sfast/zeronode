@@ -8,10 +8,15 @@ OS=`lowercase \`uname\``
 KERNEL=`uname -r`
 MACH=`uname -m`
 
+packageManager="sudo apt-get"
+libzmq="libzmq3-dev"
+
 if [ "${OS}" == "windowsnt" ]; then
     OS=windows
 elif [ "${OS}" == "darwin" ]; then
     OS=mac
+    packageManager="brew"
+    libzmq="libzmq-dev"
 else
     OS=`uname`
     if [ "${OS}" = "SunOS" ] ; then
@@ -19,15 +24,18 @@ else
         ARCH=`uname -p`
         OSSTR="${OS} {$REV}(${ARCH} `uname -v`)"
     elif [ "${OS}" = "AIX" ] ; then
+        packageManager="smit"
         OSSTR="${OS} `oslevel` (`oslevel -r`)"
     elif [ "${OS}" = "Linux" ] ; then
         if [ -f /etc/redhat-release ] ; then
             DistroBasedOn='RedHat'
+            packageManager="yum"
             DIST=`cat /etc/redhat-release |sed s/\ release.*//`
             PSUEDONAME=`cat /etc/redhat-release | sed s/.*\(// | sed s/\)//`
             REV=`cat /etc/redhat-release | sed s/.*release\ // | sed s/\ .*//`
         elif [ -f /etc/SuSE-release ] ; then
             DistroBasedOn='SuSe'
+            packageManager="zypper"
             PSUEDONAME=`cat /etc/SuSE-release | tr "\n" ' '| sed s/VERSION.*//`
             REV=`cat /etc/SuSE-release | tr "\n" ' ' | sed s/.*=\ //`
         elif [ -f /etc/mandrake-release ] ; then
@@ -55,8 +63,12 @@ else
 
 fi
 
-if [ "${OS}" == "win" ]; then
+if [ "${OS}" != "mac" ] && [ "${DistroBasedOn}" != "debian" ] && [ "${DistroBasedOn}" != "redhat" ]; then
     exit 0
+fi
+
+if [ -z "$(which pkg-config)" ]; then
+    $packageManager install pkg-config
 fi
 
 pkg-config libzmq --exists
@@ -68,16 +80,5 @@ if [ $haveZmq == 0 ]; then
 fi
 
 
-if [ "${OS}" == "mac" ]; then
-    if [ -z "$(which brew)" ]; then
-        exit 127
-    fi
-    brew install zeromq
-elif [ "${OS}" == "linux" ]; then
-    if [ "${DistroBasedOn}" == "debian" ]; then
-        if [ -z "$(which apt)" ]; then
-            exit 127
-        fi
-        sudo apt-get -y install libzmq-dev
-    fi
-fi
+
+$packageManager install -y $libzmq
