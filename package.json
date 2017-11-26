@@ -1,6 +1,6 @@
 {
   "name": "zeronode",
-  "version": "1.0.11",
+  "version": "1.0.12",
   "description": "",
   "main": "./dist/index.js",
   "directories": {
@@ -10,6 +10,7 @@
     "test": "mocha --require babel-core/register",
     "compile": "./node_modules/babel-cli/bin/babel.js -d dist/ src/",
     "prepublish": "npm run compile",
+    "preinstall": "bash preinstall.sh",
     "doc": "./node_modules/.bin/jsdoc -c jsdoc.json"
   },
   "repository": {
@@ -24,7 +25,9 @@
   "homepage": "https://github.com/sfast/zeronode#readme",
   "dependencies": {
     "animal-id": "0.0.1",
+    "babel-runtime": "^6.26.0",
     "bluebird": "^3.5.0",
+    "buffer-alloc": "^1.1.0",
     "crypto": "0.0.3",
     "debug": "^2.6.3",
     "docdash": "^0.4.0",

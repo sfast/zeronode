@@ -153,7 +153,7 @@ export default class Node extends EventEmitter {
     }
 
     // ** connect returns the id of the connected node
-    async connect(address = 'tcp://127.0.0.1:3000') {
+    async connect(address = 'tcp://127.0.0.1:3000', timeout) {
         if (typeof address != 'string' || address.length == 0) {
             throw new Error(`Wrong type for argument address ${address}`)
         }
@@ -165,53 +165,71 @@ export default class Node extends EventEmitter {
             return _scope.nodeClientsAddressIndex.get(addressHash)
         }
 
-        let client = new Client({id: _scope.id, options: _scope.options, logger: this.logger});
-        if (_scope.metric.status) client.setMetric(true);
+        let client = new Client({ id: _scope.id, options: _scope.options, logger: this.logger });
+
+        if (_scope.metric.status) {
+            client.setMetric(true)
+        }
+
         client.on(events.SERVER_FAILURE, this::_serverFailureHandler);
+
         client.on('error', (err) => {
             this.emit('error', err)
         });
+
         client.on(socketEvents.SEND_TICK, () => {
             if (_scope.metric.status) {
                 _scope.metric.info.sendTick(client.getServerActor().getId())
             }
         });
+
         client.on(socketEvents.GOT_TICK, () => {
             if (_scope.metric.status) {
                 _scope.metric.info.gotTick(client.getServerActor().getId())
             }
         });
+
         client.on(socketEvents.SEND_REQUEST, (id) => {
             if (_scope.metric.status) {
                 _scope.metric.info.sendRequest(id)
             }
         });
+
         client.on(socketEvents.GOT_REQUEST, () => {
             if (_scope.metric.status) {
                 _scope.metric.info.gotRequest(client.getServerActor().getId())
             }
         });
+
         client.on(socketEvents.REQUEST_TIMEOUT, () => {
             if (_scope.metric.status) {
                 _scope.metric.info.requestTimeout(client.getServerActor().getId())
             }
         });
+
         client.on(socketEvents.GOT_REPLY, ({id, sendTime, getTime, replyTime, replyGetTime}) => {
             if (_scope.metric.status) {
                 _scope.metric.info.gotReply({id, sendTime, getTime, replyTime, replyGetTime})
             }
         });
+
         client.on(events.SERVER_STOP, (serverActor) => {
             this.emit(events.SERVER_STOP, serverActor.toJSON())
         });
-        let {actorId, options} = await client.connect(address);
+
+        let { actorId, options } = await client.connect(address, timeout);
 
         this.logger.info(`Node connected: ${this.getId()} -> ${actorId}`);
+
         _scope.nodeClientsAddressIndex.set(addressHash, actorId);
         _scope.nodeClients.set(actorId, client);
 
         this::_addExistingListenersToClient(client);
-        return {actorId, options}
+
+        return {
+            actorId,
+            options
+        };
     }
 
     async disconnect(address = 'tcp://127.0.0.1:3000') {

@@ -3,12 +3,12 @@
  */
 
 export let events = {
-    CLIENT_CONNECTED: 2,
-    CLIENT_FAILURE: 3,
-    CLIENT_STOP : 4,
-    CLIENT_PING : 5,
-    OPTIONS_SYNC: 6,
-    SERVER_FAILURE : 7,
-    SERVER_STOP: 8,
-    METRICS: 9
+    CLIENT_CONNECTED: 1,
+    CLIENT_FAILURE: 2,
+    CLIENT_STOP : 3,
+    CLIENT_PING : 4,
+    OPTIONS_SYNC: 5,
+    SERVER_FAILURE : 6,
+    SERVER_STOP: 7,
+    METRICS: 8
 };

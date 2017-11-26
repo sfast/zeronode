@@ -38,10 +38,10 @@ export default class Client extends DealerSocket {
     }
 
     // ** returns a promise which resolves with server model after server replies to events.CLIENT_CONNECTED
-    async connect(serverAddress) {
+    async connect(serverAddress, timeout) {
         try {
             let _scope = _private.get(this);
-            await super.connect(serverAddress);
+            await super.connect(serverAddress, timeout);
             let {actorId, options} = await this.request(events.CLIENT_CONNECTED, {actorId: this.getId(), options: this.getOptions()});
             // ** creating server model and setting it online
             _scope.server = new ActorModel( {id: actorId, options: options, online: true, address: serverAddress});
@@ -77,7 +77,7 @@ export default class Client extends DealerSocket {
             if (options) {
                 disconnectData.options = options;
             }
-            if (!this.getServerActor().isOnline()) {
+            if (this.getServerActor() && !this.getServerActor().isOnline()) {
                 return this.getServerActor().getId();
             }
             let serverId = await this.request(events.CLIENT_STOP, disconnectData);
