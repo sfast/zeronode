@@ -1,7 +1,7 @@
 ## Zeronode - minimal building block for NodeJS microservices
 ![Zeronode](https://i.imgur.com/NZVXZPo.png)
 
-### Why you need ZeroNode ? :neckbeard:
+### Why you need ZeroNode ? 
 Application backends are beckaming complex these days and there are lots of moving parts talking to each other through network.
 There is a great difference between sending a few bytes from A to B, and doing messaging in reliable way. :heavy_exclamation_mark::heavy_exclamation_mark::heavy_exclamation_mark:
 - How to handle dynamic components :question: (i.e., pieces that come and/or go away temporarily, scaling a microservice instances )
@@ -33,7 +33,7 @@ Much more interesting patterns and features you can discover by reading the docu
 
 ### Installation & Important notes 
 Zeronode depends on <a href="http://zeromq.org" target="_blank">zeromq</a>
-<br/>:loudspeaker::loudspeaker: For Debian, Ubuntu, MacOS, Fedora, Redhat, SUSE you can just run
+<br/>:loudspeaker::loudspeaker: For Debian, Ubuntu, MacOS, Fedora, Redhat you can just run
 ```bash
 $ npm install zeronode
 ```
