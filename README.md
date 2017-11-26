@@ -1,18 +1,28 @@
-# zeroNode
+## Zeronode - minimal building block for NodeJS microservices
+![Zeronode](https://i.imgur.com/NZVXZPo.png)
 
-### About
- 
-With zeroNode it's easy to create server(s) <---> server(s) communication 
-<br/>(e.g microservices).
+### Why ?
+Application backends are beckaming complex these days and there are lots of moving parts talking to each other through network.
+There is a great difference between sending a few bytes from A to B, and doing messaging in reliable way. :heavy_exclamation_mark::heavy_exclamation_mark::heavy_exclamation_mark:
+- How to handle dynamic components :question: (i.e., pieces that come and/or go away temporarily, scaling a microservice instances )
+- How to handle messages that we can't deliver immediately :question: (e.g waiting for a component to come back online)
+- How to route messages in complex microservice architechture :question: (i.e. one to one, one to many, custom grouping messaging)
+- How we handle network errors :question: (i.e., reconnecting of various pieces)
 
-### How To Install
-First of all check if you have installed [zeromq](http://zeromq.org).
+We created Zeronode on top of [zeromq](http://zeromq.org) as to address [these](http://zguide.zeromq.org/page:all#Why-We-Needed-ZeroMQ) 
+and some more common problems that developers will face once building a solid systems.
+<br/>
+With zeronode its just super simple to create complex server-to-server communications.
 
-After that you can install zeronode.
-
+### Installation & Important notes 
+Zeronode depends on [zeromq](http://zeromq.org)
+<br/>:loudspeaker::loudspeaker: For Debian, Ubuntu, MacOS, Fedora, Redhat, SUSE you can just run
 ```bash
 $ npm install zeronode
 ```
+and it'll also install [zeromq](http://zeromq.org) for you. 
+<br/>Kudos to [Dave](https://github.com/davidharutyunyan) for adding install scripts.
+For other types of OS please open an issue or feel free to contrubute.
 
 ### Abstract - What is a Node ?
 - Think of every Node as an actor (participant) in a networking of entire system (server, vm, process, container etc ...)
