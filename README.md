@@ -1,4 +1,5 @@
-## Zeronode - minimal building block for NodeJS microservices [<img src="https://img.shields.io/gitter/room/nwjs/nw.js.svg">](https://gitter.im/npm-zeronode/Lobby) 
+[<img src="https://img.shields.io/gitter/room/nwjs/nw.js.svg">](https://gitter.im/npm-zeronode/Lobby) <br/>
+## Zeronode - minimal building block for NodeJS microservices 
 ![Zeronode](https://i.imgur.com/NZVXZPo.png)
 
 ### Why you need ZeroNode ? 
@@ -265,7 +266,8 @@ server.tickAll('foobar', { foo: 'bar' }, {layer: /[A-Z]/})
 ```
 
 ### You still have questions ?
-Try to reach us via Drift Chat under <a href="http://steadfast.tech" target="_blank">Steadfast.tech</a>
+Try to reach us via Drift Chat under <a href="http://steadfast.tech" target="_blank">Steadfast.tech</a> <br/>
+or ask a question under zeronode gitter <br/> [<img src="https://img.shields.io/gitter/room/nwjs/nw.js.svg">](https://gitter.im/npm-zeronode/Lobby) <br/>
 
 ### What We Are Using
 Under the hood we are using <a href="http://zeromq.org" target="_blank">zeromq</a>-s Dealer and Router sockets.
