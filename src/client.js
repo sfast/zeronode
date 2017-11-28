@@ -1,5 +1,5 @@
 import {events} from './enum';
-import globals from './globals';
+import Globals from './globals';
 import ActorModel from './actor';
 import * as Errors from './errors'
 
@@ -8,7 +8,7 @@ import {Dealer as DealerSocket} from './sockets';
 let _private = new WeakMap();
 
 export default class Client extends DealerSocket {
-    constructor(data) {
+    constructor(data = {}) {
         let {id, options, logger} = data;
 
         super({id, logger});
@@ -32,9 +32,11 @@ export default class Client extends DealerSocket {
         return _private.get(this).server;
     }
 
-    setOptions (options) {
+    setOptions (options, notify = true) {
         super.setOptions(options);
-        this.tick(events.OPTIONS_SYNC, {actorId: this.getId(), options});
+        if(notify) {
+            this.tick(events.OPTIONS_SYNC, {actorId: this.getId(), options});
+        }
     }
 
     // ** returns a promise which resolves with server model after server replies to events.CLIENT_CONNECTED
@@ -71,20 +73,22 @@ export default class Client extends DealerSocket {
     }
 
     async disconnect(options) {
+        let _scope = _private.get(this);
         try {
-            let _scope = _private.get(this);
             let disconnectData = {actorId: this.getId()};
+
             if (options) {
                 disconnectData.options = options;
             }
-            if (this.getServerActor() && !this.getServerActor().isOnline()) {
-                return this.getServerActor().getId();
+
+            if (this.getServerActor() && this.getServerActor().isOnline()) {
+                await this.request(events.CLIENT_STOP, disconnectData);
+                _scope.server.setOffline();
             }
-            let serverId = await this.request(events.CLIENT_STOP, disconnectData);
+
             this::_stopServerPinging();
+
             super.disconnect();
-            _scope.server.setOffline();
-            return serverId;
         } catch (err) {
             this.emit('error', new Errors.ConnectionError({err, id: this.getId(), state: 'disconnecting'}));
         }
@@ -137,10 +141,13 @@ function _startServerPinging(){
         clearInterval(_scope.pingInterval);
     }
 
+    let options = this.getOptions();
+    let interval = options.CLIENT_PING_INTERVAL || Globals.CLIENT_PING_INTERVAL;
+
     _scope.pingInterval = setInterval(()=> {
         let pingData = { actor: this.getId(), stamp : Date.now()};
         this.tick(events.CLIENT_PING, pingData);
-    } , globals.CLIENT_PING_INTERVAL);
+    } , interval);
 }
 
 function _stopServerPinging() {

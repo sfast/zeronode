@@ -50,7 +50,7 @@ export default class Socket extends EventEmitter {
 
     setOnline() {
         let _scope = _private.get(this);
-        _scope.online = true;
+        _scope.online = Date.now();
     }
 
     setOffline() {
@@ -60,10 +60,10 @@ export default class Socket extends EventEmitter {
 
     isOnline(){
         let _scope = _private.get(this);
-        return _scope.online;
+        return !!_scope.online;
     }
 
-    setOptions(options) {
+    setOptions(options = {}) {
         let _scope = _private.get(this);
         _scope.options = options;
     }

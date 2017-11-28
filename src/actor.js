@@ -20,8 +20,8 @@ export default class ActorModel {
 
     toJSON () {
         return {
-            address: this.address,
             id: this.id,
+            address: this.address,
             options: this.options
         }
     }
@@ -66,15 +66,15 @@ export default class ActorModel {
         this.pingStamp = stamp;
         if (data) {
             if (this.ghost) {
-                this.setOffline()
+                this.setOffline();
             }
             if (!this.online) {
-                this.markGhost()
+                this.markGhost();
             }
             return;
         }
         this.ghost = false;
-        this.setOnline()
+        this.setOnline();
     }
 
     setAddress(address) {
@@ -90,7 +90,7 @@ export default class ActorModel {
     }
 
     mergeOptions(options) {
-        this.options = Object.assign(this.options, options);
+        this.options = Object.assign({}, this.options, options);
         return this.options;
     }
 

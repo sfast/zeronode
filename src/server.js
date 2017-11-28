@@ -10,21 +10,23 @@ import { Router as RouterSocket } from './sockets';
 let _private = new WeakMap();
 
 export default class Server extends RouterSocket {
-    constructor(data) {
-        let {id, bind, logger,  options} = data;
+    constructor(data = {}) {
+        let {id, bind, logger, options} = data;
 
         super({id, logger});
         super.setOptions(options);
-        this.setAddress(bind);
 
         let _scope = {
             clientModels : new Map(),
-            clientCheckInterval : null,
-            logger: logger || console
+            clientCheckInterval : null
         };
 
         _private.set(this, _scope);
-        _scope.logger.info(`Server ${this.getId()} started`);
+
+        this.logger = logger || console ;
+        this.setAddress(bind);
+
+        this.logger.info(`Server ${this.getId()} started`);
     }
 
     getClientById(clientId) {
@@ -33,26 +35,27 @@ export default class Server extends RouterSocket {
     }
 
     isClientOnline(id){
-        return this.getClientById(id) ? this.getClientById(id).isOnline() : false;
+        let clientModel = this.getClientById(id);
+        return  clientModel ? clientModel.isOnline() : false;
     }
 
     getOnlineClients() {
         let _scope = _private.get(this);
         let onlineClients = [];
         _scope.clientModels.forEach((actor) => {
-           if( actor.isOnline()) {
-               onlineClients.push(actor);
-           }
+            if (actor.isOnline()) {
+                onlineClients.push(actor);
+            }
         }, this);
-
-        return onlineClients;
     }
 
-    setOptions(options) {
-        super.setOptions();
-        _.each(this.getOnlineClients(), (client) => {
-            this.tick(client.id, events.OPTIONS_SYNC, {actorId: this.getId(), options});
-        })
+    setOptions(options, notify = true) {
+        super.setOptions(options);
+        if(notify) {
+            _.each(this.getOnlineClients(), (client) => {
+                this.tick(client.id, events.OPTIONS_SYNC, {actorId: this.getId(), options});
+            })
+        }
     }
 
     async bind(bindAddress) {
@@ -82,7 +85,7 @@ export default class Server extends RouterSocket {
         try {
             this.offRequest(events.CLIENT_CONNECTED);
             this.offRequest(events.CLIENT_STOP);
-            this.offRequest(events.CLIENT_PING);
+            this.offTick(events.CLIENT_PING);
             this.offTick(events.OPTIONS_SYNC);
 
             _.each(this.getOnlineClients(), (client) => {
@@ -113,17 +116,15 @@ function _clientPingTick({actor, stamp, data}) {
 }
 
 //TODO:: @dave, @avar why merge options when disconnecting
-function _clientStopRequest(request){
-    let context = this;
-    let _scope = _private.get(context);
+function _clientStopRequest(request) {
+    let _scope = _private.get(this);
     let {actorId, options} = request.body;
 
     let actorModel = _scope.clientModels.get(actorId);
     actorModel.markStopped();
     actorModel.mergeOptions(options);
 
-    context.emit(events.CLIENT_STOP, actorModel);
-    request.reply(actorModel.getId());
+    this.emit(events.CLIENT_STOP, actorModel);
 }
 
 function _clientConnectedRequest(request) {
@@ -146,21 +147,19 @@ function _clientConnectedRequest(request) {
 }
 
 // ** check clients heartbeat
-function _checkClientHeartBeat(){
-    let context = this;
-    let _scope = _private.get(this);
-    this.getOnlineClients().forEach((actor) => {
+function _checkClientHeartBeat() {
+    _.each(this.getOnlineClients(), (actor) => {
         if (!actor.isGhost()) {
             actor.markGhost();
         } else {
             actor.markFailed();
-            _scope.logger.warn(`Server ${context.getId()} identifies client failure`, actor);
-            context.emit(events.CLIENT_FAILURE, actor);
+            this.emit(events.CLIENT_FAILURE, actor);
+            this.logger.warn(`Server ${this.getId()} identifies client failure`, actor);
         }
-    }, this);
+    });
 }
 
-function _clientOptionsSync({actorId, options}){
+function _clientOptionsSync({actorId, options}) {
     try {
         let _scope = _private.get(this);
         let actorModel = _scope.clientModels.get(actorId);
@@ -169,6 +168,6 @@ function _clientOptionsSync({actorId, options}){
         }
         actorModel.setOptions(options);
     } catch (err) {
-        console.error('error while handling clientOptionsSync:', err);
+        this.logger.error('Error while handling clientOptionsSync:', err);
     }
 }
