@@ -47,6 +47,8 @@ export default class Server extends RouterSocket {
                 onlineClients.push(actor);
             }
         }, this);
+
+        return onlineClients;
     }
 
     setOptions(options, notify = true) {

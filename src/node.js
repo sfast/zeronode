@@ -105,7 +105,7 @@ export default class Node extends EventEmitter {
 
     getFilteredNodes({filter = {}, down = true, up = true} = {filter: {}, down: true, up: true}){
         let _scope = _private.get(this);
-        let nodes = [];
+        let nodes = new Set();
 
         function checkNode (node) {
             let options = node.getOptions();
@@ -118,7 +118,7 @@ export default class Node extends EventEmitter {
                 return true
             });
             if (!notSatisfying) {
-                nodes.push(node.id)
+                nodes.add(node.id)
             }
         }
         if(_scope.nodeServer && down) {
@@ -133,13 +133,19 @@ export default class Node extends EventEmitter {
                 }
             }, this)
         }
-        return nodes
+        return Array.from(nodes);
+    }
+
+    setAddress(bind) {
+        let _scope = _private.get(this);
+
+        if(_scope.nodeServer) {
+            _scope.nodeServer.setAddress(bind);
+        }
     }
 
     async bind(routerAddress) {
         let _scope = _private.get(this);
-        _scope.nodeServer.on(events.CLIENT_FAILURE, this::_clientFailureHandler);
-        _scope.nodeServer.on(events.CLIENT_CONNECTED, this::_clientConnectHandler);
         return await _scope.nodeServer.bind(routerAddress)
     }
 

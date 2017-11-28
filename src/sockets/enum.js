@@ -11,7 +11,7 @@ export default {
     },
 
 
-    MONITOR_TIMEOUT: 500,
+    MONITOR_TIMEOUT: 10,
     CONNECTION_TIMEOUT: 20000,
 
 
