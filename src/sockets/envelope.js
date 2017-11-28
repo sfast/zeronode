@@ -1,3 +1,4 @@
+import _ from 'underscore';
 import crypto from 'crypto';
 import BufferAlloc from 'buffer-alloc';
 
@@ -25,13 +26,14 @@ class Parse {
 
 
 export default class Envelop {
-    constructor({type, id, tag, data, owner = null, recipient = ''}) {
+    constructor({type, id = '', tag = '', data, owner = '', recipient = '' , mainEvent}) {
         if(type) {
             this.setType(type);
         }
 
         this.id = id || crypto.randomBytes(20).toString("hex");
         this.tag = tag;
+        this.mainEvent = mainEvent;
 
         if(data) {
             this.data = data;
@@ -42,12 +44,30 @@ export default class Envelop {
     }
 
     static readMetaFromBuffer(buffer) {
-        let type = buffer.readInt8(0);
-        let id = buffer.slice(1,21).toString("hex");
-        let owner = buffer.slice(21,41).toString('utf8').replace(/\0/g, '');
-        let recipient = buffer.slice(41,61).toString('utf8').replace(/\0/g, '');
-        let tag = buffer.slice(61,81).toString('utf8').replace(/\0/g, '');
-        return {type, id, owner, recipient, tag};
+        let mainEvent = !buffer.readInt8(0);
+
+        let type = buffer.readInt8(1);
+
+        let idStart = 6;
+        let idLength = buffer.readInt32LE(idStart - 4);
+        let id = buffer.slice(idStart, idStart + idLength).toString("hex");
+
+        let ownerStart = 4 + idStart + idLength;
+        let ownerLength = buffer.readInt32LE(ownerStart - 4);
+
+        let owner = buffer.slice(ownerStart, ownerStart + ownerLength).toString('utf8').replace(/\0/g, '');
+
+        let recipientStart = 4 + ownerStart + ownerLength;
+        let recipientLength = buffer.readInt32LE(recipientStart - 4);
+
+        let recipient = buffer.slice(recipientStart, recipientStart + recipientLength).toString('utf8').replace(/\0/g, '');
+
+        let tagStart = 4 + recipientStart + recipientLength;
+        let tagLength = buffer.readInt32LE(tagStart - 4);
+
+        let tag = buffer.slice(tagStart, tagStart + tagLength).toString('utf8').replace(/\0/g, '');
+
+        return {type, id, owner, recipient, tag, mainEvent};
     }
 
     static readDataFromBuffer(buffer) {
@@ -56,16 +76,18 @@ export default class Envelop {
     }
 
     static getDataBuffer(buffer) {
-        if(buffer.length > 81){
-            return buffer.slice(81);
+        let metaLength = Envelop.getMetaLength(buffer);
+
+        if(buffer.length > metaLength){
+            return buffer.slice(metaLength);
         }
 
         return null;
     }
 
     static fromBuffer(buffer) {
-        let {id, type, owner, recipient, tag} = Envelop.readMetaFromBuffer(buffer);
-        let envelop =  new Envelop({type, id, tag, owner, recipient});
+        let {id, type, owner, recipient, tag, mainEvent} = Envelop.readMetaFromBuffer(buffer);
+        let envelop =  new Envelop({type, id, tag, owner, recipient, mainEvent});
 
         let envelopData = Envelop.readDataFromBuffer(buffer);
         if(envelopData) {
@@ -75,27 +97,46 @@ export default class Envelop {
         return envelop;
     }
 
+    static stringToBuffer(str, encryption) {
+        let strLength = Buffer.byteLength(str, encryption);
+        let lengthBuffer = BufferAlloc(4);
+        lengthBuffer.writeInt32LE(strLength);
+        let strBuffer = BufferAlloc(strLength);
+        strBuffer.write(str, 0, strLength, encryption);
+        return Buffer.concat([lengthBuffer, strBuffer]);
+    }
+
+    static getMetaLength(buffer) {
+        let length = 2;
+
+        _.each(_.range(4), () => {
+            length += 4 + buffer.readInt32LE(length);
+        });
+
+        return length;
+    }
+
     getBuffer() {
         let bufferArray = [];
+
+        let mainEventBuffer = BufferAlloc(1);
+        mainEventBuffer.writeInt8(+this.mainEvent);
+        bufferArray.push(mainEventBuffer);
 
         let typeBuffer = BufferAlloc(1);
         typeBuffer.writeInt8(this.type);
         bufferArray.push(typeBuffer);
 
-        let idBuffer = BufferAlloc(20);
-        idBuffer.write(this.id, 0, 20, 'hex');
+        let idBuffer = Envelop.stringToBuffer(this.id.toString(), 'hex');
         bufferArray.push(idBuffer);
 
-        let ownerBuffer = BufferAlloc(20);
-        ownerBuffer.write(this.owner.toString());
+        let ownerBuffer = Envelop.stringToBuffer(this.owner.toString(), 'utf-8');
         bufferArray.push(ownerBuffer);
 
-        let recipientBuffer = BufferAlloc(20);
-        recipientBuffer.write(this.recipient.toString());
+        let recipientBuffer = Envelop.stringToBuffer(this.recipient.toString(), 'utf-8');
         bufferArray.push(recipientBuffer);
 
-        let tagBuffer = BufferAlloc(20, '');
-        tagBuffer.write(this.tag.toString());
+        let tagBuffer = Envelop.stringToBuffer(this.tag.toString(), 'utf-8');
         bufferArray.push(tagBuffer);
 
         if(this.data) {

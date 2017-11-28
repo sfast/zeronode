@@ -185,8 +185,8 @@ export default class Socket extends EventEmitter {
 function onSocketMessage(empty, envelopBuffer) {
     let _scope = _private.get(this);
     let self = this;
-    let {type, id, owner, recipient, tag} = Envelop.readMetaFromBuffer(envelopBuffer);
-    let envelop = new Envelop({type, id, owner, recipient, tag});
+    let {type, id, owner, recipient, tag, mainEvent} = Envelop.readMetaFromBuffer(envelopBuffer);
+    let envelop = new Envelop({type, id, owner, recipient, tag, mainEvent});
     let envelopData = Envelop.readDataFromBuffer(envelopBuffer);
 
     switch (type) {
