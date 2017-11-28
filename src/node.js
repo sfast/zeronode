@@ -526,12 +526,10 @@ function _addExistingListenersToClient(client) {
 function _removeClientAllListeners(client) {
     let _scope = _private.get(this);
 
-    // ** adding previously added onTick-s for this client to
     _scope.tickWatcherMap.forEach((tickWatcher, event) => {
-        client.offTick(event, this::fn);
+        client.offTick(event);
     }, this);
 
-    // ** adding previously added onRequests-s for this client to
     _scope.requestWatcherMap.forEach((requestWatcher, endpoint) => {
         client.offRequest(endpoint);
     }, this);
