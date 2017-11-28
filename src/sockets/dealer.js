@@ -4,35 +4,43 @@
 
 import zmq from 'zmq'
 
-import  Socket from './socket'
+import Socket from './socket'
 import Envelop from './envelope'
-import Enum from './enum'
-
-let EnvelopType = Enum.EnvelopType;
+import { Timeouts, EnvelopType, DealerEvent } from './enum'
 
 let _private = new WeakMap();
 
+// ** if there is no logger the default console will be used
 export default class DealerSocket extends Socket {
-    constructor({id, logger}) {
+    constructor(data = {}) {
+        let {id, options} = data;
+        options = options || {};
+
+        let logger = options.logger;
+        let monitorTimeout = options.MONITOR_TIMEOUT || Timeouts.MONITOR_TIMEOUT;
+
         let socket =  zmq.socket('dealer');
         super({id, socket, logger});
 
-        let _scope = {};
-        _scope.socket = socket;
+        // ** emitting disconnect
+        socket.on('disconnect', () => {
+            this.emit(DealerEvent.DISCONNECT)
+        });
 
         // ** monitoring connect / disconnect
+        socket.monitor(monitorTimeout, 0);
 
-        _scope.socket.on('disconnect', this::this.serverFailHandler);
+        let _scope = {
+            socket,
+            routerAddress : null
+        };
 
-        _scope.socket.monitor(Enum.MONITOR_TIMEOUT, 0);
-
-        _scope.routerAddress = null;
         _private.set(this, _scope);
     }
 
     getAddress() {
-        let _scope = _private.get(this);
-        return _scope.routerAddress;
+        let {routerAddress} = _private.get(this);
+        return routerAddress;
     }
 
     setAddress(routerAddress) {
@@ -44,43 +52,45 @@ export default class DealerSocket extends Socket {
 
     // ** not actually connected
     connect(routerAddress, timeout = -1) {
-        return new Promise((resolve, reject) => {
-            let _scope = _private.get(this);
-            let rejectionTimeout;
+        if(this.isOnline()) {
+            this.logger.info(`Dealer already connected`);
+            return Promise.resolve(true);
+        }
 
-            if(this.isOnline()) {
-                resolve(true);
-                return;
-            }
+        return new Promise((resolve, reject) => {
+            let {socket} = _private.get(this);
+            let rejectionTimeout;
 
             if(routerAddress) {
                 this.setAddress(routerAddress);
             }
 
-            _scope.socket.removeAllListeners('connect');
+            socket.removeAllListeners('connect');
 
             if (timeout != -1) {
                 rejectionTimeout = setTimeout(() => {
-                    _scope.socket.removeAllListeners('connect');
-                    reject('connection timeouted');
+                    socket.removeAllListeners('connect');
+                    reject('Dealer connection timeouted');
                     this.disconnect();
                 }, timeout);
             }
 
-            _scope.socket.on('connect', () => {
+            socket.on('connect', () => {
                 if (rejectionTimeout) {
                     clearTimeout(rejectionTimeout);
                 }
 
                 this.setOnline();
 
-                _scope.socket.removeAllListeners('connect');
-                _scope.socket.on('connect', this::this.handleReconnecting);
+                socket.removeAllListeners('connect');
+                socket.on('connect', (fd, serverAddress) => {
+                    this.emit(DealerEvent.RECONNECT, {fd, serverAddress})
+                });
 
                 resolve();
             });
 
-            _scope.socket.connect(this.getAddress());
+            socket.connect(this.getAddress());
 
             this.setOnline();
         });
@@ -91,22 +101,22 @@ export default class DealerSocket extends Socket {
         this.close();
     }
 
-    //** Polymorfic Functions
+    //** Polymorphic functions
     async request(event, data, timeout = 5000, to, mainEvent = false) {
-        let envelop = new Envelop({type: EnvelopType.SYNC, tag : event, data : data , owner : this.getId(), recipient: to, mainEvent});
+        let envelop = new Envelop({type: EnvelopType.SYNC, tag : event, data , owner : this.getId(), recipient: to, mainEvent});
         return super.request(envelop, timeout);
     }
 
     async tick(event, data, to, mainEvent = false) {
-        let envelop = new Envelop({type: EnvelopType.ASYNC, tag: event, data: data, owner: this.getId(), recipient: to, mainEvent});
+        let envelop = new Envelop({type: EnvelopType.ASYNC, tag: event, data, owner: this.getId(), recipient: to, mainEvent});
         return super.tick(envelop);
     }
 
     close () {
         super.close();
-        let _scope = _private.get(this);
-        _scope.socket.disconnect(_scope.routerAddress);
-        _scope.socket.removeAllListeners('conenct');
+        let {socket, routerAddress} = _private.get(this);
+        socket.disconnect(routerAddress);
+        socket.removeAllListeners('conenct');
         this.setOffline();
     }
 

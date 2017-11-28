@@ -1,26 +1,30 @@
 /**
  * Created by artak on 3/2/17.
  */
-import zmq from 'zmq'
-import Promise from 'bluebird'
+import zmq from 'zmq';
+import Promise from 'bluebird';
 
-import  Socket  from './socket'
-import Envelop from './envelope'
-import Enum from './enum'
-
-let EnvelopType = Enum.EnvelopType;
+import Socket  from './socket';
+import Envelop from './envelope';
+import {EnvelopType} from './enum';
 
 let _private = new WeakMap();
 
+// ** if there is no logger the default console will be used
 export default class RouterSocket extends Socket {
-    constructor({id, logger}) {
+    constructor(data = {}) {
+        let {id, options} = data;
+        options = options || {};
+        let logger = options.logger;
+
         let socket = zmq.socket('router');
         super({id, socket, logger});
 
-        let _scope = {};
-        _scope.socket = socket;
-        _scope.bindAddress = null;
-        _scope.logger = logger || console;
+        let _scope = {
+            socket,
+            bindAddress: null
+        };
+
         _private.set(this, _scope);
     }
 
@@ -38,10 +42,10 @@ export default class RouterSocket extends Socket {
 
     //** binded promise returns status
     async bind(bindAddress) {
-        let _scope = _private.get(this);
+        let {socket} = _private.get(this);
 
         if(this.isOnline()) {
-            return true;
+            return Promise.resolve(true);
         }
 
         if(bindAddress) {
@@ -49,9 +53,9 @@ export default class RouterSocket extends Socket {
         }
 
         return new Promise((resolve, reject) => {
-            _scope.socket.bind(this.getAddress(), (err) => {
+            socket.bind(this.getAddress(), (err) => {
                 if (err) {
-                    _scope.logger.error(err);
+                    this.logger.error(err);
                     return reject(err);
                 }
 
@@ -68,15 +72,15 @@ export default class RouterSocket extends Socket {
 
     close() {
         super.close();
-        let _scope = _private.get(this);
-        _scope.socket.unbindSync(_scope.bindAddress);
+        let {socket, bindAddress} = _private.get(this);
+        socket.unbindSync(bindAddress);
         this.setOffline();
     }
 
     //** Polymorfic Functions
 
     async request(to, event, data, timeout = 5000, mainEvent = false) {
-        let envelop = new Envelop({type: EnvelopType.SYNC, tag : event, data : data , owner : this.getId(), recipient: to, mainEvent});
+        let envelop = new Envelop({type: EnvelopType.SYNC, tag : event, data , owner : this.getId(), recipient: to, mainEvent});
         return super.request(envelop, timeout);
     }
 

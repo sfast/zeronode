@@ -1,12 +1,11 @@
 /**
- * Created by root on 7/11/17.
+ * Created by avar on 7/11/17.
  */
 import _ from 'underscore'
 
-
 class WatcherData {
-    constructor() {
-        this._nodeSet = new Set();
+    constructor(tag) {
+        this._tag = tag;
         this._fnSet = new Set();
     }
 
@@ -26,14 +25,13 @@ class WatcherData {
             return;
         }
 
-        this._fnSet = new Set();
+        this._fnSet.clear();
     }
 }
 
 export class TickWatcher extends  WatcherData {
     constructor(event) {
-        super();
-        this._tag = event;
+        super(event);
     }
 
     addTickListener(fn) {
@@ -45,10 +43,9 @@ export class TickWatcher extends  WatcherData {
     }
 }
 
-export class RequestWatcher extends  WatcherData{
+export class RequestWatcher extends  WatcherData {
     constructor(endpoint) {
-        super();
-        this._tag = endpoint;
+        super(endpoint);
     }
 
     addRequestListener(fn) {
