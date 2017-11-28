@@ -2,23 +2,37 @@
  * Created by artak on 2/15/17.
  */
 
-export default {
-    EnvelopType: {
-        ASYNC  : 1,
-        SYNC : 2,
-        RESPONSE  :3,
-        PROXY : 4
-    },
+let EnvelopType = {
+    ASYNC  : 1,
+    SYNC : 2,
+    RESPONSE  :3,
+    PROXY : 4
+};
 
-
-    MONITOR_TIMEOUT: 10,
-    CONNECTION_TIMEOUT: 20000,
-
-
+let MetricType = {
     SEND_TICK: 'sendTick',
     SEND_REQUEST: 'sendRequest',
     GOT_TICK: 'gotTick',
     GOT_REQUEST: 'gotRequest',
     GOT_REPLY: 'gotReply',
     REQUEST_TIMEOUT: 'requestTimeout'
+};
+
+let DealerEvent = {
+    RECONNECT : 'DEALER_RECONNECT',
+    DISCONNECT : 'DEALER_DISCONNECT'
+};
+
+let Timeouts = { MONITOR_TIMEOUT: 10};
+
+export { EnvelopType as EnvelopType };
+export { MetricType as MetricType };
+export { Timeouts as Timeouts };
+export { DealerEvent as DealerEvent};
+
+export default {
+    EnvelopType,
+    MetricType,
+    Timeouts,
+    DealerEvent
 };

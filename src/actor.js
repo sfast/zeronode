@@ -2,8 +2,11 @@
  * Created by artak on 3/2/17.
  */
 
+// ** ActorModel is a general model for describing both client and server nodes/actors
+
 export default class ActorModel {
-    constructor({id, online = true, ping = 0, ghost = 0, fail = 0, stop = 0, address = null, options = {}}) {
+    constructor(data = {}) {
+        let {id, online = true, address, options} = data;
         this.id = id;
 
         if(online) {
@@ -11,11 +14,12 @@ export default class ActorModel {
         }
 
         this.address = address;
-        this.pingStamp = ping;
-        this.ghost = ghost;
-        this.fail = fail;
-        this.stop = stop;
-        this.options = options;
+        this.options = options || {};
+
+        this.pingStamp = null;
+        this.ghost = false;
+        this.fail = false;
+        this.stop = false;
     }
 
     toJSON () {
@@ -40,6 +44,7 @@ export default class ActorModel {
         this.setOffline();
     }
 
+    // ** marking ghost means that there was some ping delay but that doeas not actually mean that its not there
     markGhost() {
         this.ghost = Date.now();
     }
@@ -55,6 +60,8 @@ export default class ActorModel {
     setOnline() {
         this.online = Date.now();
         this.ghost = false;
+        this.fail = false;
+        this.stop = false;
     }
 
     setOffline() {
@@ -62,18 +69,8 @@ export default class ActorModel {
         this.ghost = false;
     }
 
-    ping(stamp, data) {
+    ping(stamp) {
         this.pingStamp = stamp;
-        if (data) {
-            if (this.ghost) {
-                this.setOffline();
-            }
-            if (!this.online) {
-                this.markGhost();
-            }
-            return;
-        }
-        this.ghost = false;
         this.setOnline();
     }
 

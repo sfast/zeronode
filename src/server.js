@@ -1,7 +1,7 @@
 import _ from 'underscore';
 
 import { events } from './enum';
-import globals from './globals';
+import Globals from './globals';
 import ActorModel from './actor';
 import * as Errors from './errors'
 
@@ -12,8 +12,9 @@ let _private = new WeakMap();
 export default class Server extends RouterSocket {
     constructor(data = {}) {
         let {id, bind, logger, options} = data;
+        let routerSocketOptions = {logger};
 
-        super({id, logger});
+        super({id, routerSocketOptions});
         super.setOptions(options);
 
         let _scope = {
@@ -23,15 +24,14 @@ export default class Server extends RouterSocket {
 
         _private.set(this, _scope);
 
-        this.logger = logger || console ;
         this.setAddress(bind);
 
         this.logger.info(`Server ${this.getId()} started`);
     }
 
     getClientById(clientId) {
-        let _scope = _private.get(this);
-        return _scope.clientModels.has(clientId) ?_scope.clientModels.get(clientId) : null;
+        let {clientModels} = _private.get(this);
+        return clientModels.has(clientId) ? clientModels.get(clientId) : null;
     }
 
     isClientOnline(id){
@@ -40,9 +40,9 @@ export default class Server extends RouterSocket {
     }
 
     getOnlineClients() {
-        let _scope = _private.get(this);
+        let {clientModels} = _private.get(this);
         let onlineClients = [];
-        _scope.clientModels.forEach((actor) => {
+        clientModels.forEach((actor) => {
             if (actor.isOnline()) {
                 onlineClients.push(actor);
             }
@@ -106,23 +106,23 @@ export default class Server extends RouterSocket {
 }
 
 // ** Request handlers
-function _clientPingTick({actor, stamp, data}) {
-    let _scope = _private.get(this);
+function _clientPingTick({actor, stamp}) {
+    let {clientModels} = _private.get(this);
     // ** PING DATA FROM CLIENT, actor is client id
 
-    let actorModel = _scope.clientModels.get(actor);
+    let actorModel = clientModels.get(actor);
 
     if(actorModel) {
-        actorModel.ping(stamp, data);
+        actorModel.ping(stamp);
     }
 }
 
 //TODO:: @dave, @avar why merge options when disconnecting
 function _clientStopRequest(request) {
-    let _scope = _private.get(this);
+    let {clientModels} = _private.get(this);
     let {actorId, options} = request.body;
 
-    let actorModel = _scope.clientModels.get(actorId);
+    let actorModel = clientModels.get(actorId);
     actorModel.markStopped();
     actorModel.mergeOptions(options);
 
@@ -130,21 +130,23 @@ function _clientStopRequest(request) {
 }
 
 function _clientConnectedRequest(request) {
-    let _scope = _private.get(this);
+    let {clientModels, clientCheckInterval} = _private.get(this);
 
     let {actorId, options} = request.body;
 
     let actorModel = new ActorModel({id: actorId, options: options, online: true});
 
-    if(!_scope.clientCheckInterval) {
-        _scope.clientCheckInterval = setInterval(this::_checkClientHeartBeat, globals.CLIENT_MUST_HEARTBEAT_INTERVAL);
+    if(!clientCheckInterval) {
+        let options = this.getOptions();
+        let clientHeartbeatInterval = options.CLIENT_MUST_HEARTBEAT_INTERVAL || Globals.CLIENT_MUST_HEARTBEAT_INTERVAL;
+        clientCheckInterval = setInterval(this::_checkClientHeartBeat, clientHeartbeatInterval);
     }
 
     let replyData = Object.assign({actorId: this.getId(), options: this.getOptions()});
     // ** replyData {actorId, options}
     request.reply(replyData);
 
-    _scope.clientModels.set(actorId, actorModel);
+    clientModels.set(actorId, actorModel);
     this.emit(events.CLIENT_CONNECTED, actorModel);
 }
 
@@ -163,8 +165,8 @@ function _checkClientHeartBeat() {
 
 function _clientOptionsSync({actorId, options}) {
     try {
-        let _scope = _private.get(this);
-        let actorModel = _scope.clientModels.get(actorId);
+        let {clientModels} = _private.get(this);
+        let actorModel = clientModels.get(actorId);
         if (!actorModel) {
             throw new Error(`there is no client actor whit that id: ${actorId}`);
         }

@@ -12,27 +12,29 @@ import Server from './server';
 import Client from './client';
 import Errors from './errors';
 import Metric from './metric';
-import globals from './globals';
+import Globals from './globals';
 import { events } from './enum';
 import {Enum as socketEvents} from './sockets'
 import winston from 'winston'
 
 const _private = new WeakMap();
 
+let defaultLogger = new (winston.Logger)({
+    transports: [
+        new (winston.transports.Console)({level: 'error'}),
+    ]
+});
 
 export default class Node extends EventEmitter {
     constructor(data = {}) {
         super();
 
-        let {id, bind, options = {}} = data;
+        let {id, bind, options = {}, logger} = data;
 
         id = id || _generateNodeId();
 
-        this.logger = new (winston.Logger)({
-            transports: [
-                new (winston.transports.Console)({level: 'error'}),
-            ]
-        });
+        this.logger = logger || defaultLogger;
+
         let _scope = {
             id,
             options,
@@ -346,7 +348,7 @@ export default class Node extends EventEmitter {
         }
     }
 
-    async request(nodeId, endpoint, data, timeout = globals.REQUEST_TIMEOUT) {
+    async request(nodeId, endpoint, data, timeout = Globals.REQUEST_TIMEOUT) {
         let _scope = _private.get(this);
 
         let clientActor = this::_getClientByNode(nodeId);
@@ -375,7 +377,7 @@ export default class Node extends EventEmitter {
         throw new Error(`Node with ${nodeId} is not found.`)
     }
 
-    async requestAny(endpoint, data, timeout = globals.REQUEST_TIMEOUT, filter = {}, down, up) {
+    async requestAny(endpoint, data, timeout = Globals.REQUEST_TIMEOUT, filter = {}, down, up) {
         let filteredNodes = this.getFilteredNodes({filter, down, up});
         if (!filteredNodes.length) {
             throw {code: Errors.NO_NODE , message: 'there is no node with that filter'}
