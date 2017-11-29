@@ -22,12 +22,12 @@ export default class DealerSocket extends Socket {
     let socket = zmq.socket('dealer')
     super({id, socket, logger})
 
-        // ** emitting disconnect
+    // ** emitting disconnect
     socket.on('disconnect', () => {
       this.emit(DealerEvent.DISCONNECT)
     })
 
-        // ** monitoring connect / disconnect
+    // ** monitoring connect / disconnect
     socket.monitor(monitorTimeout, 0)
 
     let _scope = {

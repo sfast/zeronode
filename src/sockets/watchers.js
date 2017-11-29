@@ -3,48 +3,31 @@
  */
 import _ from 'underscore'
 
-class WatcherData {
+let index = 1;
+
+export class Watchers {
   constructor (tag) {
     this._tag = tag
-    this._fnSet = new Set()
+    this._fnMap = new Map()
   }
 
-  getFnSet () {
-    return this._fnSet
+  getFnMap () {
+    return this._fnMap
   }
 
   addFn (fn) {
     if (_.isFunction(fn)) {
-      this._fnSet.add(fn)
+      this._fnMap.set(fn, index)
+      index++;
     }
   }
 
   removeFn (fn) {
     if (_.isFunction(fn)) {
-      this._fnSet.delete(fn)
+      this._fnMap.delete(fn)
       return
     }
 
-    this._fnSet.clear()
-  }
-}
-
-export class TickWatcher extends WatcherData {
-  addTickListener (fn) {
-    this.addFn(fn)
-  }
-
-  removeTickListener (fn) {
-    this.removeFn(fn)
-  }
-}
-
-export class RequestWatcher extends WatcherData {
-  addRequestListener (fn) {
-    this.addFn(fn)
-  }
-
-  removeRequestListener (fn) {
-    this.removeFn(fn)
+    this._fnMap.clear()
   }
 }
