@@ -22,7 +22,7 @@ export default class DealerSocket extends Socket {
     let socket = zmq.socket('dealer')
     super({id, socket, logger})
 
-    // ** emitting disconnect
+    // ** emitting disconnect (this emits only when server disconnects)
     socket.on('disconnect', () => {
       this.emit(DealerEvent.DISCONNECT)
     })
@@ -50,7 +50,7 @@ export default class DealerSocket extends Socket {
     }
   }
 
-    // ** not actually connected
+
   connect (routerAddress, timeout = -1) {
     if (this.isOnline()) {
       this.logger.info(`Dealer already connected`)
@@ -91,8 +91,6 @@ export default class DealerSocket extends Socket {
       })
 
       socket.connect(this.getAddress())
-
-      this.setOnline()
     })
   }
 
@@ -102,21 +100,24 @@ export default class DealerSocket extends Socket {
   }
 
     //* * Polymorphic functions
-  async request (event, data, timeout = 5000, to, mainEvent = false) {
+  request (event, data, timeout = 5000, to, mainEvent = false) {
     let envelop = new Envelop({type: EnvelopType.SYNC, tag: event, data, owner: this.getId(), recipient: to, mainEvent})
     return super.request(envelop, timeout)
   }
 
-  async tick (event, data, to, mainEvent = false) {
+  tick (event, data, to, mainEvent = false) {
     let envelop = new Envelop({type: EnvelopType.ASYNC, tag: event, data, owner: this.getId(), recipient: to, mainEvent})
     return super.tick(envelop)
   }
 
   close () {
     super.close()
+
     let {socket, routerAddress} = _private.get(this)
+
     socket.disconnect(routerAddress)
-    socket.removeAllListeners('conenct')
+    socket.removeAllListeners('connect')
+
     this.setOffline()
   }
 

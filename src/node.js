@@ -6,7 +6,7 @@ import Promise from 'bluebird'
 import md5 from 'md5'
 import animal from 'animal-id'
 import { EventEmitter } from 'events'
-import { RequestWatcher, TickWatcher} from './sockets'
+import { Watchers } from './sockets'
 
 import Server from './server'
 import Client from './client'
@@ -52,9 +52,8 @@ export default class Node extends EventEmitter {
       requestWatcherMap: new Map()
     }
 
-    this::initNodeServer()
-
     _private.set(this, _scope)
+      this::initNodeServer()
   }
 
   getId () {
@@ -110,17 +109,18 @@ export default class Node extends EventEmitter {
     nodeServer ? nodeServer.setAddress(bind) : this.logger.info('No server available')
   }
 
-  async bind (routerAddress) {
+  // async
+  bind (routerAddress) {
     let {nodeServer} = _private.get(this)
-    return await nodeServer.bind(routerAddress)
+    return nodeServer.bind(routerAddress)
   }
 
   unbind () {
     let {nodeServer} = _private.get(this)
-    if (!nodeServer) return true
+    if (!nodeServer) return Promise.resolve()
 
     nodeServer.unbind()
-    return true
+    return Promise.resolve()
   }
 
     // ** connect returns the id of the connected node
@@ -130,7 +130,7 @@ export default class Node extends EventEmitter {
     }
 
     let _scope = _private.get(this)
-    let {id, options, metric, nodeClientsAddressIndex, nodeClients} = _scope
+    let {id, metric, nodeClientsAddressIndex, nodeClients} = _scope
     let metricEnabled = metric.status
     let metricInfo = metric.info
 
@@ -140,7 +140,7 @@ export default class Node extends EventEmitter {
       return nodeClientsAddressIndex.get(addressHash)
     }
 
-    let client = new Client({ id, options, logger: this.logger })
+    let client = new Client({ id, options: _scope.options, logger: this.logger })
 
     if (metricEnabled) {
       client.setMetric(true)
@@ -153,39 +153,27 @@ export default class Node extends EventEmitter {
     })
 
     client.on(socketEvents.SEND_TICK, () => {
-      if (metricEnabled) {
         metricInfo.sendTick(client.getServerActor().getId())
-      }
     })
 
     client.on(socketEvents.GOT_TICK, () => {
-      if (metricEnabled) {
         metricInfo.gotTick(client.getServerActor().getId())
-      }
     })
 
     client.on(socketEvents.SEND_REQUEST, (id) => {
-      if (metricEnabled) {
         metricInfo.sendRequest(id)
-      }
     })
 
     client.on(socketEvents.GOT_REQUEST, () => {
-      if (metricEnabled) {
         metricInfo.gotRequest(client.getServerActor().getId())
-      }
     })
 
     client.on(socketEvents.REQUEST_TIMEOUT, () => {
-      if (metricEnabled) {
         metricInfo.requestTimeout(client.getServerActor().getId())
-      }
     })
 
     client.on(socketEvents.GOT_REPLY, ({id, sendTime, getTime, replyTime, replyGetTime}) => {
-      if (metricEnabled) {
         metricInfo.gotReply({id, sendTime, getTime, replyTime, replyGetTime})
-      }
     })
 
     client.on(events.SERVER_STOP, (serverActor) => {
@@ -259,11 +247,11 @@ export default class Node extends EventEmitter {
 
     let requestWatcher = requestWatcherMap.get(endpoint)
     if (!requestWatcher) {
-      requestWatcher = new RequestWatcher(endpoint)
+      requestWatcher = new Watchers(endpoint)
       requestWatcherMap.set(endpoint, requestWatcher)
     }
 
-    requestWatcher.addRequestListener(fn)
+    requestWatcher.addFn(fn)
 
     nodeServer.onRequest(endpoint, fn)
 
@@ -282,7 +270,7 @@ export default class Node extends EventEmitter {
 
     let requestWatcher = _scope.requestWatcherMap.get(endpoint)
     if (requestWatcher) {
-      requestWatcher.removeRequestListener(fn)
+      requestWatcher.removeFn(fn)
     }
   }
 
@@ -292,11 +280,11 @@ export default class Node extends EventEmitter {
 
     let tickWatcher = tickWatcherMap.get(event)
     if (!tickWatcher) {
-      tickWatcher = new TickWatcher(event)
+      tickWatcher = new Watchers(event)
       tickWatcherMap.set(event, tickWatcher)
     }
 
-    tickWatcher.addTickListener(fn)
+    tickWatcher.addFn(fn)
 
         // ** _scope.nodeServer is constructed in Node constructor
     nodeServer.onTick(event, fn)
@@ -315,7 +303,7 @@ export default class Node extends EventEmitter {
 
     let tickWatcher = _scope.tickWatcherMap.get(event)
     if (tickWatcher) {
-      tickWatcher.removeTickListener(fn)
+      tickWatcher.removeFn(fn)
     }
   }
 
@@ -349,6 +337,7 @@ export default class Node extends EventEmitter {
     throw new Error(`Node with ${nodeId} is not found.`)
   }
 
+  //TODO:: switch timeout with filter
   async requestAny (endpoint, data, timeout = Globals.REQUEST_TIMEOUT, filter = {}, down, up) {
     let filteredNodes = this.getFilteredNodes({filter, down, up})
     if (!filteredNodes.length) {
@@ -432,14 +421,6 @@ export default class Node extends EventEmitter {
     metric.info.flush()
   }
 
-  setLogLevel (level) {
-    this.logger.transports.console.level = level
-  }
-
-  addFileToLog (filename, level) {
-    this.logger.add(winston.transports.File, {filename, level})
-  }
-
   setOptions (options) {
     let _scope = _private.get(this)
     _scope.options = options
@@ -457,7 +438,6 @@ export default class Node extends EventEmitter {
 function initNodeServer () {
   let _scope = _private.get(this)
   let {id, bind, options, metric} = _scope
-  let metricsEnabled = metric.status
   let metricsInfo = metric.info
 
   let nodeServer = new Server({id, bind, logger: this.logger, options})
@@ -467,39 +447,27 @@ function initNodeServer () {
   })
 
   nodeServer.on(socketEvents.SEND_TICK, (id) => {
-    if (metricsEnabled) {
       metricsInfo.sendTick(id)
-    }
   })
 
   nodeServer.on(socketEvents.GOT_TICK, (id) => {
-    if (metricsEnabled) {
       metricsInfo.gotTick(id)
-    }
   })
 
   nodeServer.on(socketEvents.SEND_REQUEST, (id) => {
-    if (metricsEnabled) {
       metricsInfo.sendRequest(id)
-    }
   })
 
   nodeServer.on(socketEvents.GOT_REQUEST, (id) => {
-    if (metricsEnabled) {
       metricsInfo.gotRequest(id)
-    }
   })
 
   nodeServer.on(socketEvents.REQUEST_TIMEOUT, (id) => {
-    if (metricsEnabled) {
       metricsInfo.requestTimeout(id)
-    }
   })
 
   nodeServer.on(socketEvents.GOT_REPLY, ({id, sendTime, getTime, replyTime, replyGetTime}) => {
-    if (metricsEnabled) {
       metricsInfo.gotReply({id, sendTime, getTime, replyTime, replyGetTime})
-    }
   })
 
   nodeServer.on(events.CLIENT_FAILURE, this::_clientFailureHandler)
@@ -530,6 +498,7 @@ function _generateNodeId () {
   return animal.getId()
 }
 
+//TODO:: optimize this
 function _getWinnerNode (nodeIds, tag) {
   let len = nodeIds.length
   let idx = Math.floor(Math.random() * len)
@@ -542,7 +511,7 @@ function _addExistingListenersToClient (client) {
     // ** adding previously added onTick-s for this client to
   _scope.tickWatcherMap.forEach((tickWatcher, event) => {
         // ** TODO what about order of functions ?
-    tickWatcher.getFnSet().forEach((fn) => {
+    tickWatcher.getFnMap().forEach((index, fn) => {
       client.onTick(event, this::fn)
     }, this)
   }, this)
@@ -550,7 +519,7 @@ function _addExistingListenersToClient (client) {
     // ** adding previously added onRequests-s for this client to
   _scope.requestWatcherMap.forEach((requestWatcher, endpoint) => {
         // ** TODO what about order of functions ?
-    requestWatcher.getFnSet().forEach((fn) => {
+    requestWatcher.getFnMap().forEach((index, fn) => {
       client.onRequest(endpoint, this::fn)
     }, this)
   }, this)

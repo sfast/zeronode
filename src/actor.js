@@ -66,7 +66,6 @@ export default class ActorModel {
 
   setOffline () {
     this.online = false
-    this.ghost = false
   }
 
   ping (stamp) {

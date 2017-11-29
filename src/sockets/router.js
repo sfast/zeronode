@@ -14,10 +14,12 @@ let _private = new WeakMap()
 export default class RouterSocket extends Socket {
   constructor (data = {}) {
     let {id, options} = data
-    options = options || {}
-    let logger = options.logger
 
+    options = options || {}
+
+    let logger = options.logger
     let socket = zmq.socket('router')
+
     super({id, socket, logger})
 
     let _scope = {
@@ -29,24 +31,28 @@ export default class RouterSocket extends Socket {
   }
 
   getAddress () {
-    let _scope = _private.get(this)
-    return _scope.bindAddress
+    let {bindAddress} = _private.get(this)
+    return bindAddress
   }
 
   setAddress (bindAddress) {
     let _scope = _private.get(this)
+
     if (typeof bindAddress === 'string' && bindAddress.length) {
       _scope.bindAddress = bindAddress
     }
   }
 
     //* * binded promise returns status
-  async bind (bindAddress) {
-    let {socket} = _private.get(this)
+  bind (bindAddress) {
 
     if (this.isOnline()) {
       return Promise.resolve(true)
     }
+
+    let {socket} = _private.get(this)
+
+
 
     if (bindAddress) {
       this.setAddress(bindAddress)
@@ -79,7 +85,7 @@ export default class RouterSocket extends Socket {
 
     //* * Polymorfic Functions
 
-  async request (to, event, data, timeout = 5000, mainEvent = false) {
+  request (to, event, data, timeout = 5000, mainEvent = false) {
     let envelop = new Envelop({type: EnvelopType.SYNC, tag: event, data, owner: this.getId(), recipient: to, mainEvent})
     return super.request(envelop, timeout)
   }

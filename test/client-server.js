@@ -44,7 +44,7 @@ describe('Client/Server', () => {
               return client.request('tandz', expectedMessage, 500)
             })
             .catch(err => {
-              assert.include(err, 'timeouted')
+              assert.include(err.message, 'timeouted')
               done()
             })
   })
@@ -93,7 +93,7 @@ describe('Client/Server', () => {
               return server.request(client.getId(), 'tandz', expectedMessage, 500)
             })
             .catch(err => {
-              assert.include(err, 'timeouted')
+              assert.include(err.message, 'timeouted')
               done()
             })
   })

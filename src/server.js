@@ -14,7 +14,7 @@ export default class Server extends RouterSocket {
     let {id, bind, logger, options} = data
     let routerSocketOptions = {logger}
 
-    super({id, routerSocketOptions})
+    super({id, options: routerSocketOptions})
     super.setOptions(options)
 
     let _scope = {
@@ -26,7 +26,17 @@ export default class Server extends RouterSocket {
 
     this.setAddress(bind)
 
-    this.logger.info(`Server ${this.getId()} started`)
+      // ** ATTACHING client connected
+      this.onRequest(events.CLIENT_CONNECTED, this::_clientConnectedRequest)
+
+      // ** ATTACHING client stop
+      this.onRequest(events.CLIENT_STOP, this::_clientStopRequest)
+
+      // ** ATTACHING client ping
+      this.onTick(events.CLIENT_PING, this::_clientPingTick)
+
+      // ** ATTACHING CLIENT OPTIONS SYNCING
+      this.onTick(events.OPTIONS_SYNC, this::_clientOptionsSync)
   }
 
   getClientById (clientId) {
@@ -60,48 +70,27 @@ export default class Server extends RouterSocket {
     }
   }
 
-  async bind (bindAddress) {
+  bind (bindAddress) {
     try {
       if (_.isString(bindAddress)) {
         this.setAddress(bindAddress)
       }
-            // ** ATTACHING client connected
-      this.onRequest(events.CLIENT_CONNECTED, this::_clientConnectedRequest)
-
-            // ** ATTACHING client stop
-      this.onRequest(events.CLIENT_STOP, this::_clientStopRequest)
-
-            // ** ATTACHING client ping
-      this.onTick(events.CLIENT_PING, this::_clientPingTick)
-
-            // ** ATTACHING CLIENT OPTIONS SYNCING
-      this.onTick(events.OPTIONS_SYNC, this::_clientOptionsSync)
 
       return super.bind(this.getAddress())
     } catch (err) {
-      this.emit('error', new Errors.BindError({id: this.getId(), err}))
+      throw new Errors.BindError({id: this.getId(), err});
     }
   }
 
   unbind () {
     try {
-      this.offRequest(events.CLIENT_CONNECTED)
-      this.offRequest(events.CLIENT_STOP)
-      this.offTick(events.CLIENT_PING)
-      this.offTick(events.OPTIONS_SYNC)
-
       _.each(this.getOnlineClients(), (client) => {
         this.tick(client.getId(), events.SERVER_STOP)
       })
       super.unbind()
     } catch (err) {
-      this.emit('error', new Errors.BindError({id: this.getId(), err, state: 'unbinding'}))
+      throw new Errors.BindError({id: this.getId(), err, state: 'unbinding'})
     }
-  }
-
-  onServerFail (fn) {
-    let _scope = _private.get(this)
-    _scope.ServerFailHandler = fn
   }
 }
 
@@ -130,23 +119,25 @@ function _clientStopRequest (request) {
 }
 
 function _clientConnectedRequest (request) {
-  let {clientModels, clientCheckInterval} = _private.get(this)
+  let _scope = _private.get(this)
+  let {clientModels, clientCheckInterval} = _scope
 
   let {actorId, options} = request.body
 
   let actorModel = new ActorModel({id: actorId, options: options, online: true})
 
+  clientModels.set(actorId, actorModel)
+
   if (!clientCheckInterval) {
     let options = this.getOptions()
     let clientHeartbeatInterval = options.CLIENT_MUST_HEARTBEAT_INTERVAL || Globals.CLIENT_MUST_HEARTBEAT_INTERVAL
-    clientCheckInterval = setInterval(this::_checkClientHeartBeat, clientHeartbeatInterval)
+    _scope.clientCheckInterval = setInterval(this::_checkClientHeartBeat, clientHeartbeatInterval)
   }
 
-  let replyData = Object.assign({actorId: this.getId(), options: this.getOptions()})
+  let replyData = {actorId: this.getId(), options: this.getOptions()}
     // ** replyData {actorId, options}
   request.reply(replyData)
 
-  clientModels.set(actorId, actorModel)
   this.emit(events.CLIENT_CONNECTED, actorModel)
 }
 

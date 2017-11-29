@@ -76,12 +76,12 @@ export default class Socket extends EventEmitter {
     return options
   }
 
-  async request (envelop, reqTimeout = 5000) {
+  request (envelop, reqTimeout = 5000) {
     let {id, requests, metric} = _private.get(this)
 
     if (!this.isOnline()) {
       let err = new Error(`Sending failed as socket ${this.getId()} is not online`)
-      throw new SocketIsNotOnline({socketId: id, error: err })
+      return Promise.reject(new SocketIsNotOnline({socketId: id, error: err}))
     }
 
     let envelopId = envelop.getId()

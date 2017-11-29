@@ -24,6 +24,9 @@ class Parse {
   }
 }
 
+
+const lengthSize = 1;
+
 export default class Envelop {
   constructor ({type, id = '', tag = '', data, owner = '', recipient = '', mainEvent}) {
     if (type) {
@@ -42,31 +45,44 @@ export default class Envelop {
     this.recipient = recipient
   }
 
+    /**
+     *
+     * @param buffer
+     * @description {
+     *      mainEvent: 1,
+     *      type: 1,
+     *      idLength: 4,
+     *      id: idLength,
+     *      ownerLength: 4,
+     *      owner: ownerLength,
+     *      recipientLength: 4,
+     *      recipient: recipientLength,
+     *      tagLength: 4,
+     *      tag: tagLength
+     * @return {{mainEvent: boolean, type, id: string, owner: string, recipient: string, tag: string}}
+     */
   static readMetaFromBuffer (buffer) {
     let mainEvent = !buffer.readInt8(0)
 
     let type = buffer.readInt8(1)
 
-    let idStart = 6
-    let idLength = buffer.readInt32LE(idStart - 4)
+    let idStart = 2 + lengthSize
+    let idLength = buffer.readInt8(idStart - lengthSize)
     let id = buffer.slice(idStart, idStart + idLength).toString('hex')
 
-    let ownerStart = 4 + idStart + idLength
-    let ownerLength = buffer.readInt32LE(ownerStart - 4)
-
+    let ownerStart = lengthSize + idStart + idLength
+    let ownerLength = buffer.readInt8(ownerStart - lengthSize)
     let owner = buffer.slice(ownerStart, ownerStart + ownerLength).toString('utf8').replace(/\0/g, '')
 
-    let recipientStart = 4 + ownerStart + ownerLength
-    let recipientLength = buffer.readInt32LE(recipientStart - 4)
-
+    let recipientStart = lengthSize + ownerStart + ownerLength
+    let recipientLength = buffer.readInt8(recipientStart - lengthSize)
     let recipient = buffer.slice(recipientStart, recipientStart + recipientLength).toString('utf8').replace(/\0/g, '')
 
-    let tagStart = 4 + recipientStart + recipientLength
-    let tagLength = buffer.readInt32LE(tagStart - 4)
-
+    let tagStart = lengthSize + recipientStart + recipientLength
+    let tagLength = buffer.readInt8(tagStart - lengthSize)
     let tag = buffer.slice(tagStart, tagStart + tagLength).toString('utf8').replace(/\0/g, '')
 
-    return {type, id, owner, recipient, tag, mainEvent}
+    return {mainEvent, type, id, owner, recipient, tag}
   }
 
   static readDataFromBuffer (buffer) {
@@ -98,8 +114,8 @@ export default class Envelop {
 
   static stringToBuffer (str, encryption) {
     let strLength = Buffer.byteLength(str, encryption)
-    let lengthBuffer = BufferAlloc(4)
-    lengthBuffer.writeInt32LE(strLength)
+    let lengthBuffer = BufferAlloc(lengthSize)
+    lengthBuffer.writeInt8(strLength)
     let strBuffer = BufferAlloc(strLength)
     strBuffer.write(str, 0, strLength, encryption)
     return Buffer.concat([lengthBuffer, strBuffer])
@@ -109,7 +125,7 @@ export default class Envelop {
     let length = 2
 
     _.each(_.range(4), () => {
-      length += 4 + buffer.readInt32LE(length)
+      length += lengthSize + buffer.readInt8(length)
     })
 
     return length
