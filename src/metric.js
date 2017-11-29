@@ -9,11 +9,13 @@ class RequestsInfo {
             in: 0,
             out: 0
         };
+
         this.delay = {
             send: 0,
             reply: 0,
             process: 0
         };
+
         this.timeouted = 0;
     }
 
@@ -44,18 +46,21 @@ export default class Metric {
         this.cpu = 0;
         this.memory = process.memoryUsage().heapTotal / 1000000;
     }
+
     async getCpu() {
         let startUsage = process.cpuUsage();
         await new Promise(res => setTimeout(res, 100));
         let actualUsage = process.cpuUsage(startUsage);
         return this.cpu = (actualUsage.user + actualUsage.system) / 10000;
     }
+
     sendRequest(id) {
         if (!this.requests.has(id)) {
             let requestInfo = new RequestsInfo();
             requestInfo.sendRequest();
             return this.requests.set(id, requestInfo);
         }
+
         this.requests.get(id).sendRequest()
     }
 
@@ -65,13 +70,13 @@ export default class Metric {
             requestInfo.gotRequest();
             return this.requests.set(id, requestInfo);
         }
+
         this.requests.get(id).gotRequest()
     }
 
     gotReply({id, sendTime, getTime, replyTime, replyGetTime}) {
-        if (!this.requests.has(id)) {
-            return;
-        }
+        if (!this.requests.has(id)) return;
+
         this.requests.get(id).addDelay({sendTime: sendTime[0] * 1000000000 + sendTime[1], getTime: getTime[0] * 1000000000 + getTime[1], replyTime: replyTime[0] * 1000000000 + replyTime[1], replyGetTime: replyGetTime[0] * 1000000000 + replyGetTime[1]});
     }
 
@@ -98,9 +103,8 @@ export default class Metric {
     }
 
     requestTimeout(id) {
-        if (!this.requests.has(id)) {
-            return;
-        }
+        if (!this.requests.has(id)) return;
+
         this.requests.get(id).addTimeouted();
     }
 

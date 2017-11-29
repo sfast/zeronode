@@ -5,8 +5,8 @@ import _ from 'underscore';
 import  Promise from 'bluebird';
 import md5 from 'md5';
 import animal from 'animal-id';
-import { EventEmitter } from 'events'
-import { RequestWatcher, TickWatcher} from './sockets'
+import { EventEmitter } from 'events';
+import { RequestWatcher, TickWatcher} from './sockets';
 
 import Server from './server';
 import Client from './client';
@@ -14,8 +14,8 @@ import Errors from './errors';
 import Metric from './metric';
 import Globals from './globals';
 import { events } from './enum';
-import {Enum as socketEvents} from './sockets'
-import winston from 'winston'
+import {Enum as socketEvents} from './sockets';
+import winston from 'winston';
 
 const _private = new WeakMap();
 
@@ -29,80 +29,47 @@ export default class Node extends EventEmitter {
     constructor(data = {}) {
         super();
 
-        let {id, bind, options = {}, logger} = data;
-
+        let {id, bind, options, logger} = data;
+        options = options || {};
         id = id || _generateNodeId();
+        logger = logger || defaultLogger
 
-        this.logger = logger || defaultLogger;
+        this.logger = logger;
 
         let _scope = {
             id,
+            bind,
             options,
             metric: {
                 status: false,
                 info: new Metric({id}),
                 interval: null
             },
-            nodeServer : new Server({id, bind, logger: this.logger, options}),
+            nodeServer : null,
             nodeClients : new Map(),
             nodeClientsAddressIndex : new Map(),
             tickWatcherMap: new Map(),
             requestWatcherMap: new Map()
         };
-        _scope.nodeServer.on('error', (err) => {
-            this.emit('error', err);
-        });
-        _scope.nodeServer.on(socketEvents.SEND_TICK, (id) => {
-            if (_scope.metric.status) {
-                _scope.metric.info.sendTick(id)
-            }
-        });
-        _scope.nodeServer.on(socketEvents.GOT_TICK, (id) => {
-            if (_scope.metric.status) {
-                _scope.metric.info.gotTick(id)
-            }
-        });
-        _scope.nodeServer.on(socketEvents.SEND_REQUEST, (id) => {
-            if (_scope.metric.status) {
-                _scope.metric.info.sendRequest(id)
-            }
-        });
-        _scope.nodeServer.on(socketEvents.GOT_REQUEST, (id) => {
-            if (_scope.metric.status) {
-                _scope.metric.info.gotRequest(id)
-            }
-        });
-        _scope.nodeServer.on(socketEvents.REQUEST_TIMEOUT, (id) => {
-            if (_scope.metric.status) {
-                _scope.metric.info.requestTimeout(id)
-            }
-        });
-        _scope.nodeServer.on(socketEvents.GOT_REPLY, ({id, sendTime, getTime, replyTime, replyGetTime}) => {
-            if (_scope.metric.status) {
-                _scope.metric.info.gotReply({id, sendTime, getTime, replyTime, replyGetTime})
-            }
-        });
-        _scope.nodeServer.on(events.CLIENT_FAILURE, this::_clientFailureHandler);
-        _scope.nodeServer.on(events.CLIENT_CONNECTED, this::_clientConnectHandler);
-        _scope.nodeServer.on(events.CLIENT_STOP, this::_clientStopHandler);
+
+        this::initNodeServer();
+
         _private.set(this, _scope)
     }
 
     getId() {
-        let _scope = _private.get(this);
-        return _scope.id
+        let {id} = _private.get(this);
+        return id;
     }
 
     getAddress() {
-        let _scope = _private.get(this);
-        if(_scope.nodeServer) {
-            return _scope.nodeServer.getAddress()
-        }
+        let {nodeServer} = _private.get(this);
+        return nodeServer ? nodeServer.getAddress() : null;
     }
 
     getOptions() {
-        let _scope = _private.get(this);
-        return _scope.options
+        let {options} = _private.get(this);
+        return options;
     }
 
     getFilteredNodes({filter = {}, down = true, up = true} = {filter: {}, down: true, up: true}){
@@ -139,25 +106,21 @@ export default class Node extends EventEmitter {
     }
 
     setAddress(bind) {
-        let _scope = _private.get(this);
-
-        if(_scope.nodeServer) {
-            _scope.nodeServer.setAddress(bind);
-        }
+        let {nodeServer} = _private.get(this);
+        nodeServer ? nodeServer.setAddress(bind) : this.logger.info('No server available');
     }
 
     async bind(routerAddress) {
-        let _scope = _private.get(this);
-        return await _scope.nodeServer.bind(routerAddress)
+        let {nodeServer} = _private.get(this);
+        return await nodeServer.bind(routerAddress);
     }
 
     unbind() {
-        let _scope = _private.get(this);
-        if(!_scope.nodeServer) {
-            return true
-        }
-        _scope.nodeServer.unbind();
-        return true
+        let {nodeServer} = _private.get(this);
+        if(!nodeServer) return true;
+
+        nodeServer.unbind();
+        return true;
     }
 
     // ** connect returns the id of the connected node
@@ -167,16 +130,20 @@ export default class Node extends EventEmitter {
         }
 
         let _scope = _private.get(this);
+        let {id, options, metric, nodeClientsAddressIndex, nodeClients} = _scope;
+        let metricEnabled = metric.status;
+        let metricInfo = metric.info;
+
         let addressHash = md5(address);
 
-        if (_scope.nodeClientsAddressIndex.has(addressHash)) {
-            return _scope.nodeClientsAddressIndex.get(addressHash)
+        if (nodeClientsAddressIndex.has(addressHash)) {
+            return nodeClientsAddressIndex.get(addressHash);
         }
 
-        let client = new Client({ id: _scope.id, options: _scope.options, logger: this.logger });
+        let client = new Client({ id, options, logger: this.logger });
 
-        if (_scope.metric.status) {
-            client.setMetric(true)
+        if (metricEnabled) {
+            client.setMetric(true);
         }
 
         client.on(events.SERVER_FAILURE, this::_serverFailureHandler);
@@ -186,38 +153,38 @@ export default class Node extends EventEmitter {
         });
 
         client.on(socketEvents.SEND_TICK, () => {
-            if (_scope.metric.status) {
-                _scope.metric.info.sendTick(client.getServerActor().getId())
+            if (metricEnabled) {
+                metricInfo.sendTick(client.getServerActor().getId());
             }
         });
 
         client.on(socketEvents.GOT_TICK, () => {
-            if (_scope.metric.status) {
-                _scope.metric.info.gotTick(client.getServerActor().getId())
+            if (metricEnabled) {
+                metricInfo.gotTick(client.getServerActor().getId())
             }
         });
 
         client.on(socketEvents.SEND_REQUEST, (id) => {
-            if (_scope.metric.status) {
-                _scope.metric.info.sendRequest(id)
+            if (metricEnabled) {
+                metricInfo.sendRequest(id)
             }
         });
 
         client.on(socketEvents.GOT_REQUEST, () => {
-            if (_scope.metric.status) {
-                _scope.metric.info.gotRequest(client.getServerActor().getId())
+            if (metricEnabled) {
+                metricInfo.gotRequest(client.getServerActor().getId());
             }
         });
 
         client.on(socketEvents.REQUEST_TIMEOUT, () => {
-            if (_scope.metric.status) {
-                _scope.metric.info.requestTimeout(client.getServerActor().getId())
+            if (metricEnabled) {
+                metricInfo.requestTimeout(client.getServerActor().getId());
             }
         });
 
         client.on(socketEvents.GOT_REPLY, ({id, sendTime, getTime, replyTime, replyGetTime}) => {
-            if (_scope.metric.status) {
-                _scope.metric.info.gotReply({id, sendTime, getTime, replyTime, replyGetTime})
+            if (metricEnabled) {
+                metricInfo.gotReply({id, sendTime, getTime, replyTime, replyGetTime});
             }
         });
 
@@ -229,8 +196,8 @@ export default class Node extends EventEmitter {
 
         this.logger.info(`Node connected: ${this.getId()} -> ${actorId}`);
 
-        _scope.nodeClientsAddressIndex.set(addressHash, actorId);
-        _scope.nodeClients.set(actorId, client);
+        nodeClientsAddressIndex.set(addressHash, actorId);
+        nodeClients.set(actorId, client);
 
         this::_addExistingListenersToClient(client);
 
@@ -240,20 +207,22 @@ export default class Node extends EventEmitter {
         };
     }
 
+    // TODO::avar maybe disconnect from node ?
     async disconnect(address = 'tcp://127.0.0.1:3000') {
         if (typeof address != 'string' || address.length == 0) {
-            throw new Error(`Wrong type for argument address ${address}`)
+            throw new Error(`Wrong type for argument address ${address}`);
         }
 
         let addressHash = md5(address);
 
         let _scope = _private.get(this);
-        if(!_scope.nodeClientsAddressIndex.has(addressHash)) {
-            return true
-        }
+        let {nodeClientsAddressIndex, nodeClients} = _scope;
 
-        let nodeId = _scope.nodeClientsAddressIndex.get(addressHash);
-        let client = _scope.nodeClients.get(nodeId);
+
+        if(!nodeClientsAddressIndex.has(addressHash)) return true;
+
+        let nodeId = nodeClientsAddressIndex.get(addressHash);
+        let client = nodeClients.get(nodeId);
 
         client.removeAllListeners(events.SERVER_FAILURE);
         client.removeAllListeners(socketEvents.SEND_TICK);
@@ -264,47 +233,49 @@ export default class Node extends EventEmitter {
 
         await client.disconnect();
         this::_removeClientAllListeners(client);
-        _scope.nodeClients.delete(nodeId);
-        _scope.nodeClientsAddressIndex.delete(addressHash);
-        return true
+        nodeClients.delete(nodeId);
+        nodeClientsAddressIndex.delete(addressHash);
+        return true;
     }
 
     async stop() {
-        let _scope = _private.get(this);
+        let {nodeServer, nodeClients} = _private.get(this);
         let stopPromise = [];
-        if(_scope.nodeServer.isOnline()) {
-            _scope.nodeServer.unbind()
+        if(nodeServer.isOnline()) {
+            nodeServer.unbind();
         }
 
-        _scope.nodeClients.forEach((client)=>{
+        nodeClients.forEach((client)=>{
             if(client.isOnline()) {
-                stopPromise.push(client.disconnect())
+                stopPromise.push(client.disconnect());
             }
         }, this);
 
-        await Promise.all(stopPromise)
+        await Promise.all(stopPromise);
     }
 
     onRequest(endpoint, fn) {
         let _scope = _private.get(this);
+        let {requestWatcherMap, nodeClients, nodeServer} = _scope;
 
-        let requestWatcher = _scope.requestWatcherMap.get(endpoint);
+        let requestWatcher = requestWatcherMap.get(endpoint);
         if(!requestWatcher) {
             requestWatcher = new RequestWatcher(endpoint);
-            _scope.requestWatcherMap.set(endpoint, requestWatcher)
+            requestWatcherMap.set(endpoint, requestWatcher)
         }
 
         requestWatcher.addRequestListener(fn);
 
-        _scope.nodeServer.onRequest(endpoint, fn);
+        nodeServer.onRequest(endpoint, fn);
 
-        _scope.nodeClients.forEach((client)=>{
+        nodeClients.forEach((client) => {
             client.onRequest(endpoint, fn)
-        }, this)
+        }, this);
     }
 
     offRequest(endpoint, fn) {
         let _scope = _private.get(this);
+
         _scope.nodeServer.offRequest(endpoint);
         _scope.nodeClients.forEach((client)=>{
             client.offRequest(endpoint, fn)
@@ -318,21 +289,22 @@ export default class Node extends EventEmitter {
 
     onTick(event, fn) {
         let _scope = _private.get(this);
+        let {tickWatcherMap, nodeClients, nodeServer} = _scope;
 
-        let tickWatcher = _scope.tickWatcherMap.get(event);
+        let tickWatcher = tickWatcherMap.get(event);
         if(!tickWatcher) {
             tickWatcher = new TickWatcher(event);
-            _scope.tickWatcherMap.set(event, tickWatcher)
+            tickWatcherMap.set(event, tickWatcher)
         }
 
         tickWatcher.addTickListener(fn);
 
         // ** _scope.nodeServer is constructed in Node constructor
-        _scope.nodeServer.onTick(event, fn);
+        nodeServer.onTick(event, fn);
 
-        _scope.nodeClients.forEach((client)=>{
-            client.onTick(event, fn)
-        })
+        nodeClients.forEach((client) => {
+            client.onTick(event, fn);
+        });
     }
 
     offTick(event, fn) {
@@ -350,15 +322,16 @@ export default class Node extends EventEmitter {
 
     async request(nodeId, endpoint, data, timeout = Globals.REQUEST_TIMEOUT) {
         let _scope = _private.get(this);
+        let {nodeServer, nodeClients}  = _scope;
 
         let clientActor = this::_getClientByNode(nodeId);
         if(clientActor) {
-            return _scope.nodeServer.request(clientActor.getId(), endpoint, data, timeout)
+            return nodeServer.request(clientActor.getId(), endpoint, data, timeout)
         }
 
-        if(_scope.nodeClients.has(nodeId)) {
+        if(nodeClients.has(nodeId)) {
             // ** nodeId is the serverId of node so we request
-            return _scope.nodeClients.get(nodeId).request(endpoint, data, timeout)
+            return nodeClients.get(nodeId).request(endpoint, data, timeout)
         }
 
         throw new Error(`Node with ${nodeId} is not found.`)
@@ -366,15 +339,15 @@ export default class Node extends EventEmitter {
 
     tick(nodeId, event, data) {
         let _scope = _private.get(this);
-
+        let {nodeServer, nodeClients}  = _scope;
         let clientActor = this::_getClientByNode(nodeId);
         if(clientActor) {
-            return _scope.nodeServer.tick(clientActor.getId(), event, data)
+            return nodeServer.tick(clientActor.getId(), event, data)
         }
-        if(_scope.nodeClients.has(nodeId)) {
-            return _scope.nodeClients.get(nodeId).tick(event, data)
+        if(nodeClients.has(nodeId)) {
+            return nodeClients.get(nodeId).tick(event, data)
         }
-        throw new Error(`Node with ${nodeId} is not found.`)
+        throw new Error(`Node with ${nodeId} is not found.`);
     }
 
     async requestAny(endpoint, data, timeout = Globals.REQUEST_TIMEOUT, filter = {}, down, up) {
@@ -383,15 +356,15 @@ export default class Node extends EventEmitter {
             throw {code: Errors.NO_NODE , message: 'there is no node with that filter'}
         }
         let nodeId = this::_getWinnerNode(filteredNodes, endpoint);
-        return this.request(nodeId, endpoint, data, timeout)
+        return this.request(nodeId, endpoint, data, timeout);
     }
 
     async requestDownAny(endpoint, data, timeout, filter) {
-        return await this.requestAny(endpoint, data, timeout, filter, true, false)
+        return await this.requestAny(endpoint, data, timeout, filter, true, false);
     }
 
     async requestUpAny(endpoint, data, timeout, filter) {
-        return await this.requestAny(endpoint, data, timeout, filter, false, true)
+        return await this.requestAny(endpoint, data, timeout, filter, false, true);
     }
 
     tickAny(event, data, filter = {}, down, up) {
@@ -400,7 +373,7 @@ export default class Node extends EventEmitter {
             throw {code: Errors.NO_NODE , message: 'there is no node with that filter'}
         }
         let nodeId = this::_getWinnerNode(filteredNodes, event);
-        return this.tick(nodeId, event, data)
+        return this.tick(nodeId, event, data);
     }
 
     tickDownAny(event, data, filter) {
@@ -416,10 +389,10 @@ export default class Node extends EventEmitter {
         let tickPromises = [];
 
         filteredNodes.forEach((nodeId)=> {
-            tickPromises.push(this.tick(nodeId, event, data))
+            tickPromises.push(this.tick(nodeId, event, data));
         }, this);
 
-        return Promise.all(tickPromises)
+        return Promise.all(tickPromises);
     }
 
     tickDownAll(event, data, filter) {
@@ -432,50 +405,109 @@ export default class Node extends EventEmitter {
 
     enableMetrics (interval = 1000) {
         let _scope = _private.get(this);
-        _scope.metric.status = true;
-        _scope.nodeClients.forEach((client) => {
-            client.setMetric(true)
+        let {metric, nodeClients, nodeServer} = _scope;
+        metric.status = true;
+
+        nodeClients.forEach((client) => {
+            client.setMetric(true);
         }, this);
-        _scope.nodeServer.setMetric(true);
-        _scope.metric.interval = setInterval(() => {
-            this.emit(events.METRICS, _scope.metric.info);
-            _scope.metric.info.flush()
+
+        nodeServer.setMetric(true);
+
+        metric.interval = setInterval(() => {
+            this.emit(events.METRICS, metric.info);
+            metric.info.flush();
         }, interval)
     }
 
     disableMetrics () {
         let _scope = _private.get(this);
-        _scope.metric.status = false;
-        _scope.nodeClients.forEach((client) => {
+        let {metric, nodeClients, nodeServer} = _scope;
+        metric.status = false;
+        nodeClients.forEach((client) => {
             client.setMetric(false)
         }, this);
-        _scope.nodeServer.setMetric(false,);
-        clearInterval(_scope.metric.interval);
-        _scope.metric.interval = null;
-        _scope.metric.info.flush()
+        nodeServer.setMetric(false,);
+        clearInterval(metric.interval);
+        metric.interval = null;
+        metric.info.flush();
     }
 
     setLogLevel (level) {
-        let _scope = _private.get(this);
         this.logger.transports.console.level = level;
     }
 
     addFileToLog (filename, level) {
-        let _scope = _private.get(this);
         this.logger.add(winston.transports.File, {filename, level});
     }
 
     setOptions (options) {
         let _scope = _private.get(this);
         _scope.options = options;
-        _scope.nodeServer.setOptions(options);
-        _scope.nodeClients.forEach((client) => {
+
+        let {nodeServer, nodeClients} = _scope;
+        nodeServer.setOptions(options);
+        nodeClients.forEach((client) => {
             client.setOptions(options);
         }, this)
     }
 }
 
 // ** PRIVATE FUNCTIONS
+
+function initNodeServer() {
+    let _scope = _private.get(this);
+    let {id, bind, options, metric} = _scope;
+    let metricsEnabled = metric.status;
+    let metricsInfo = metric.info;
+
+    let nodeServer = new Server({id, bind, logger: this.logger, options});
+    // ** handlers for nodeServer
+    nodeServer.on('error', (err) => {
+        this.emit('error', err);
+    });
+
+    nodeServer.on(socketEvents.SEND_TICK, (id) => {
+        if (metricsEnabled) {
+            metricsInfo.sendTick(id);
+        }
+    });
+
+    nodeServer.on(socketEvents.GOT_TICK, (id) => {
+        if (metricsEnabled) {
+            metricsInfo.gotTick(id)
+        }
+    });
+
+    nodeServer.on(socketEvents.SEND_REQUEST, (id) => {
+        if (metricsEnabled) {
+            metricsInfo.sendRequest(id)
+        }
+    });
+
+    nodeServer.on(socketEvents.GOT_REQUEST, (id) => {
+        if (metricsEnabled) {
+            metricsInfo.gotRequest(id)
+        }
+    });
+
+    nodeServer.on(socketEvents.REQUEST_TIMEOUT, (id) => {
+        if (metricsEnabled) {
+            metricsInfo.requestTimeout(id)
+        }
+    });
+
+    nodeServer.on(socketEvents.GOT_REPLY, ({id, sendTime, getTime, replyTime, replyGetTime}) => {
+        if (metricsEnabled) {
+            metricsInfo.gotReply({id, sendTime, getTime, replyTime, replyGetTime})
+        }
+    });
+
+    nodeServer.on(events.CLIENT_FAILURE, this::_clientFailureHandler);
+    nodeServer.on(events.CLIENT_CONNECTED, this::_clientConnectHandler);
+    nodeServer.on(events.CLIENT_STOP, this::_clientStopHandler);
+    _scope.nodeServer = nodeServer;
+}
 
 function _getClientByNode(nodeId) {
     let _scope = _private.get(this);
