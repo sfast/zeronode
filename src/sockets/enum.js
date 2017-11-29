@@ -3,36 +3,36 @@
  */
 
 let EnvelopType = {
-    ASYNC  : 1,
-    SYNC : 2,
-    RESPONSE  :3,
-    PROXY : 4
-};
+  ASYNC: 1,
+  SYNC: 2,
+  RESPONSE: 3,
+  PROXY: 4
+}
 
 let MetricType = {
-    SEND_TICK: 'sendTick',
-    SEND_REQUEST: 'sendRequest',
-    GOT_TICK: 'gotTick',
-    GOT_REQUEST: 'gotRequest',
-    GOT_REPLY: 'gotReply',
-    REQUEST_TIMEOUT: 'requestTimeout'
-};
+  SEND_TICK: 'sendTick',
+  SEND_REQUEST: 'sendRequest',
+  GOT_TICK: 'gotTick',
+  GOT_REQUEST: 'gotRequest',
+  GOT_REPLY: 'gotReply',
+  REQUEST_TIMEOUT: 'requestTimeout'
+}
 
 let DealerEvent = {
-    RECONNECT : 'DEALER_RECONNECT',
-    DISCONNECT : 'DEALER_DISCONNECT'
-};
+  RECONNECT: 'DEALER_RECONNECT',
+  DISCONNECT: 'DEALER_DISCONNECT'
+}
 
-let Timeouts = { MONITOR_TIMEOUT: 10};
+let Timeouts = {MONITOR_TIMEOUT: 10}
 
-export { EnvelopType as EnvelopType };
-export { MetricType as MetricType };
-export { Timeouts as Timeouts };
-export { DealerEvent as DealerEvent};
+export { EnvelopType }
+export { MetricType }
+export { Timeouts }
+export { DealerEvent }
 
 export default {
-    EnvelopType,
-    MetricType,
-    Timeouts,
-    DealerEvent
-};
+  EnvelopType,
+  MetricType,
+  Timeouts,
+  DealerEvent
+}

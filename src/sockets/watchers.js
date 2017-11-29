@@ -4,55 +4,47 @@
 import _ from 'underscore'
 
 class WatcherData {
-    constructor(tag) {
-        this._tag = tag;
-        this._fnSet = new Set();
+  constructor (tag) {
+    this._tag = tag
+    this._fnSet = new Set()
+  }
+
+  getFnSet () {
+    return this._fnSet
+  }
+
+  addFn (fn) {
+    if (_.isFunction(fn)) {
+      this._fnSet.add(fn)
+    }
+  }
+
+  removeFn (fn) {
+    if (_.isFunction(fn)) {
+      this._fnSet.delete(fn)
+      return
     }
 
-    getFnSet() {
-        return this._fnSet;
-    }
-
-    addFn(fn) {
-        if(_.isFunction(fn)) {
-            this._fnSet.add(fn);
-        }
-    }
-
-    removeFn(fn){
-        if(_.isFunction(fn)) {
-            this._fnSet.delete(fn);
-            return;
-        }
-
-        this._fnSet.clear();
-    }
+    this._fnSet.clear()
+  }
 }
 
-export class TickWatcher extends  WatcherData {
-    constructor(event) {
-        super(event);
-    }
+export class TickWatcher extends WatcherData {
+  addTickListener (fn) {
+    this.addFn(fn)
+  }
 
-    addTickListener(fn) {
-        this.addFn(fn);
-    }
-
-    removeTickListener(fn){
-        this.removeFn(fn);
-    }
+  removeTickListener (fn) {
+    this.removeFn(fn)
+  }
 }
 
-export class RequestWatcher extends  WatcherData {
-    constructor(endpoint) {
-        super(endpoint);
-    }
+export class RequestWatcher extends WatcherData {
+  addRequestListener (fn) {
+    this.addFn(fn)
+  }
 
-    addRequestListener(fn) {
-        this.addFn(fn);
-    }
-
-    removeRequestListener(fn){
-        this.removeFn(fn);
-    }
+  removeRequestListener (fn) {
+    this.removeFn(fn)
+  }
 }

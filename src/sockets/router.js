@@ -1,95 +1,95 @@
 /**
  * Created by artak on 3/2/17.
  */
-import zmq from 'zmq';
-import Promise from 'bluebird';
+import zmq from 'zmq'
+import Promise from 'bluebird'
 
-import Socket  from './socket';
-import Envelop from './envelope';
-import {EnvelopType} from './enum';
+import Socket from './socket'
+import Envelop from './envelope'
+import {EnvelopType} from './enum'
 
-let _private = new WeakMap();
+let _private = new WeakMap()
 
 // ** if there is no logger the default console will be used
 export default class RouterSocket extends Socket {
-    constructor(data = {}) {
-        let {id, options} = data;
-        options = options || {};
-        let logger = options.logger;
+  constructor (data = {}) {
+    let {id, options} = data
+    options = options || {}
+    let logger = options.logger
 
-        let socket = zmq.socket('router');
-        super({id, socket, logger});
+    let socket = zmq.socket('router')
+    super({id, socket, logger})
 
-        let _scope = {
-            socket,
-            bindAddress: null
-        };
-
-        _private.set(this, _scope);
+    let _scope = {
+      socket,
+      bindAddress: null
     }
 
-    getAddress() {
-        let _scope = _private.get(this);
-        return _scope.bindAddress;
+    _private.set(this, _scope)
+  }
+
+  getAddress () {
+    let _scope = _private.get(this)
+    return _scope.bindAddress
+  }
+
+  setAddress (bindAddress) {
+    let _scope = _private.get(this)
+    if (typeof bindAddress === 'string' && bindAddress.length) {
+      _scope.bindAddress = bindAddress
+    }
+  }
+
+    //* * binded promise returns status
+  async bind (bindAddress) {
+    let {socket} = _private.get(this)
+
+    if (this.isOnline()) {
+      return Promise.resolve(true)
     }
 
-    setAddress(bindAddress) {
-        let _scope = _private.get(this);
-        if (typeof bindAddress == 'string' && bindAddress.length) {
-            _scope.bindAddress = bindAddress;
+    if (bindAddress) {
+      this.setAddress(bindAddress)
+    }
+
+    return new Promise((resolve, reject) => {
+      socket.bind(this.getAddress(), (err) => {
+        if (err) {
+          this.logger.error(err)
+          return reject(err)
         }
-    }
 
-    //** binded promise returns status
-    async bind(bindAddress) {
-        let {socket} = _private.get(this);
-
-        if(this.isOnline()) {
-            return Promise.resolve(true);
-        }
-
-        if(bindAddress) {
-            this.setAddress(bindAddress);
-        }
-
-        return new Promise((resolve, reject) => {
-            socket.bind(this.getAddress(), (err) => {
-                if (err) {
-                    this.logger.error(err);
-                    return reject(err);
-                }
-
-                this.setOnline();
-                resolve('router - is online');
-            });
-        });
-    }
+        this.setOnline()
+        resolve('router - is online')
+      })
+    })
+  }
 
     // ** returns status
-    unbind() {
-        this.close();
-    }
+  unbind () {
+    this.close()
+  }
 
-    close() {
-        super.close();
-        let {socket, bindAddress} = _private.get(this);
-        socket.unbindSync(bindAddress);
-        this.setOffline();
-    }
+  close () {
+    super.close()
+    let {socket, bindAddress} = _private.get(this)
+    socket.unbindSync(bindAddress)
+    this.setOffline()
+  }
 
-    //** Polymorfic Functions
+    //* * Polymorfic Functions
 
-    async request(to, event, data, timeout = 5000, mainEvent = false) {
-        let envelop = new Envelop({type: EnvelopType.SYNC, tag : event, data , owner : this.getId(), recipient: to, mainEvent});
-        return super.request(envelop, timeout);
-    }
+  async request (to, event, data, timeout = 5000, mainEvent = false) {
+    let envelop = new Envelop({type: EnvelopType.SYNC, tag: event, data, owner: this.getId(), recipient: to, mainEvent})
+    return super.request(envelop, timeout)
+  }
 
-    tick(to, event, data, mainEvent = false) {
-        let envelop = new Envelop({type: EnvelopType.ASYNC, tag: event, data: data, owner : this.getId(), recipient: to, mainEvent});
-        return super.tick(envelop);
-    }
+  tick (to, event, data, mainEvent = false) {
+    let envelop = new Envelop({type: EnvelopType.ASYNC, tag: event, data: data, owner: this.getId(), recipient: to, mainEvent})
+    return super.tick(envelop)
+  }
 
-    getSocketMsg(envelop) {
-        return [envelop.getRecipient(), '', envelop.getBuffer()];
-    }
+  getSocketMsg (envelop) {
+    return [envelop.getRecipient(), '', envelop.getBuffer()]
+  }
 }
