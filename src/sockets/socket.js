@@ -4,7 +4,7 @@ import EventEmitter from 'pattern-emitter'
 
 import Envelop from './envelope'
 import {EnvelopType, MetricType} from './enum'
-import { Watchers } from './watchers'
+import Watchers from './watchers'
 
 let _private = new WeakMap()
 
@@ -138,6 +138,9 @@ export default class Socket extends EventEmitter {
 
   onRequest (endpoint, fn) {
         // ** function will called with argument  request = {body, reply}
+    if (!(endpoint instanceof RegExp)) {
+      endpoint = endpoint.toString()
+    }
     let {requestWatcherMap} = _private.get(this)
     let requestWatcher = requestWatcherMap.get(endpoint)
 
