@@ -61,7 +61,7 @@ export default class Envelop {
      * @return {{mainEvent: boolean, type, id: string, owner: string, recipient: string, tag: string}}
      */
   static readMetaFromBuffer (buffer) {
-    let mainEvent = !buffer.readInt8(0)
+    let mainEvent = !!buffer.readInt8(0)
 
     let type = buffer.readInt8(1)
 
@@ -202,5 +202,9 @@ export default class Envelop {
 
   setData (data) {
     this.data = data
+  }
+
+  isMain() {
+    return !!this.mainEvent
   }
 }

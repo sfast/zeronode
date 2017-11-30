@@ -32,8 +32,14 @@ export default class Socket extends EventEmitter {
     _scope.socket = socket
     _scope.online = false
     _scope.requests = new Map()
-    _scope.requestWatcherMap = new Map()
-    _scope.tickEmitter = new EventEmitter()
+    _scope.requestWatcherMap = {
+      main: new Map(),
+      custom: new Map()
+    }
+    _scope.tickEmitter = {
+      main: new EventEmitter(),
+      custom: new EventEmitter()
+    }
     _scope.socket = socket
     _scope.options = {}
     _private.set(this, _scope)
@@ -136,47 +142,53 @@ export default class Socket extends EventEmitter {
     socket.removeAllListeners('message')
   }
 
-  onRequest (endpoint, fn) {
+  onRequest (endpoint, fn, main = false) {
         // ** function will called with argument  request = {body, reply}
     if (!(endpoint instanceof RegExp)) {
       endpoint = endpoint.toString()
     }
     let {requestWatcherMap} = _private.get(this)
-    let requestWatcher = requestWatcherMap.get(endpoint)
+    let watcherMap = main ? requestWatcherMap.main : requestWatcherMap.custom
+
+    let requestWatcher = watcherMap.get(endpoint)
 
     if (!requestWatcher) {
       requestWatcher = new Watchers(endpoint)
-      requestWatcherMap.set(endpoint, requestWatcher)
+      watcherMap.set(endpoint, requestWatcher)
     }
 
     requestWatcher.addFn(fn)
   }
 
-  offRequest (endpoint, fn) {
+  offRequest (endpoint, fn, main = false) {
     let {requestWatcherMap} = _private.get(this)
+    let watcherMap = main ? requestWatcherMap.main : requestWatcherMap.custom
+
     if (_.isFunction(fn)) {
-      let endpointWatcher = requestWatcherMap.get(endpoint)
+      let endpointWatcher = watcherMap.get(endpoint)
       if (!endpointWatcher) return
       endpointWatcher.removeFn(fn)
       return
     }
 
-    requestWatcherMap.delete(endpoint)
+    watcherMap.delete(endpoint)
   }
 
-  onTick (event, fn) {
+  onTick (event, fn, main = false) {
     let {tickEmitter} = _private.get(this)
-    tickEmitter.on(event, fn)
+    main ? tickEmitter.main.on(event, fn) : tickEmitter.custom.on(event, fn)
   }
 
-  offTick (event, fn) {
+  offTick (event, fn, main = false) {
     let {tickEmitter} = _private.get(this)
+    let eventTickEmitter = main ? tickEmitter.main : tickEmitter.custom
+
     if (_.isFunction(fn)) {
-      tickEmitter.removeListener(event, fn)
+      eventTickEmitter.removeListener(event, fn)
       return
     }
 
-    tickEmitter.removeAllListeners(event)
+    eventTickEmitter.removeAllListeners(event)
   }
 }
 
@@ -194,7 +206,7 @@ function onSocketMessage (empty, envelopBuffer) {
   switch (type) {
     case EnvelopType.ASYNC:
       if (metric) this.emit(MetricType.GOT_TICK, owner)
-      tickEmitter.emit(tag, envelopData)
+      mainEvent ? tickEmitter.main.emit(tag, envelopData) : tickEmitter.custom.emit(tag, envelopData)
       break
     case EnvelopType.SYNC:
       envelop.setData(envelopData)
@@ -213,7 +225,7 @@ function syncEnvelopHandler (envelop) {
   let getTime = process.hrtime()
 
   let prevOwner = envelop.getOwner()
-  let handlers = self::determineHandlersByTag(envelop.getTag())
+  let handlers = self::determineHandlersByTag(envelop.getTag(), envelop.isMain())
 
   if (!handlers.length) return
 
@@ -237,27 +249,28 @@ function syncEnvelopHandler (envelop) {
         throw new Error(`There is no handlers available as to process next() on socket ${self.getId()}`)
       }
 
-      handlers.pop()(requestOb)
+      handlers.shift()(requestOb)
     }
   }
 
-  handlers.pop()(requestOb)
+  handlers.shift()(requestOb)
 }
 
-function determineHandlersByTag (tag) {
+function determineHandlersByTag (tag, main = false) {
   let handlers = []
 
   let {requestWatcherMap} = _private.get(this)
+  let watcherMap = main ? requestWatcherMap.main : requestWatcherMap.custom
 
-  for (let endpoint of requestWatcherMap.keys()) {
+  for (let endpoint of watcherMap.keys()) {
     if (endpoint instanceof RegExp) {
       if (endpoint.test(tag)) {
-        requestWatcherMap.get(endpoint).getFnMap().forEach((index, fnKey) => {
+        watcherMap.get(endpoint).getFnMap().forEach((index, fnKey) => {
           handlers.push({index, fnKey})
         })
       }
     } else if (endpoint === tag) {
-      requestWatcherMap.get(endpoint).getFnMap().forEach((index, fnKey) => {
+      watcherMap.get(endpoint).getFnMap().forEach((index, fnKey) => {
         handlers.push({index, fnKey})
       })
     }

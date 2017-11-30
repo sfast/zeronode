@@ -27,16 +27,16 @@ export default class Server extends RouterSocket {
     this.setAddress(bind)
 
       // ** ATTACHING client connected
-    this.onRequest(events.CLIENT_CONNECTED, this::_clientConnectedRequest)
+    this.onRequest(events.CLIENT_CONNECTED, this::_clientConnectedRequest, true)
 
       // ** ATTACHING client stop
-    this.onRequest(events.CLIENT_STOP, this::_clientStopRequest)
+    this.onRequest(events.CLIENT_STOP, this::_clientStopRequest, true)
 
       // ** ATTACHING client ping
-    this.onTick(events.CLIENT_PING, this::_clientPingTick)
+    this.onTick(events.CLIENT_PING, this::_clientPingTick, true)
 
       // ** ATTACHING CLIENT OPTIONS SYNCING
-    this.onTick(events.OPTIONS_SYNC, this::_clientOptionsSync)
+    this.onTick(events.OPTIONS_SYNC, this::_clientOptionsSync, true)
   }
 
   getClientById (clientId) {

@@ -1,7 +1,7 @@
--  // TODO::avar maybe we need metrics by tags also under socket/socket.js
--  // TODO::dhar check if all ticked events will reach clients even if we'll unbind quickly
--  // TODO::avar optimize winner node,
+-  // TODO::dhar maybe we need metrics by tags also under socket/socket.js
+-  ~~// TODO::dhar check if all ticked events will reach clients even if we'll unbind quickly~~, (tested, it's ok)
+-  // TODO::dhar optimize winner node,
 -  // TODO::avar optimize node filtering(predicate),
--  // TODO::avar send cpu/memory in pinging
+-  // TODO::dhar send cpu/memory in pinging
 -  // TODO::avar change monitor class, listening events
--  // TODO::avar separate custom events from main events 
+-  ~~// TODO::dhar separate custom events from main events~~
