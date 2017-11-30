@@ -31,8 +31,8 @@ export default class Client extends DealerSocket {
   }
 
   getServerActor () {
-      let {server} = _private.get(this)
-      return server
+    let {server} = _private.get(this)
+    return server
   }
 
   setOptions (options, notify = true) {
@@ -50,8 +50,8 @@ export default class Client extends DealerSocket {
         // actually connected
       await super.connect(serverAddress, timeout)
       let {actorId, options} = await this.request(events.CLIENT_CONNECTED, {
-          actorId: this.getId(),
-          options: this.getOptions()
+        actorId: this.getId(),
+        options: this.getOptions()
       }, Globals.CONNECTION_REQUEST_TIMEOUT)
             // ** creating server model and setting it online
       _scope.server = new ActorModel({id: actorId, options: options, online: true, address: serverAddress})
@@ -93,7 +93,7 @@ export default class Client extends DealerSocket {
       return super.request(event, data, timeout)
     }
 
-    if (!server || !server.isOnline())  return Promise.reject(new Error(`Server is offline during request, on client: ${this.getId()}`))
+    if (!server || !server.isOnline()) return Promise.reject(new Error(`Server is offline during request, on client: ${this.getId()}`))
 
     return super.request(event, data, timeout, server.getId())
   }
@@ -123,14 +123,14 @@ function _serverFailHandler () {
   }
 }
 
-async function _serverReconnectHandler (/*{ fd, serverAddress }*/) {
+async function _serverReconnectHandler (/* { fd, serverAddress } */) {
   try {
     this.setOnline()
 
     let server = this.getServerActor()
     let {options} = await this.request(events.CLIENT_CONNECTED, {actorId: this.getId(), options: this.getOptions()})
 
-    //TODO։։avar remove this after some time (server should always be available at this point)
+    // TODO։։avar remove this after some time (server should always be available at this point)
     if (!server) {
       this.logger.warn('Server actor isn\'t available on reconnect', this.getId())
     }
@@ -145,8 +145,8 @@ async function _serverReconnectHandler (/*{ fd, serverAddress }*/) {
 }
 
 function _startServerPinging () {
-    let _scope = _private.get(this)
-    let {pingInterval} = _scope
+  let _scope = _private.get(this)
+  let {pingInterval} = _scope
 
   if (pingInterval) {
     clearInterval(pingInterval)
@@ -156,7 +156,7 @@ function _startServerPinging () {
   let interval = options.CLIENT_PING_INTERVAL || Globals.CLIENT_PING_INTERVAL
 
   _scope.pingInterval = setInterval(() => {
-    let pingData = { actor: this.getId(), stamp: Date.now()}
+    let pingData = {actor: this.getId(), stamp: Date.now()}
     this.tick(events.CLIENT_PING, pingData)
   }, interval)
 }
@@ -187,7 +187,7 @@ function _serverOptionsSync ({options, actorId}) {
   try {
     let server = this.getServerActor()
     if (!server) {
-      throw new Error(`Client: ${this.getId()}, doesn\'t have server`)
+      throw new Error(`Client: ${this.getId()}, does not have server`)
     }
     server.setOptions(options)
   } catch (err) {

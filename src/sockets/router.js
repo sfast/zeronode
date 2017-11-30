@@ -45,23 +45,15 @@ export default class RouterSocket extends Socket {
 
     //* * binded promise returns status
   bind (bindAddress) {
-
-    if (this.isOnline()) {
-      return Promise.resolve(true)
-    }
+    if (this.isOnline()) return Promise.resolve(true)
 
     let {socket} = _private.get(this)
 
-
-
-    if (bindAddress) {
-      this.setAddress(bindAddress)
-    }
+    if (bindAddress) this.setAddress(bindAddress)
 
     return new Promise((resolve, reject) => {
       socket.bind(this.getAddress(), (err) => {
         if (err) {
-          this.logger.error(err)
           return reject(err)
         }
 

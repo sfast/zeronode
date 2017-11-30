@@ -50,7 +50,6 @@ export default class DealerSocket extends Socket {
     }
   }
 
-
   connect (routerAddress, timeout = -1) {
     if (this.isOnline()) {
       this.logger.info(`Dealer already connected`)

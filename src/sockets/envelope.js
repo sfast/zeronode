@@ -24,8 +24,7 @@ class Parse {
   }
 }
 
-
-const lengthSize = 1;
+const lengthSize = 1
 
 export default class Envelop {
   constructor ({type, id = '', tag = '', data, owner = '', recipient = '', mainEvent}) {

@@ -121,11 +121,11 @@ export default class Socket extends EventEmitter {
       switch (envelop.getType()) {
         case EnvelopType.ASYNC:
             // TODO::avar maybe we need metrics by tags also
-            self.emit(MetricType.SEND_TICK, envelop.getRecipient())
-            break
+          self.emit(MetricType.SEND_TICK, envelop.getRecipient())
+          break
         case EnvelopType.SYNC:
-            self.emit(MetricType.SEND_REQUEST, envelop.getRecipient())
-            break
+          self.emit(MetricType.SEND_REQUEST, envelop.getRecipient())
+          break
       }
     }
     socket.send(this.getSocketMsg(envelop))
@@ -212,7 +212,7 @@ function syncEnvelopHandler (envelop) {
   let prevOwner = envelop.getOwner()
   let handlers = self::determineHandlersByTag(envelop.getTag())
 
-  if(!handlers.length) return
+  if (!handlers.length) return
 
   let requestOb = {
     body: envelop.getData(),
@@ -225,16 +225,16 @@ function syncEnvelopHandler (envelop) {
     },
     next: (err) => {
       // TODO::avar lets refactor next and add it under documentation
-        if (err) {
-            self.logger.error(err);
-            return this.reply({error: err});
-        }
+      if (err) {
+        self.logger.error(err)
+        return this.reply({error: err})
+      }
 
-        if (!handlers.length) {
-            throw new Error(`There is no handlers available as to process next() on socket ${self.getId()}`)
-        }
+      if (!handlers.length) {
+        throw new Error(`There is no handlers available as to process next() on socket ${self.getId()}`)
+      }
 
-        handlers.pop()(requestOb)
+      handlers.pop()(requestOb)
     }
   }
 
@@ -242,26 +242,26 @@ function syncEnvelopHandler (envelop) {
 }
 
 function determineHandlersByTag (tag) {
-  let handlers = [];
+  let handlers = []
 
   let {requestWatcherMap} = _private.get(this)
 
   for (let endpoint of requestWatcherMap.keys()) {
     if (endpoint instanceof RegExp) {
       if (endpoint.test(tag)) {
-          requestWatcherMap.get(endpoint).getFnMap().forEach((index, fnKey) => {
-              handlers.push({index, fnKey});
-          })
-      }
-    } else if (endpoint == tag) {
         requestWatcherMap.get(endpoint).getFnMap().forEach((index, fnKey) => {
-            handlers.push({index, fnKey});
+          handlers.push({index, fnKey})
         })
+      }
+    } else if (endpoint === tag) {
+      requestWatcherMap.get(endpoint).getFnMap().forEach((index, fnKey) => {
+        handlers.push({index, fnKey})
+      })
     }
   }
 
   return handlers.sort((a, b) => {
-      return a.index - b.index
+    return a.index - b.index
   }).map((ob) => ob.fnKey)
 }
 
@@ -270,7 +270,7 @@ function responseEnvelopHandler (envelop) {
 
   let id = envelop.getId()
   if (requests.has(id)) {
-        //** requestObj is like {resolve, reject, timeout : clearRequestTimeout}
+        //* * requestObj is like {resolve, reject, timeout : clearRequestTimeout}
     let {timeout, sendTime, resolve} = requests.get(id)
     // ** getTime is the time when message arrives to server
     // ** replyTime is the time when message is send from server
@@ -279,7 +279,7 @@ function responseEnvelopHandler (envelop) {
     let gotReplyMetric = {id: envelop.getOwner(), sendTime, getTime, replyTime, replyGetTime: process.hrtime()}
     if (metric) this.emit(MetricType.GOT_REPLY, gotReplyMetric)
     clearTimeout(timeout)
-        //** resolving request promise with response data
+        //* * resolving request promise with response data
     resolve(data)
     requests.delete(id)
   } else {

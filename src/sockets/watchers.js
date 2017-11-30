@@ -3,9 +3,9 @@
  */
 import _ from 'underscore'
 
-let index = 1;
+let index = 1
 
-export class Watchers {
+export default class Watchers {
   constructor (tag) {
     this._tag = tag
     this._fnMap = new Map()
@@ -18,7 +18,7 @@ export class Watchers {
   addFn (fn) {
     if (_.isFunction(fn)) {
       this._fnMap.set(fn, index)
-      index++;
+      index++
     }
   }
 

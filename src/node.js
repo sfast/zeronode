@@ -6,7 +6,6 @@ import Promise from 'bluebird'
 import md5 from 'md5'
 import animal from 'animal-id'
 import { EventEmitter } from 'events'
-import { Watchers } from './sockets'
 
 import Server from './server'
 import Client from './client'
@@ -14,8 +13,10 @@ import Errors from './errors'
 import Metric from './metric'
 import Globals from './globals'
 import { events } from './enum'
-import {Enum as socketEvents} from './sockets'
+import {Enum, Watchers} from './sockets'
 import winston from 'winston'
+
+let MetricType = Enum.MetricType
 
 const _private = new WeakMap()
 
@@ -53,7 +54,7 @@ export default class Node extends EventEmitter {
     }
 
     _private.set(this, _scope)
-      this::initNodeServer()
+    this::initNodeServer()
   }
 
   getId () {
@@ -81,7 +82,7 @@ export default class Node extends EventEmitter {
         if (filterValue instanceof RegExp && typeof options[filterKey] === 'string') {
           return !filterValue.test(options[filterKey])
         } else if (!(filterValue instanceof RegExp)) {
-          return !(filterValue == options[filterKey])
+          return !(filterValue === options[filterKey])
         }
         return true
       })
@@ -125,7 +126,7 @@ export default class Node extends EventEmitter {
 
     // ** connect returns the id of the connected node
   async connect (address = 'tcp://127.0.0.1:3000', timeout) {
-    if (typeof address !== 'string' || address.length == 0) {
+    if (typeof address !== 'string' || address.length === 0) {
       throw new Error(`Wrong type for argument address ${address}`)
     }
 
@@ -152,28 +153,28 @@ export default class Node extends EventEmitter {
       this.emit('error', err)
     })
 
-    client.on(socketEvents.SEND_TICK, () => {
-        metricInfo.sendTick(client.getServerActor().getId())
+    client.on(MetricType.SEND_TICK, () => {
+      metricInfo.sendTick(client.getServerActor().getId())
     })
 
-    client.on(socketEvents.GOT_TICK, () => {
-        metricInfo.gotTick(client.getServerActor().getId())
+    client.on(MetricType.GOT_TICK, () => {
+      metricInfo.gotTick(client.getServerActor().getId())
     })
 
-    client.on(socketEvents.SEND_REQUEST, (id) => {
-        metricInfo.sendRequest(id)
+    client.on(MetricType.SEND_REQUEST, (id) => {
+      metricInfo.sendRequest(id)
     })
 
-    client.on(socketEvents.GOT_REQUEST, () => {
-        metricInfo.gotRequest(client.getServerActor().getId())
+    client.on(MetricType.GOT_REQUEST, () => {
+      metricInfo.gotRequest(client.getServerActor().getId())
     })
 
-    client.on(socketEvents.REQUEST_TIMEOUT, () => {
-        metricInfo.requestTimeout(client.getServerActor().getId())
+    client.on(MetricType.REQUEST_TIMEOUT, () => {
+      metricInfo.requestTimeout(client.getServerActor().getId())
     })
 
-    client.on(socketEvents.GOT_REPLY, ({id, sendTime, getTime, replyTime, replyGetTime}) => {
-        metricInfo.gotReply({id, sendTime, getTime, replyTime, replyGetTime})
+    client.on(MetricType.GOT_REPLY, ({id, sendTime, getTime, replyTime, replyGetTime}) => {
+      metricInfo.gotReply({id, sendTime, getTime, replyTime, replyGetTime})
     })
 
     client.on(events.SERVER_STOP, (serverActor) => {
@@ -197,7 +198,7 @@ export default class Node extends EventEmitter {
 
     // TODO::avar maybe disconnect from node ?
   async disconnect (address = 'tcp://127.0.0.1:3000') {
-    if (typeof address !== 'string' || address.length == 0) {
+    if (typeof address !== 'string' || address.length === 0) {
       throw new Error(`Wrong type for argument address ${address}`)
     }
 
@@ -212,11 +213,11 @@ export default class Node extends EventEmitter {
     let client = nodeClients.get(nodeId)
 
     client.removeAllListeners(events.SERVER_FAILURE)
-    client.removeAllListeners(socketEvents.SEND_TICK)
-    client.removeAllListeners(socketEvents.GOT_TICK)
-    client.removeAllListeners(socketEvents.SEND_REQUEST)
-    client.removeAllListeners(socketEvents.GOT_REQUEST)
-    client.removeAllListeners(socketEvents.GOT_REPLY)
+    client.removeAllListeners(MetricType.SEND_TICK)
+    client.removeAllListeners(MetricType.GOT_TICK)
+    client.removeAllListeners(MetricType.SEND_REQUEST)
+    client.removeAllListeners(MetricType.GOT_REQUEST)
+    client.removeAllListeners(MetricType.GOT_REPLY)
 
     await client.disconnect()
     this::_removeClientAllListeners(client)
@@ -337,28 +338,30 @@ export default class Node extends EventEmitter {
     throw new Error(`Node with ${nodeId} is not found.`)
   }
 
-  //TODO:: switch timeout with filter
+  // TODO:: switch timeout with filter
   async requestAny (endpoint, data, timeout = Globals.REQUEST_TIMEOUT, filter = {}, down, up) {
     let filteredNodes = this.getFilteredNodes({filter, down, up})
     if (!filteredNodes.length) {
-      throw {code: Errors.NO_NODE, message: 'there is no node with that filter'}
+      throw new Error('There is no node with that filter', {code: Errors.NO_NODE})
     }
     let nodeId = this::_getWinnerNode(filteredNodes, endpoint)
     return this.request(nodeId, endpoint, data, timeout)
   }
 
   async requestDownAny (endpoint, data, timeout, filter) {
-    return await this.requestAny(endpoint, data, timeout, filter, true, false)
+    let result = await this.requestAny(endpoint, data, timeout, filter, true, false)
+    return result
   }
 
   async requestUpAny (endpoint, data, timeout, filter) {
-    return await this.requestAny(endpoint, data, timeout, filter, false, true)
+    let result = await this.requestAny(endpoint, data, timeout, filter, false, true)
+    return result
   }
 
   tickAny (event, data, filter = {}, down, up) {
     let filteredNodes = this.getFilteredNodes({filter, down, up})
     if (!filteredNodes.length) {
-      throw {code: Errors.NO_NODE, message: 'there is no node with that filter'}
+      throw new Error('There is no node with that filter', {code: Errors.NO_NODE})
     }
     let nodeId = this::_getWinnerNode(filteredNodes, event)
     return this.tick(nodeId, event, data)
@@ -446,28 +449,28 @@ function initNodeServer () {
     this.emit('error', err)
   })
 
-  nodeServer.on(socketEvents.SEND_TICK, (id) => {
-      metricsInfo.sendTick(id)
+  nodeServer.on(MetricType.SEND_TICK, (id) => {
+    metricsInfo.sendTick(id)
   })
 
-  nodeServer.on(socketEvents.GOT_TICK, (id) => {
-      metricsInfo.gotTick(id)
+  nodeServer.on(MetricType.GOT_TICK, (id) => {
+    metricsInfo.gotTick(id)
   })
 
-  nodeServer.on(socketEvents.SEND_REQUEST, (id) => {
-      metricsInfo.sendRequest(id)
+  nodeServer.on(MetricType.SEND_REQUEST, (id) => {
+    metricsInfo.sendRequest(id)
   })
 
-  nodeServer.on(socketEvents.GOT_REQUEST, (id) => {
-      metricsInfo.gotRequest(id)
+  nodeServer.on(MetricType.GOT_REQUEST, (id) => {
+    metricsInfo.gotRequest(id)
   })
 
-  nodeServer.on(socketEvents.REQUEST_TIMEOUT, (id) => {
-      metricsInfo.requestTimeout(id)
+  nodeServer.on(MetricType.REQUEST_TIMEOUT, (id) => {
+    metricsInfo.requestTimeout(id)
   })
 
-  nodeServer.on(socketEvents.GOT_REPLY, ({id, sendTime, getTime, replyTime, replyGetTime}) => {
-      metricsInfo.gotReply({id, sendTime, getTime, replyTime, replyGetTime})
+  nodeServer.on(MetricType.GOT_REPLY, ({id, sendTime, getTime, replyTime, replyGetTime}) => {
+    metricsInfo.gotReply({id, sendTime, getTime, replyTime, replyGetTime})
   })
 
   nodeServer.on(events.CLIENT_FAILURE, this::_clientFailureHandler)
@@ -480,7 +483,7 @@ function _getClientByNode (nodeId) {
   let _scope = _private.get(this)
   let actors = _scope.nodeServer.getOnlineClients().filter((actor) => {
     let node = actor.getId()
-    return node == nodeId
+    return node === nodeId
   })
 
   if (!actors.length) {
@@ -498,7 +501,7 @@ function _generateNodeId () {
   return animal.getId()
 }
 
-//TODO:: optimize this
+// TODO:: optimize this
 function _getWinnerNode (nodeIds, tag) {
   let len = nodeIds.length
   let idx = Math.floor(Math.random() * len)
@@ -528,12 +531,12 @@ function _addExistingListenersToClient (client) {
 function _removeClientAllListeners (client) {
   let _scope = _private.get(this)
 
-    // ** adding previously added onTick-s for this client to
+    // ** removing all handlers
   _scope.tickWatcherMap.forEach((tickWatcher, event) => {
-    client.offTick(event, this::fn)
+    client.offTick(event)
   }, this)
 
-    // ** adding previously added onRequests-s for this client to
+  // ** removing all handlers
   _scope.requestWatcherMap.forEach((requestWatcher, endpoint) => {
     client.offRequest(endpoint)
   }, this)
