@@ -94,36 +94,6 @@ _If handler is not provided then removes all the listeners._
 
 18. `addFileToLog(filename, level)` - writes all logs above given level to given file.
 
-### Default events
-__Important__
-- default event names not recommended to use for custom events
-- all event names must not exceed **20** symbols.
-
-1. CLIENT_CONNECTED
-    1. event name - "1"
-    2. description - fired when client connected.
-2. CLIENT_FAILURE
-    1. event name - "2"
-    2. description - fired when client fails.
-3. CLIENT_STOP
-    1. event name - "3"
-    2. description - fired when client stops.
-4. CLIENT_PING
-    1. event name - "4"
-    2. description - fired when client pings.
-5. OPTIONS_SYNC
-    1. event name = "5"
-    2. description - fired client/server options updated.
-6. SERVER_FAILURE
-    1. event name - "6"
-    2. description - fired when server fails.
-7. SERVER_STOP
-    1. event name = "7"
-    2. description - fired when server stops.
-8. METRICS
-    1. event name - "8"
-    2. description - new metric information. Fired when metric tracking is enabled.
-
 
 ### Simple client server example
 NodeServer is listening for events, NodeClient connects to NodeServer and sends events: <br/>
