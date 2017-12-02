@@ -87,7 +87,7 @@ export default class Server extends RouterSocket {
       _.each(this.getOnlineClients(), (client) => {
         this.tick({ to: client.getId(), event: events.SERVER_STOP })
       })
-      super.unbind()
+      return super.unbind()
     } catch (err) {
       throw new Errors.BindError({id: this.getId(), err, state: 'unbinding'})
     }
@@ -106,12 +106,12 @@ function _clientPingTick ({actor, stamp}) {
   }
 }
 
-// TODO:: @dave, @avar why merge options when disconnecting
 function _clientStopRequest (request) {
   let {clientModels} = _private.get(this)
   let {actorId, options} = request.body
 
-  request.reply()
+  // ** just replying acknowledgment
+  request.reply({stamp: Date.now()})
 
   let actorModel = clientModels.get(actorId)
   actorModel.markStopped()

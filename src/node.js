@@ -73,7 +73,7 @@ export default class Node extends EventEmitter {
     return options
   }
 
-  getFilteredNodes ({options, predicate, up = true, down = true} = {}) {
+  getFilteredNodes ({ options, predicate, up = true, down = true } = {}) {
     let _scope = _private.get(this)
     let nodes = new Set()
 
@@ -104,18 +104,18 @@ export default class Node extends EventEmitter {
     nodeServer ? nodeServer.setAddress(bind) : this.logger.info('No server available')
   }
 
-  // async
+  // ** returns promise
   bind (routerAddress) {
     let {nodeServer} = _private.get(this)
     return nodeServer.bind(routerAddress)
   }
 
+  // ** returns promise
   unbind () {
     let {nodeServer} = _private.get(this)
     if (!nodeServer) return Promise.resolve()
 
-    nodeServer.unbind()
-    return Promise.resolve()
+    return nodeServer.unbind()
   }
 
     // ** connect returns the id of the connected node
@@ -147,7 +147,7 @@ export default class Node extends EventEmitter {
 
     let { actorId, options } = await client.connect(address, timeout)
 
-    this::_attachClientMetrics(client, metricInfo)
+    this::_attachMetricsHandlers(client, metricInfo)
 
     this.logger.info(`Node connected: ${this.getId()} -> ${actorId}`)
 
@@ -285,16 +285,14 @@ export default class Node extends EventEmitter {
 
     let {nodeServer, nodeClients} = _scope
 
-    let endpoint = event
-
     let clientActor = this::_getClientByNode(to)
     if (clientActor) {
-      return nodeServer.request({ to: clientActor.getId(), event: endpoint, data, timeout })
+      return nodeServer.request({ to: clientActor.getId(), event, data, timeout })
     }
 
     if (nodeClients.has(to)) {
-            // ** to is the serverId of node so we request
-      return nodeClients.get(to).request({ event: endpoint, data, timeout })
+      // ** to is the serverId of node so we request
+      return nodeClients.get(to).request({ event, data, timeout })
     }
 
     throw new Error(`Node with ${to} is not found.`)
@@ -313,34 +311,51 @@ export default class Node extends EventEmitter {
     throw new Error(`Node with ${to} is not found.`)
   }
 
-  async requestAny ({ endpoint, data, timeout, filter = {}, down = true, up = true } = {}) {
+  async requestAny ({ event, data, timeout, filter, down = true, up = true } = {}) {
     // ** if no timeout provided then we try to get from options and then from our internal global
     if (!timeout) {
       let {options} = _private.get(this)
       timeout = options.REQUEST_TIMEOUT || Globals.REQUEST_TIMEOUT
     }
 
-    let filteredNodes = this.getFilteredNodes({filter, down, up})
+    let nodesFilter = {down, up }
+    if(_.isFunction(filter)) {
+      nodesFilter.predicate = filter
+    } else {
+      nodesFilter.options = filter || {}
+    }
+
+    let filteredNodes = this.getFilteredNodes(nodesFilter)
 
     if (!filteredNodes.length) {
       throw new Error('There is no node with that filter', {code: Errors.NO_NODE})
     }
-    let nodeId = this::_getWinnerNode(filteredNodes, endpoint)
-    return this.request({ to: nodeId, endpoint, data, timeout })
+
+    // ** find the node id where the request will be sent
+    let to = this::_getWinnerNode(filteredNodes, event)
+    return this.request({ to, event, data, timeout })
   }
 
-  async requestDownAny ({ endpoint, data, timeout, filter } = {}) {
-    let result = await this.requestAny({ endpoint, data, timeout, filter, down: true, up: false })
+  async requestDownAny ({ event, data, timeout, filter } = {}) {
+    let result = await this.requestAny({ event, data, timeout, filter, down: true, up: false })
     return result
   }
 
-  async requestUpAny ({ endpoint, data, timeout, filter } = {}) {
-    let result = await this.requestAny({ endpoint, data, timeout, filter, down: false, up: true })
+  async requestUpAny ({ event, data, timeout, filter } = {}) {
+    let result = await this.requestAny({ event, data, timeout, filter, down: false, up: true })
     return result
   }
 
-  tickAny ({ event, data, filter = {}, down = true, up = true } = {}) {
-    let filteredNodes = this.getFilteredNodes({filter, down, up})
+  tickAny ({ event, data, filter, down = true, up = true } = {}) {
+    let nodesFilter = {down, up }
+    if(_.isFunction(filter)) {
+      nodesFilter.predicate = filter
+    } else {
+      nodesFilter.options = filter || {}
+    }
+
+    let filteredNodes = this.getFilteredNodes(nodesFilter)
+
     if (!filteredNodes.length) {
       throw new Error('There is no node with that filter', {code: Errors.NO_NODE})
     }
@@ -348,7 +363,7 @@ export default class Node extends EventEmitter {
     return this.tick({ to: nodeId, event, data })
   }
 
-  tickDownAny ({event, data, filter} = {}) {
+  tickDownAny ({ event, data, filter } = {}) {
     return this.tickAny({ event, data, filter, down: true, up: false })
   }
 
@@ -356,8 +371,15 @@ export default class Node extends EventEmitter {
     return this.tickAny({ event, data, filter, down: false, up: true })
   }
 
-  tickAll ({ event, data, filter = {}, down = true, up = true } = {}) {
-    let filteredNodes = this.getFilteredNodes({filter, down, up})
+  tickAll ({ event, data, filter, down = true, up = true } = {}) {
+    let nodesFilter = {down, up }
+    if(_.isFunction(filter)) {
+      nodesFilter.predicate = filter
+    } else {
+      nodesFilter.options = filter || {}
+    }
+
+    let filteredNodes = this.getFilteredNodes(nodesFilter)
     let tickPromises = []
 
     filteredNodes.forEach((nodeId) => {
@@ -367,11 +389,11 @@ export default class Node extends EventEmitter {
     return Promise.all(tickPromises)
   }
 
-  tickDownAll ({event, data, filter} = {}) {
+  tickDownAll ({ event, data, filter } = {}) {
     return this.tickAll({ event, data, filter, down: true, up: false })
   }
 
-  tickUpAll ({event, data, filter} = {}) {
+  tickUpAll ({ event, data, filter } = {}) {
     return this.tickAll({ event, data, filter, down: false, up: true })
   }
 
@@ -435,7 +457,7 @@ function _initNodeServer () {
 
   // ** enabling metrics
   nodeServer.setMetric(metricStatus)
-  this::_attachServerMetrics(nodeServer, metricsInfo)
+  this::_attachMetricsHandlers(nodeServer, metricsInfo)
 
   _scope.nodeServer = nodeServer
 }
@@ -462,7 +484,7 @@ function _generateNodeId () {
   return animal.getId()
 }
 
-// TODO:: optimize this
+// TODO::avar optimize this
 function _getWinnerNode (nodeIds, tag) {
   let len = nodeIds.length
   let idx = Math.floor(Math.random() * len)
@@ -503,41 +525,19 @@ function _removeClientAllListeners (client) {
   }, this)
 }
 
-// TODO::REVIEW we can merge with _attachClientMetrics
-function _attachServerMetrics (server, metricsInfo) {
-  server.on(MetricType.SEND_TICK, (id) => metricsInfo.sendTick(id))
+function _attachMetricsHandlers (socket, metricsInfo) {
+  socket.on(MetricType.SEND_TICK, (toNode) => metricsInfo.sendTick(toNode))
 
-  server.on(MetricType.GOT_TICK, (id) => metricsInfo.gotTick(id))
+  socket.on(MetricType.SEND_REQUEST, (toNode) => metricsInfo.sendRequest(toNode))
 
-  server.on(MetricType.SEND_REQUEST, (id) => metricsInfo.sendRequest(id))
+  socket.on(MetricType.REQUEST_TIMEOUT, (fromNode) => metricsInfo.requestTimeout(fromNode))
 
-  server.on(MetricType.GOT_REQUEST, (id) => metricsInfo.gotRequest(id))
+  socket.on(MetricType.GOT_TICK, (fromNode) => metricsInfo.gotTick(fromNode))
 
-  server.on(MetricType.REQUEST_TIMEOUT, (id) => metricsInfo.requestTimeout(id))
+  socket.on(MetricType.GOT_REQUEST, (fromNode) => metricsInfo.gotRequest(fromNode))
 
-  server.on(MetricType.GOT_REPLY, (data) => {
+  socket.on(MetricType.GOT_REPLY, (data) => {
     let {id, sendTime, getTime, replyTime, replyGetTime} = data
     metricsInfo.gotReply({id, sendTime, getTime, replyTime, replyGetTime})
-  })
-}
-
-// TODO::REVIEW
-function _attachClientMetrics (client, metricInfo) {
-  let serverActorId = client.getServerActor().getId()
-
-  client.on(MetricType.SEND_TICK, () => metricInfo.sendTick(serverActorId))
-
-  client.on(MetricType.GOT_TICK, () => metricInfo.gotTick(serverActorId))
-
-  // TODO::REVIEW
-  client.on(MetricType.SEND_REQUEST, (id) => metricInfo.sendRequest(id))
-
-  client.on(MetricType.GOT_REQUEST, () => metricInfo.gotRequest(serverActorId))
-
-  client.on(MetricType.REQUEST_TIMEOUT, () => metricInfo.requestTimeout(serverActorId))
-
-  client.on(MetricType.GOT_REPLY, (data) => {
-    let {id, sendTime, getTime, replyTime, replyGetTime} = data
-    metricInfo.gotReply({id, sendTime, getTime, replyTime, replyGetTime})
   })
 }

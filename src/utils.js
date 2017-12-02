@@ -10,16 +10,26 @@ const checkNodeReducer = (node, predicate, accumulatorSet) => {
 
 const optionsPredicateBuilder = (options) => {
   return (nodeOptions) => {
-    let notSatisfying = !!_.find(options, (filterValue, filterKey) => {
-      if (filterValue instanceof RegExp && typeof nodeOptions[filterKey] === 'string') {
-        return !filterValue.test(nodeOptions[filterKey])
-      } else if (!(filterValue instanceof RegExp)) {
-        return !(filterValue === nodeOptions[filterKey])
+    let optionsKeysArray = Object.keys(options)
+    let satisfying = _.find(optionsKeysArray, (optionKey) => {
+      let optionValue = options[optionKey]
+      // ** which could also not exist
+      let nodeOptionValue = nodeOptions[optionKey]
+
+      if (nodeOptionValue) {
+        if (_.isRegExp(optionValue)) {
+          return optionValue.test(nodeOptionValue)
+        }
+
+        if (_.isString(optionValue)) {
+          return optionValue.test(nodeOptionValue)
+        }
       }
-      return true
+
+      return false
     })
 
-    return !notSatisfying
+    return !!satisfying
   }
 }
 

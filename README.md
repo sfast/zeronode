@@ -59,40 +59,69 @@ All three parameters are optional.
 
 #### Basic methods
 1. `bind(address)` - Binds the node/actor to the specified interface and port. You can bind only in one address.
-2. `connect(address)` - Connects the node/actor to other nodes/actors the specified address. You can connect to many nodes.
-3. `unbind()` - Unbinds the node.
+2. `connect(address, timeoutMiliseconds)` - Connects the node/actor to other nodes/actors the specified address. You can connect to many nodes.
+If timeout is provided then the _connect promise_ will be rejected if connection is taking longer .<br/>
+If timeout is not provided we'll wait for ages till it connects.
+3. `unbind()` - Unbinds the node (it can still be connected to other nodes)
 4. `disconnect(address)` - Disconnects the node from specified address.
 5. `stop()` - Unbinds the node, and disconnects from all addresses.
 
 #### Simple messaging methods
+6. `request({ to, event, data, timeout })` - makes request to node with id (__to__). <br/>
+If timeout is not provided it'll be 10000 milliseconds. <br/>
+You can change it by calling _setOptions(options)_  and setting 'REQUEST_TIMEOUT' value 
 
-6. `onRequest(endpoint: String, handler)` - adds request handler to given endpoint.
-7. `onTick(event: String, handler)` - adds event handler to given event.
-8. `offRequest(endpoint:String, handler)` - removes request handler from endpoint.<br/>
+7. `tick({ to, event, data })` - emits event to given node(__to__)
+
+#### Attaching/Detaching handlers to tick and request 
+
+8. `onRequest(event: String, handler: Function)` - adds request handler for given event.
+
+9. `onTick(event: String, handler: Function)` - adds event handler to given event.
+
+10. `offRequest(event: String, handler: Function)` - removes request handler for given event.<br/>
 _If handler is not provided then removes all the listeners._
 
-9. `offTick(event: String, handler)` - removes given event handler from event listeners list. <br/>
+11. `offTick(event: String, handler: Function)` - removes given event handler from event listeners list. <br/>
 _If handler is not provided then removes all the listeners._
-10. `request(id, endpoint, data, timeout)` - makes request to that endpoint of given node.
-11. `tick(id, event, data)` - emits event to given node.
 
 #### Load balancing methods
 
-12. `requestAny(endpoint, data, timeout, filter)` - send request to "only one" node from the nodes that satisfy given filter.
+General method to send request to __only one__ node satisfying the filter.<br/>
+Filter can be an object or a predicate function.
 
-13. `tickAny(event, data, filter)` - ticks to "only one" node from the nodes that satisfy given filter.
+12. `requestAny({ event, data, timeout, filter, down = true, up = true })`
 
-14. `tickAll(event, data, filter)` - ticks to all nodes that satisfies to given filer.
+Send request to one of downstream nodes (nodes which has been connected to your node via _connect()_ )
+13. `requestDownAny ({ event, data, timeout, filter } = {})` 
+
+Send request to one of upstream nodes (nodes to which ones your node has been connected via _connect()_ )
+14. `requestUpAny ({ event, data, timeout, filter } = {})` 
+
+General method to send tick-s to __only one__ node satisfying the filter.<br/>
+Filter can be an object or a predicate function.
+15. `tickAny({ event, data, filter, down = true, up = true })`
+
+Send tick-s to one of downstream nodes (nodes which has been connected to your node via _connect()_ )
+16. `tickDownAny({ event, data, filter }`
+
+Send tick-s to one of upstream nodes (nodes which has been connected to your node via _connect())_ )
+17. `tickUpAny({ event, data, filter }`
+
+Tick to all nodes satisfying the filter, up ( _upstream_ ) and down ( _downstream_ )
+18. `tickAll({ event, data, filter, down = true, up = true }` 
+
+Tick to all downstream nodes
+19. `tickDownAll({ event, data, filter })` 
+
+Tick to all upstream nodes
+20. `tickUpAll({ event, data, filter })`
 
 #### Debugging and troubleshooting
 
-15. `enableMetrics(interval)` - enables metrics, events will be triggered by given interval. Default interval is 1000 ms.
+19. `enableMetrics(interval)` - enables metrics, events will be triggered by given interval. Default interval is 1000 ms.
 
-16. `disableMetrics()` - disables metrics.
-
-17. `setLogLevel(level)` - sets log level to given level { error: 0, warn: 1, info: 2, verbose: 3, debug: 4, silly: 5 }.
-
-18. `addFileToLog(filename, level)` - writes all logs above given level to given file.
+20. `disableMetrics()` - disables metrics.
 
 
 ### Simple client server example
@@ -139,11 +168,11 @@ import Node from 'zeronode'
    let serverNodeId = 'myServiceServer';
    
    // ** tick() is like firing an event to another node
-   myServiceClient.tick(serverNodeId, 'welcome', 'Hi server!!!');
+   myServiceClient.tick({ to: serverNodeId, event: 'welcome', data:'Hi server!!!' });
    
    // ** you request to another node and getting a promise
    // ** which will be resolve after reply.
-   let responseFromServer = await myServiceClient.request(serverNodeId, 'welcome', 'Hi server, I am client !!!');
+   let responseFromServer = await myServiceClient.request({ to: serverNodeId, event: 'welcome', data: 'Hi server, I am client !!!' });
    
    console.log(`response from server is "${responseFromServer}"`);
    // response from server is "Hello client."
@@ -183,8 +212,8 @@ import Node from 'zeronode'
         console.log(`go message in clientA1 ${msg}`);
     });
     
-    // ** connect to server address
-    await clientA1.connect('tcp:://127.0.0.1:6000');
+    // ** connect to server address and set connection timeout to 20 seconds
+    await clientA1.connect('tcp:://127.0.0.1:6000', 20000);
 }());
 ```
 
@@ -199,7 +228,7 @@ import Node from 'zeronode'
     clientA2.onTick('foobar', (msg) => {
         console.log(`go message in clientA2 ${msg}`);
     });
-    
+    // ** connect to server address and set connection timeout infinite
     await clientA2.connect('tcp:://127.0.0.1:6000');
 }());
 ```
@@ -215,6 +244,7 @@ import Node from 'zeronode'
         console.log(`go message in clientB1 ${msg}`);
     });
     
+    // ** connect to server address and set connection timeout infinite
     await clientB1.connect('tcp:://127.0.0.1:6000');
 }());
 ```
@@ -222,17 +252,18 @@ import Node from 'zeronode'
 Now that all connections are set, we can send events.
 ```javascript
 //this will tick only one node of the layer A nodes;
-server.tickAny('foobar', { foo: 'bar' }, { layer: 'A' });
+server.tickAny({ event: 'foobar', data: { foo: 'bar' }, filter: { layer: 'A' } });
 
 //this will tick to all layer A nodes;
-server.tickAll('foobar', { foo: 'bar' }, { layer: 'A' });
+server.tickAll({ event: 'foobar', data: { foo: 'bar' }, filter: { layer: 'A' } });
 
 //this will tick to all nodes that server connected to, or connected to server.
-server.tickAll('foobar', { foo: 'bar' });
+server.tickAll({ event: 'foobar', data: { foo: 'bar' } });
 
 
-//you even can use regexp to filer nodes
-server.tickAll('foobar', { foo: 'bar' }, {layer: /[A-Z]/})
+// you even can use regexp to filer nodes
+// also you can pass a predicate function as a filter which will get node options as an argument
+server.tickAll({ event: 'foobar', data: { foo: 'bar' }, filter: {layer: /[A-Z]/} })
 ```
 
 ### You still have questions ?

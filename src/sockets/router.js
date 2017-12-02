@@ -65,14 +65,21 @@ export default class RouterSocket extends Socket {
 
   // ** returns status
   unbind () {
-    this.close()
+    return this.close()
   }
 
   close () {
-    super.close()
-    let {socket, bindAddress} = _private.get(this)
-    socket.unbindSync(bindAddress)
-    this.setOffline()
+    return new Promise((resolve, reject) => {
+      try {
+        super.close()
+        let {socket, bindAddress} = _private.get(this)
+        socket.unbindSync(bindAddress)
+        this.setOffline()
+        resolve()
+      } catch (err) {
+        reject(err)
+      }
+    })
   }
 
   //* Polymorphic Functions

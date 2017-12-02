@@ -24,9 +24,7 @@ export default class DealerSocket extends Socket {
     super({id, socket, logger})
 
     // ** emitting disconnect (this emits only when server disconnects)
-    socket.on('disconnect', () => {
-      this.emit(DealerEvent.DISCONNECT)
-    })
+    socket.on('disconnect', () => this.emit(DealerEvent.DISCONNECT))
 
     // ** monitoring connect / disconnect
     socket.monitor(monitorTimeout, 0)

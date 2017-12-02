@@ -61,7 +61,7 @@ export default class Client extends DealerSocket {
       }
 
       let {actorId, options} = await this.request(requestData)
-            // ** creating server model and setting it online
+      // ** creating server model and setting it online
       _scope.server = new ActorModel({id: actorId, options: options, online: true, address: serverAddress})
       this::_startServerPinging()
       return {actorId, options}
@@ -155,47 +155,20 @@ async function _serverReconnectHandler (/* { fd, serverAddress } */) {
 
     let {actorId, options} = await this.request(requestObj)
 
-    // TODO։։avar remove this after some time (server should always be available at this point)
+    //** TODO։։avar remove this after some time (server should always be available at this point)
     if (!server) {
-      this.logger.warn('Server actor isn\'t available on reconnect', this.getId())
+      this.logger.warn(`Server actor isn\'t available on reconnect`, this.getId())
     }
 
+    server.setId(actorId)
     server.setOnline()
     server.setOptions(options)
-    server.setId(actorId)
+
+    this.emit(events.SERVER_RECONNECT, server)
 
     this::_startServerPinging()
   } catch (err) {
     this.emit('error', new Errors.ConnectionError({err, id: this.getId(), state: 'reconnecting'}))
-  }
-}
-
-function _startServerPinging () {
-  let _scope = _private.get(this)
-  let {pingInterval} = _scope
-
-  if (pingInterval) {
-    clearInterval(pingInterval)
-  }
-
-  let options = this.getOptions()
-  let interval = options.CLIENT_PING_INTERVAL || Globals.CLIENT_PING_INTERVAL
-
-  _scope.pingInterval = setInterval(() => {
-    try {
-      let pingData = {actor: this.getId(), stamp: Date.now()}
-      this.tick({event: events.CLIENT_PING, data: pingData})
-    } catch (err) {
-      this.logger.error('Error while pinging to server:', err)
-    }
-  }, interval)
-}
-
-function _stopServerPinging () {
-  let {pingInterval} = _private.get(this)
-
-  if (pingInterval) {
-    clearInterval(pingInterval)
   }
 }
 
@@ -225,5 +198,34 @@ function _serverOptionsSync ({options, actorId}) {
     server.setOptions(options)
   } catch (err) {
     this.logger.error('Error while handling server options sync:', err)
+  }
+}
+
+function _startServerPinging () {
+  let _scope = _private.get(this)
+  let {pingInterval} = _scope
+
+  if (pingInterval) {
+    clearInterval(pingInterval)
+  }
+
+  let options = this.getOptions()
+  let interval = options.CLIENT_PING_INTERVAL || Globals.CLIENT_PING_INTERVAL
+
+  _scope.pingInterval = setInterval(() => {
+    try {
+      let pingData = {actor: this.getId(), stamp: Date.now()}
+      this.tick({event: events.CLIENT_PING, data: pingData})
+    } catch (err) {
+      this.logger.error('Error while pinging to server:', err)
+    }
+  }, interval)
+}
+
+function _stopServerPinging () {
+  let {pingInterval} = _private.get(this)
+
+  if (pingInterval) {
+    clearInterval(pingInterval)
   }
 }
