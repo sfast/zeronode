@@ -5,10 +5,10 @@
 ### Why you need ZeroNode ? 
 Application backends are becaming complex these days and there are lots of moving parts talking to each other through network.
 There is a great difference between sending a few bytes from A to B, and doing messaging in reliable way. :heavy_exclamation_mark::heavy_exclamation_mark::heavy_exclamation_mark:
-- How to handle dynamic components :question: (i.e., pieces that come and/or go away temporarily, scaling a microservice instances )
-- How to handle messages that we can't deliver immediately :question: (e.g waiting for a component to come back online)
-- How to route messages in complex microservice architechture :question: (i.e. one to one, one to many, custom grouping messaging)
-- How we handle network errors :question: (i.e., reconnecting of various pieces)
+- :pray: How to handle dynamic components ? (i.e., pieces that come and/or go away temporarily, scaling a microservice instances )
+- :pray: How to handle messages that we can't deliver immediately ? (e.g waiting for a component to come back online)
+- :pray: How to route messages in complex microservice architechture ? (i.e. one to one, one to many, custom grouping messaging)
+- :pray: How we handle network errors ? (i.e., reconnecting of various pieces)
 
 We created Zeronode on top of <a href="http://zeromq.org" target="_blank">zeromq</a> as to address <a href="http://zguide.zeromq.org/page:all#Why-We-Needed-ZeroMQ" target="_blank">these</a>
 and some more common problems that developers will face once building solid systems.
@@ -90,38 +90,38 @@ _If handler is not provided then removes all the listeners._
 General method to send request to __only one__ node satisfying the filter.<br/>
 Filter can be an object or a predicate function.
 
-12. `requestAny({ event, data, timeout, filter, down = true, up = true })`
+12. `requestAny({ event, data, timeout, filter, down = true, up = true })`<br/>
 
-Send request to one of downstream nodes (nodes which has been connected to your node via _connect()_ )
-13. `requestDownAny ({ event, data, timeout, filter } = {})` 
+Send request to one of downstream nodes (nodes which has been connected to your node via _connect()_ )<br/>
+13. `requestDownAny ({ event, data, timeout, filter } = {})` <br/>
 
-Send request to one of upstream nodes (nodes to which ones your node has been connected via _connect()_ )
-14. `requestUpAny ({ event, data, timeout, filter } = {})` 
+Send request to one of upstream nodes (nodes to which ones your node has been connected via _connect()_ )<br/>
+14. `requestUpAny ({ event, data, timeout, filter } = {})` <br/>
 
 General method to send tick-s to __only one__ node satisfying the filter.<br/>
-Filter can be an object or a predicate function.
-15. `tickAny({ event, data, filter, down = true, up = true })`
+Filter can be an object or a predicate function.<br/>
+15. `tickAny({ event, data, filter, down = true, up = true })`<br/>
 
-Send tick-s to one of downstream nodes (nodes which has been connected to your node via _connect()_ )
-16. `tickDownAny({ event, data, filter }`
+Send tick-s to one of downstream nodes (nodes which has been connected to your node via _connect()_ )<br/>
+16. `tickDownAny({ event, data, filter }`<br/>
 
-Send tick-s to one of upstream nodes (nodes which has been connected to your node via _connect())_ )
-17. `tickUpAny({ event, data, filter }`
+Send tick-s to one of upstream nodes (nodes which has been connected to your node via _connect())_ )<br/>
+17. `tickUpAny({ event, data, filter }`<br/>
 
-Tick to all nodes satisfying the filter, up ( _upstream_ ) and down ( _downstream_ )
-18. `tickAll({ event, data, filter, down = true, up = true }` 
+Tick to all nodes satisfying the filter, up ( _upstream_ ) and down ( _downstream_ )<br/>
+18. `tickAll({ event, data, filter, down = true, up = true }` <br/>
 
-Tick to all downstream nodes
-19. `tickDownAll({ event, data, filter })` 
+Tick to all downstream nodes <br/>
+19. `tickDownAll({ event, data, filter })` <br/>
 
-Tick to all upstream nodes
-20. `tickUpAll({ event, data, filter })`
+Tick to all upstream nodes <br/>
+20. `tickUpAll({ event, data, filter })` <br/>
 
 #### Debugging and troubleshooting
 
-19. `enableMetrics(interval)` - enables metrics, events will be triggered by given interval. Default interval is 1000 ms.
+21. `enableMetrics(interval)` - enables metrics, events will be triggered by given interval. Default interval is 1000 ms. <br/>
 
-20. `disableMetrics()` - disables metrics.
+22. `disableMetrics()` - disables metrics. <br/>
 
 
 ### Simple client server example
