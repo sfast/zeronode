@@ -111,6 +111,8 @@ function _clientStopRequest (request) {
   let {clientModels} = _private.get(this)
   let {actorId, options} = request.body
 
+  request.reply()
+
   let actorModel = clientModels.get(actorId)
   actorModel.markStopped()
   actorModel.mergeOptions(options)
