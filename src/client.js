@@ -155,9 +155,9 @@ async function _serverReconnectHandler (/* { fd, serverAddress } */) {
 
     let {actorId, options} = await this.request(requestObj)
 
-    //** TODO։։avar remove this after some time (server should always be available at this point)
+    //* *  TODO։։avar remove this after some time (server should always be available at this point)
     if (!server) {
-      this.logger.warn(`Server actor isn\'t available on reconnect`, this.getId())
+      this.logger.warn(`Server actor is not available on reconnect`, this.getId())
     }
 
     server.setId(actorId)

@@ -318,8 +318,8 @@ export default class Node extends EventEmitter {
       timeout = options.REQUEST_TIMEOUT || Globals.REQUEST_TIMEOUT
     }
 
-    let nodesFilter = {down, up }
-    if(_.isFunction(filter)) {
+    let nodesFilter = { down, up }
+    if (_.isFunction(filter)) {
       nodesFilter.predicate = filter
     } else {
       nodesFilter.options = filter || {}
@@ -347,8 +347,8 @@ export default class Node extends EventEmitter {
   }
 
   tickAny ({ event, data, filter, down = true, up = true } = {}) {
-    let nodesFilter = {down, up }
-    if(_.isFunction(filter)) {
+    let nodesFilter = { down, up }
+    if (_.isFunction(filter)) {
       nodesFilter.predicate = filter
     } else {
       nodesFilter.options = filter || {}
@@ -372,8 +372,8 @@ export default class Node extends EventEmitter {
   }
 
   tickAll ({ event, data, filter, down = true, up = true } = {}) {
-    let nodesFilter = {down, up }
-    if(_.isFunction(filter)) {
+    let nodesFilter = { down, up }
+    if (_.isFunction(filter)) {
       nodesFilter.predicate = filter
     } else {
       nodesFilter.options = filter || {}
