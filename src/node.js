@@ -7,6 +7,7 @@ import md5 from 'md5'
 import animal from 'animal-id'
 import { EventEmitter } from 'events'
 
+import NodeUtils from './utils'
 import Server from './server'
 import Client from './client'
 import Errors from './errors'
@@ -72,33 +73,25 @@ export default class Node extends EventEmitter {
     return options
   }
 
-  getFilteredNodes ({filter = {}, down = true, up = true} = {filter: {}, down: true, up: true}) {
+  getFilteredNodes ({options, predicate, up = true, down = true} = {}) {
     let _scope = _private.get(this)
     let nodes = new Set()
 
-    function checkNode (node) {
-      let options = node.getOptions()
-      let notSatisfying = !!_.find(filter, (filterValue, filterKey) => {
-        if (filterValue instanceof RegExp && typeof options[filterKey] === 'string') {
-          return !filterValue.test(options[filterKey])
-        } else if (!(filterValue instanceof RegExp)) {
-          return !(filterValue === options[filterKey])
-        }
-        return true
-      })
-      if (!notSatisfying) {
-        nodes.add(node.id)
-      }
-    }
+    // ** if the predicate is provided we'll use it, if not then filtering will hapen based on options
+    // ** options predicate is built via NodeUtils.optionsPredicateBuilder
+    predicate = _.isFunction(predicate) ? predicate : NodeUtils.optionsPredicateBuilder(options)
+
     if (_scope.nodeServer && down) {
-      _scope.nodeServer.getOnlineClients().forEach(checkNode, this)
+      _scope.nodeServer.getOnlineClients().forEach((clientNode) => {
+        NodeUtils.checkNodeReducer(clientNode, predicate, nodes)
+      }, this)
     }
 
     if (_scope.nodeClients.size && up) {
       _scope.nodeClients.forEach((client) => {
         let actorModel = client.getServerActor()
         if (actorModel && actorModel.isOnline()) {
-          checkNode(actorModel)
+          NodeUtils.checkNodeReducer(actorModel, predicate, nodes)
         }
       }, this)
     }
