@@ -73,6 +73,10 @@ export default class ActorModel {
     this.setOnline()
   }
 
+  setId(newId) {
+    this.id = newId
+  }
+
   setAddress (address) {
     this.address = address
   }

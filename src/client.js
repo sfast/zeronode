@@ -128,7 +128,7 @@ async function _serverReconnectHandler (/* { fd, serverAddress } */) {
     this.setOnline()
 
     let server = this.getServerActor()
-    let {options} = await this.request(events.CLIENT_CONNECTED, {actorId: this.getId(), options: this.getOptions()}, undefined, true)
+    let {actorId, options} = await this.request(events.CLIENT_CONNECTED, {actorId: this.getId(), options: this.getOptions()}, undefined, true)
 
     // TODO։։avar remove this after some time (server should always be available at this point)
     if (!server) {
@@ -137,6 +137,7 @@ async function _serverReconnectHandler (/* { fd, serverAddress } */) {
 
     server.setOnline()
     server.setOptions(options)
+    server.setId(actorId)
 
     this::_startServerPinging()
   } catch (err) {
