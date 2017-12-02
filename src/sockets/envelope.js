@@ -204,7 +204,7 @@ export default class Envelop {
     this.data = data
   }
 
-  isMain() {
+  isMain () {
     return !!this.mainEvent
   }
 }

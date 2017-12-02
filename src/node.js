@@ -308,90 +308,92 @@ export default class Node extends EventEmitter {
     }
   }
 
-  async request (nodeId, endpoint, data, timeout = Globals.REQUEST_TIMEOUT) {
+  async request ({ to, event, data, timeout = Globals.REQUEST_TIMEOUT } = {}) {
     let _scope = _private.get(this)
     let {nodeServer, nodeClients} = _scope
 
-    let clientActor = this::_getClientByNode(nodeId)
+    let endpoint = event
+
+    let clientActor = this::_getClientByNode(to)
     if (clientActor) {
-      return nodeServer.request(clientActor.getId(), endpoint, data, timeout)
+      return nodeServer.request({ to: clientActor.getId(), event: endpoint, data, timeout })
     }
 
-    if (nodeClients.has(nodeId)) {
-            // ** nodeId is the serverId of node so we request
-      return nodeClients.get(nodeId).request(endpoint, data, timeout)
+    if (nodeClients.has(to)) {
+            // ** to is the serverId of node so we request
+      return nodeClients.get(to).request({ event: endpoint, data, timeout })
     }
 
-    throw new Error(`Node with ${nodeId} is not found.`)
+    throw new Error(`Node with ${to} is not found.`)
   }
 
-  tick (nodeId, event, data) {
+  tick ({ to, event, data } = {}) {
     let _scope = _private.get(this)
     let {nodeServer, nodeClients} = _scope
-    let clientActor = this::_getClientByNode(nodeId)
+    let clientActor = this::_getClientByNode(to)
     if (clientActor) {
-      return nodeServer.tick(clientActor.getId(), event, data)
+      return nodeServer.tick({ to: clientActor.getId(), event, data })
     }
-    if (nodeClients.has(nodeId)) {
-      return nodeClients.get(nodeId).tick(event, data)
+    if (nodeClients.has(to)) {
+      return nodeClients.get(to).tick({ event, data })
     }
-    throw new Error(`Node with ${nodeId} is not found.`)
+    throw new Error(`Node with ${to} is not found.`)
   }
 
   // TODO:: switch timeout with filter
-  async requestAny (endpoint, data, timeout = Globals.REQUEST_TIMEOUT, filter = {}, down, up) {
+  async requestAny ({ endpoint, data, timeout = Globals.REQUEST_TIMEOUT, filter = {}, down = true, up = true }) {
     let filteredNodes = this.getFilteredNodes({filter, down, up})
     if (!filteredNodes.length) {
       throw new Error('There is no node with that filter', {code: Errors.NO_NODE})
     }
     let nodeId = this::_getWinnerNode(filteredNodes, endpoint)
-    return this.request(nodeId, endpoint, data, timeout)
+    return this.request({ to: nodeId, endpoint, data, timeout })
   }
 
-  async requestDownAny (endpoint, data, timeout, filter) {
-    let result = await this.requestAny(endpoint, data, timeout, filter, true, false)
+  async requestDownAny ({ endpoint, data, timeout, filter } = {}) {
+    let result = await this.requestAny({ endpoint, data, timeout, filter, down: true, up: false })
     return result
   }
 
-  async requestUpAny (endpoint, data, timeout, filter) {
-    let result = await this.requestAny(endpoint, data, timeout, filter, false, true)
+  async requestUpAny ({ endpoint, data, timeout, filter } = {}) {
+    let result = await this.requestAny({ endpoint, data, timeout, filter, down: false, up: true })
     return result
   }
 
-  tickAny (event, data, filter = {}, down, up) {
+  tickAny ({ event, data, filter = {}, down = true, up = true }) {
     let filteredNodes = this.getFilteredNodes({filter, down, up})
     if (!filteredNodes.length) {
       throw new Error('There is no node with that filter', {code: Errors.NO_NODE})
     }
     let nodeId = this::_getWinnerNode(filteredNodes, event)
-    return this.tick(nodeId, event, data)
+    return this.tick({ to: nodeId, event, data })
   }
 
-  tickDownAny (event, data, filter) {
-    return this.tickAny(event, data, filter, true, false)
+  tickDownAny ({event, data, filter} = {}) {
+    return this.tickAny({ event, data, filter, down: true, up: false })
   }
 
-  tickUpAny (event, data, filter) {
-    return this.tickAny(event, data, filter, false, true)
+  tickUpAny ({ event, data, filter } = {}) {
+    return this.tickAny({ event, data, filter, down: false, up: true })
   }
 
-  tickAll (event, data, filter = {}, down, up) {
+  tickAll ({ event, data, filter = {}, down = true, up = true }) {
     let filteredNodes = this.getFilteredNodes({filter, down, up})
     let tickPromises = []
 
     filteredNodes.forEach((nodeId) => {
-      tickPromises.push(this.tick(nodeId, event, data))
+      tickPromises.push(this.tick({ to: nodeId, event, data }))
     }, this)
 
     return Promise.all(tickPromises)
   }
 
-  tickDownAll (event, data, filter) {
-    return this.tickAll(event, data, filter, true, false)
+  tickDownAll ({event, data, filter} = {}) {
+    return this.tickAll({ event, data, filter, down: true, up: false })
   }
 
-  tickUpAll (event, data, filter) {
-    return this.tickAll(event, data, filter, false, true)
+  tickUpAll ({event, data, filter} = {}) {
+    return this.tickAll({ event, data, filter, down: false, up: true })
   }
 
   enableMetrics (interval = 1000) {

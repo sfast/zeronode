@@ -33,8 +33,8 @@ let tickWithInterval = (t) => {
         if(!start) {
             start = Date.now();
         }
-        layerA.tickAny("WELCOME11111", {node : layerA.getId(), name : "layerA"}, {layer: "DNS"}).catch(errPrint);
-        layerB.tickAny("WELCOMETandz", {node : layerB.getId(), name : "layerB"}, {layer: /^DNS/}).catch(errPrint);
+        layerA.tickAny({ event: "WELCOME11111", data: {node : layerA.getId(), name : "layerA"}, filter: {layer: "DNS"} })
+        layerB.tickAny({ event: "WELCOMETandz", data: {node : layerB.getId(), name : "layerB"}, filter: {layer: /^DNS/} })
         // _clearIntervals()
     }, t);
 

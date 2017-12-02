@@ -65,7 +65,7 @@ export default class Server extends RouterSocket {
     super.setOptions(options)
     if (notify) {
       _.each(this.getOnlineClients(), (client) => {
-        this.tick(client.id, events.OPTIONS_SYNC, {actorId: this.getId(), options})
+        this.tick({event: events.OPTIONS_SYNC, data: {actorId: this.getId(), options}, to: client.id})
       })
     }
   }
@@ -85,7 +85,7 @@ export default class Server extends RouterSocket {
   unbind () {
     try {
       _.each(this.getOnlineClients(), (client) => {
-        this.tick(client.getId(), events.SERVER_STOP)
+        this.tick({ to: client.getId(), event: events.SERVER_STOP })
       })
       super.unbind()
     } catch (err) {

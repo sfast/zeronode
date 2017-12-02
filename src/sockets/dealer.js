@@ -99,12 +99,12 @@ export default class DealerSocket extends Socket {
   }
 
     //* * Polymorphic functions
-  request (event, data, timeout = 5000, to, mainEvent = false) {
+  request ({to, event, data, timeout, mainEvent = false} = {}) {
     let envelop = new Envelop({type: EnvelopType.SYNC, tag: event, data, owner: this.getId(), recipient: to, mainEvent})
     return super.request(envelop, timeout)
   }
 
-  tick (event, data, to, mainEvent = false) {
+  tick ({to, event, data, mainEvent = false} = {}) {
     let envelop = new Envelop({type: EnvelopType.ASYNC, tag: event, data, owner: this.getId(), recipient: to, mainEvent})
     return super.tick(envelop)
   }

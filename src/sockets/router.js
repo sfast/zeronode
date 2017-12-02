@@ -77,12 +77,12 @@ export default class RouterSocket extends Socket {
 
     //* * Polymorfic Functions
 
-  request (to, event, data, timeout = 5000, mainEvent = false) {
+  request ({to, event, data, timeout, mainEvent = false} = {}) {
     let envelop = new Envelop({type: EnvelopType.SYNC, tag: event, data, owner: this.getId(), recipient: to, mainEvent})
     return super.request(envelop, timeout)
   }
 
-  tick (to, event, data, mainEvent = false) {
+  tick ({to, event, data, mainEvent = false} = {}) {
     let envelop = new Envelop({type: EnvelopType.ASYNC, tag: event, data: data, owner: this.getId(), recipient: to, mainEvent})
     return super.tick(envelop)
   }

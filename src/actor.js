@@ -73,7 +73,7 @@ export default class ActorModel {
     this.setOnline()
   }
 
-  setId(newId) {
+  setId (newId) {
     this.id = newId
   }
 

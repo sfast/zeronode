@@ -30,7 +30,7 @@ describe('Client/Server', () => {
                 assert.equal(message, expectedMessage)
                 done()
               })
-              client.tick('tandz', expectedMessage)
+              client.tick({ event: 'tandz', data: expectedMessage })
             })
   })
 
@@ -41,7 +41,7 @@ describe('Client/Server', () => {
               return client.connect(address)
             })
             .then(() => {
-              return client.request('tandz', expectedMessage, 500)
+              return client.request({ event: 'tandz', data: expectedMessage, timeout: 500 })
             })
             .catch(err => {
               assert.include(err.message, 'timeouted')
@@ -60,7 +60,7 @@ describe('Client/Server', () => {
                 assert.equal(body, expectedMessage)
                 reply(expectedMessage)
               })
-              return client.request('tandz', expectedMessage, 2000)
+              return client.request({ event: 'tandz', data: expectedMessage, timeout: 2000 })
             })
             .then((message) => {
               assert.equal(message, expectedMessage)
@@ -79,7 +79,7 @@ describe('Client/Server', () => {
                 assert.equal(message, expectedMessage)
                 done()
               })
-              server.tick(client.getId(), 'tandz', expectedMessage)
+              server.tick({ to: client.getId(), event: 'tandz', data: expectedMessage })
             })
   })
 
@@ -90,7 +90,7 @@ describe('Client/Server', () => {
               return client.connect(address)
             })
             .then(() => {
-              return server.request(client.getId(), 'tandz', expectedMessage, 500)
+              return server.request({ to: client.getId(), event: 'tandz', data: expectedMessage, timeout: 500 })
             })
             .catch(err => {
               assert.include(err.message, 'timeouted')
@@ -109,7 +109,7 @@ describe('Client/Server', () => {
                 assert.equal(body, expectedMessage)
                 reply(body)
               })
-              return server.request(client.getId(), 'tandz', expectedMessage)
+              return server.request({ to: client.getId(), event: 'tandz', data: expectedMessage })
             })
             .then(message => {
               assert.equal(message, expectedMessage)

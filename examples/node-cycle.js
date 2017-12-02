@@ -55,22 +55,22 @@ let run = async () => {
                 _clearIntervals();
                 console.log(`Time passed: `, Date.now() - start);
             } else {
-                layerA.tick(layerB.getId(), "WELCOME", data + 1);
+                layerA.tick({ to: layerB.getId(), event: "WELCOME", data: data + 1 });
             }
         });
 
         layerB.onTick("WELCOME", (data) => {
             console.log("B", data);
-            layerB.tick(layerC.getId(), "WELCOME", data + 1);
+            layerB.tick({ to: layerC.getId(), event: "WELCOME", data: data + 1 });
         });
 
         layerC.onTick("WELCOME", (data) => {
             console.log("C", data);
-            layerC.tick(layerA.getId(), "WELCOME", data + 1);
+            layerC.tick({ to: layerA.getId(), event: "WELCOME", data: data + 1 });
         });
 
         start = Date.now();
-        runner.tick(layerA.getId(), "WELCOME", 1).catch(errPrint);
+        runner.tick({ to: layerA.getId(), event: "WELCOME", data: 1 });
     } catch (err) {
         console.log(err);
     }
