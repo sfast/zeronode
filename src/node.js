@@ -144,9 +144,10 @@ export default class Node extends EventEmitter {
 
     // **
     client.setMetric(metricEnabled)
-    this::_attachClientMetrics(client, metricInfo)
 
     let { actorId, options } = await client.connect(address, timeout)
+
+    this::_attachClientMetrics(client, metricInfo)
 
     this.logger.info(`Node connected: ${this.getId()} -> ${actorId}`)
 
