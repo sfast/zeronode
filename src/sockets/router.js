@@ -43,7 +43,7 @@ export default class RouterSocket extends Socket {
     }
   }
 
-    //* * binded promise returns status
+  //* * binded promise returns status
   bind (bindAddress) {
     if (this.isOnline()) return Promise.resolve(true)
 
@@ -63,7 +63,7 @@ export default class RouterSocket extends Socket {
     })
   }
 
-    // ** returns status
+  // ** returns status
   unbind () {
     this.close()
   }
@@ -75,8 +75,7 @@ export default class RouterSocket extends Socket {
     this.setOffline()
   }
 
-    //* * Polymorfic Functions
-
+  //* Polymorphic Functions
   request ({to, event, data, timeout, mainEvent = false} = {}) {
     let envelop = new Envelop({type: EnvelopType.SYNC, tag: event, data, owner: this.getId(), recipient: to, mainEvent})
     return super.request(envelop, timeout)

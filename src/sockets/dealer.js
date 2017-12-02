@@ -2,6 +2,7 @@
  * Created by artak on 3/2/17.
  */
 
+import Promise from 'bluebird'
 import zmq from 'zmq'
 
 import Socket from './socket'
@@ -98,7 +99,7 @@ export default class DealerSocket extends Socket {
     this.close()
   }
 
-    //* * Polymorphic functions
+    //* Polymorphic functions
   request ({to, event, data, timeout, mainEvent = false} = {}) {
     let envelop = new Envelop({type: EnvelopType.SYNC, tag: event, data, owner: this.getId(), recipient: to, mainEvent})
     return super.request(envelop, timeout)

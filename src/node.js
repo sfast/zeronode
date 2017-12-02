@@ -54,7 +54,7 @@ export default class Node extends EventEmitter {
     }
 
     _private.set(this, _scope)
-    this::initNodeServer()
+    this::_initNodeServer()
   }
 
   getId () {
@@ -102,6 +102,7 @@ export default class Node extends EventEmitter {
         }
       }, this)
     }
+
     return Array.from(nodes)
   }
 
@@ -143,43 +144,14 @@ export default class Node extends EventEmitter {
 
     let client = new Client({ id, options: _scope.options, logger: this.logger })
 
-    if (metricEnabled) {
-      client.setMetric(true)
-    }
+    // ** attaching client handlers
+    client.on('error', (err) => this.emit('error', err))
+    client.on(events.SERVER_FAILURE, (serverActor) => this.emit(events.SERVER_FAILURE, serverActor.toJSON()))
+    client.on(events.SERVER_STOP, (serverActor) => this.emit(events.SERVER_STOP, serverActor.toJSON()))
 
-    client.on(events.SERVER_FAILURE, this::_serverFailureHandler)
-
-    client.on('error', (err) => {
-      this.emit('error', err)
-    })
-
-    client.on(MetricType.SEND_TICK, () => {
-      metricInfo.sendTick(client.getServerActor().getId())
-    })
-
-    client.on(MetricType.GOT_TICK, () => {
-      metricInfo.gotTick(client.getServerActor().getId())
-    })
-
-    client.on(MetricType.SEND_REQUEST, (id) => {
-      metricInfo.sendRequest(id)
-    })
-
-    client.on(MetricType.GOT_REQUEST, () => {
-      metricInfo.gotRequest(client.getServerActor().getId())
-    })
-
-    client.on(MetricType.REQUEST_TIMEOUT, () => {
-      metricInfo.requestTimeout(client.getServerActor().getId())
-    })
-
-    client.on(MetricType.GOT_REPLY, ({id, sendTime, getTime, replyTime, replyGetTime}) => {
-      metricInfo.gotReply({id, sendTime, getTime, replyTime, replyGetTime})
-    })
-
-    client.on(events.SERVER_STOP, (serverActor) => {
-      this.emit(events.SERVER_STOP, serverActor.toJSON())
-    })
+    // **
+    client.setMetric(metricEnabled)
+    this::_attachClientMetrics(client, metricInfo)
 
     let { actorId, options } = await client.connect(address, timeout)
 
@@ -308,8 +280,15 @@ export default class Node extends EventEmitter {
     }
   }
 
-  async request ({ to, event, data, timeout = Globals.REQUEST_TIMEOUT } = {}) {
+  async request ({ to, event, data, timeout } = {}) {
     let _scope = _private.get(this)
+
+    // ** if no timeout provided then we try to get from options and then from our internal global
+    if (!timeout) {
+      let {options} = _scope
+      timeout = options.REQUEST_TIMEOUT || Globals.REQUEST_TIMEOUT
+    }
+
     let {nodeServer, nodeClients} = _scope
 
     let endpoint = event
@@ -340,9 +319,15 @@ export default class Node extends EventEmitter {
     throw new Error(`Node with ${to} is not found.`)
   }
 
-  // TODO:: switch timeout with filter
-  async requestAny ({ endpoint, data, timeout = Globals.REQUEST_TIMEOUT, filter = {}, down = true, up = true }) {
+  async requestAny ({ endpoint, data, timeout, filter = {}, down = true, up = true } = {}) {
+    // ** if no timeout provided then we try to get from options and then from our internal global
+    if (!timeout) {
+      let {options} = _private.get(this)
+      timeout = options.REQUEST_TIMEOUT || Globals.REQUEST_TIMEOUT
+    }
+
     let filteredNodes = this.getFilteredNodes({filter, down, up})
+
     if (!filteredNodes.length) {
       throw new Error('There is no node with that filter', {code: Errors.NO_NODE})
     }
@@ -360,7 +345,7 @@ export default class Node extends EventEmitter {
     return result
   }
 
-  tickAny ({ event, data, filter = {}, down = true, up = true }) {
+  tickAny ({ event, data, filter = {}, down = true, up = true } = {}) {
     let filteredNodes = this.getFilteredNodes({filter, down, up})
     if (!filteredNodes.length) {
       throw new Error('There is no node with that filter', {code: Errors.NO_NODE})
@@ -377,7 +362,7 @@ export default class Node extends EventEmitter {
     return this.tickAny({ event, data, filter, down: false, up: true })
   }
 
-  tickAll ({ event, data, filter = {}, down = true, up = true }) {
+  tickAll ({ event, data, filter = {}, down = true, up = true } = {}) {
     let filteredNodes = this.getFilteredNodes({filter, down, up})
     let tickPromises = []
 
@@ -440,44 +425,24 @@ export default class Node extends EventEmitter {
 
 // ** PRIVATE FUNCTIONS
 
-function initNodeServer () {
+function _initNodeServer () {
   let _scope = _private.get(this)
   let {id, bind, options, metric} = _scope
+
+  let metricStatus = metric.status
   let metricsInfo = metric.info
 
   let nodeServer = new Server({id, bind, logger: this.logger, options})
-    // ** handlers for nodeServer
-  nodeServer.on('error', (err) => {
-    this.emit('error', err)
-  })
+  // ** handlers for nodeServer
+  nodeServer.on('error', (err) => this.emit('error', err))
+  nodeServer.on(events.CLIENT_FAILURE, (clientActor) => this.emit(events.CLIENT_FAILURE, clientActor.toJSON()))
+  nodeServer.on(events.CLIENT_CONNECTED, (clientActor) => this.emit(events.CLIENT_CONNECTED, clientActor.toJSON()))
+  nodeServer.on(events.CLIENT_STOP, (clientActor) => this.emit(events.CLIENT_STOP, clientActor.toJSON()))
 
-  nodeServer.on(MetricType.SEND_TICK, (id) => {
-    metricsInfo.sendTick(id)
-  })
+  // ** enabling metrics
+  nodeServer.setMetric(metricStatus)
+  this::_attachServerMetrics(nodeServer, metricsInfo)
 
-  nodeServer.on(MetricType.GOT_TICK, (id) => {
-    metricsInfo.gotTick(id)
-  })
-
-  nodeServer.on(MetricType.SEND_REQUEST, (id) => {
-    metricsInfo.sendRequest(id)
-  })
-
-  nodeServer.on(MetricType.GOT_REQUEST, (id) => {
-    metricsInfo.gotRequest(id)
-  })
-
-  nodeServer.on(MetricType.REQUEST_TIMEOUT, (id) => {
-    metricsInfo.requestTimeout(id)
-  })
-
-  nodeServer.on(MetricType.GOT_REPLY, ({id, sendTime, getTime, replyTime, replyGetTime}) => {
-    metricsInfo.gotReply({id, sendTime, getTime, replyTime, replyGetTime})
-  })
-
-  nodeServer.on(events.CLIENT_FAILURE, this::_clientFailureHandler)
-  nodeServer.on(events.CLIENT_CONNECTED, this::_clientConnectHandler)
-  nodeServer.on(events.CLIENT_STOP, this::_clientStopHandler)
   _scope.nodeServer = nodeServer
 }
 
@@ -493,7 +458,7 @@ function _getClientByNode (nodeId) {
   }
 
   if (actors.length > 1) {
-    return this.logger('warn', `We should have just 1 client from 1 node`)
+    return this.logger.warn(`We should have just 1 client from 1 node`)
   }
 
   return actors[0]
@@ -513,15 +478,15 @@ function _getWinnerNode (nodeIds, tag) {
 function _addExistingListenersToClient (client) {
   let _scope = _private.get(this)
 
-    // ** adding previously added onTick-s for this client to
+  // ** adding previously added onTick-s for this client to
   _scope.tickWatcherMap.forEach((tickWatcher, event) => {
-        // ** TODO what about order of functions ?
+    // ** TODO what about order of functions ?
     tickWatcher.getFnMap().forEach((index, fn) => {
       client.onTick(event, this::fn)
     }, this)
   }, this)
 
-    // ** adding previously added onRequests-s for this client to
+  // ** adding previously added onRequests-s for this client to
   _scope.requestWatcherMap.forEach((requestWatcher, endpoint) => {
         // ** TODO what about order of functions ?
     requestWatcher.getFnMap().forEach((index, fn) => {
@@ -544,18 +509,41 @@ function _removeClientAllListeners (client) {
   }, this)
 }
 
-function _clientFailureHandler (clientActor) {
-  this.emit(events.CLIENT_FAILURE, clientActor.toJSON())
+// TODO::REVIEW we can merge with _attachClientMetrics
+function _attachServerMetrics (server, metricsInfo) {
+  server.on(MetricType.SEND_TICK, (id) => metricsInfo.sendTick(id))
+
+  server.on(MetricType.GOT_TICK, (id) => metricsInfo.gotTick(id))
+
+  server.on(MetricType.SEND_REQUEST, (id) => metricsInfo.sendRequest(id))
+
+  server.on(MetricType.GOT_REQUEST, (id) => metricsInfo.gotRequest(id))
+
+  server.on(MetricType.REQUEST_TIMEOUT, (id) => metricsInfo.requestTimeout(id))
+
+  server.on(MetricType.GOT_REPLY, (data) => {
+    let {id, sendTime, getTime, replyTime, replyGetTime} = data
+    metricsInfo.gotReply({id, sendTime, getTime, replyTime, replyGetTime})
+  })
 }
 
-function _serverFailureHandler (serverActor) {
-  this.emit(events.SERVER_FAILURE, serverActor.toJSON())
-}
+// TODO::REVIEW
+function _attachClientMetrics (client, metricInfo) {
+  let serverActorId = client.getServerActor().getId()
 
-function _clientConnectHandler (clientActor) {
-  this.emit(events.CLIENT_CONNECTED, clientActor.toJSON())
-}
+  client.on(MetricType.SEND_TICK, () => metricInfo.sendTick(serverActorId))
 
-function _clientStopHandler (clientActor) {
-  this.emit(events.CLIENT_STOP, clientActor.toJSON())
+  client.on(MetricType.GOT_TICK, () => metricInfo.gotTick(serverActorId))
+
+  // TODO::REVIEW
+  client.on(MetricType.SEND_REQUEST, (id) => metricInfo.sendRequest(id))
+
+  client.on(MetricType.GOT_REQUEST, () => metricInfo.gotRequest(serverActorId))
+
+  client.on(MetricType.REQUEST_TIMEOUT, () => metricInfo.requestTimeout(serverActorId))
+
+  client.on(MetricType.GOT_REPLY, (data) => {
+    let {id, sendTime, getTime, replyTime, replyGetTime} = data
+    metricInfo.gotReply({id, sendTime, getTime, replyTime, replyGetTime})
+  })
 }
