@@ -4,26 +4,26 @@
 import zmq from 'zmq'
 import Promise from 'bluebird'
 
-import Socket from './socket'
+import { Socket, SocketEvent } from './socket'
 import Envelop from './envelope'
 import {EnvelopType} from './enum'
 
+Promise.config({ cancellation: true })
+
 let _private = new WeakMap()
 
-// ** if there is no logger the default console will be used
 export default class RouterSocket extends Socket {
-  constructor (data = {}) {
-    let {id, options} = data
-
+  constructor ({id, options, config} = {}) {
     options = options || {}
+    config = config || {}
 
-    let logger = options.logger
     let socket = zmq.socket('router')
 
-    super({id, socket, logger})
+    super({id, socket, options, config})
 
     let _scope = {
       socket,
+      bindPromise: null,
       bindAddress: null
     }
 
@@ -43,36 +43,59 @@ export default class RouterSocket extends Socket {
     }
   }
 
-  //* * binded promise returns status
+  // ** returns promise
   bind (bindAddress) {
-    if (this.isOnline()) return Promise.resolve(true)
+    if (this.isOnline() && bindAddress === this.getAddress()) {
+      return Promise.resolve(true)
+    }
 
-    let {socket} = _private.get(this)
+    let _scope = _private.get(this)
+    let bindPromise = _scope.bindPromise
+
+    if (bindPromise && bindAddress !== this.getAddress()) {
+      // ** if trying to bind to other address you need to unbind first
+      return Promise.reject(new Error(`Already binded to ${this.getAddress()}, unbind before changing bind address`))
+    }
+
+    // ** if bind is still pending then returning it
+    if (bindPromise && bindPromise.isPending() && bindAddress === this.getAddress()) return bindPromise
 
     if (bindAddress) this.setAddress(bindAddress)
 
-    return new Promise((resolve, reject) => {
+    _scope.bindPromise = new Promise((resolve, reject) => {
+      let { socket } = _scope
       socket.bind(this.getAddress(), (err) => {
-        if (err) {
-          return reject(err)
-        }
-
+        if (err) return reject(err)
         this.setOnline()
-        resolve('router - is online')
+        resolve(`Router (${this.getId()}) is binded at address ${this.getAddress()}`)
       })
     })
+
+    return _scope.bindPromise
   }
 
-  // ** returns status
+  // ** returns promise
   unbind () {
     return this.close()
   }
 
+  // ** returns promise
   close () {
     return new Promise((resolve, reject) => {
       try {
+        //* closing and removing all listeners on socket
         super.close()
-        let {socket, bindAddress} = _private.get(this)
+
+        let _scope = _private.get(this)
+        let {socket, bindAddress, bindPromise} = _scope
+
+        //* if bind promise is pending then cancel it
+        if (bindPromise && bindPromise.isPending()) {
+          bindPromise.cancel()
+        }
+
+        _scope.bindPromise = null
+
         socket.unbindSync(bindAddress)
         this.setOffline()
         resolve()

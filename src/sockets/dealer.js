@@ -5,32 +5,26 @@
 import Promise from 'bluebird'
 import zmq from 'zmq'
 
-import Socket from './socket'
+import { Socket, SocketEvent } from './socket'
 import Envelop from './envelope'
-import { Timeouts, EnvelopType, DealerEvent } from './enum'
+import { EnvelopType } from './enum'
+
+// ** enable cancellation , by default it's turned off
+Promise.config({ cancellation: true })
 
 let _private = new WeakMap()
 
-// ** if there is no logger the default console will be used
 export default class DealerSocket extends Socket {
-  constructor (data = {}) {
-    let {id, options} = data
+  constructor ({id, options, config} = {}) {
     options = options || {}
-
-    let logger = options.logger
-    let monitorTimeout = options.MONITOR_TIMEOUT || Timeouts.MONITOR_TIMEOUT
+    config = config || {}
 
     let socket = zmq.socket('dealer')
-    super({id, socket, logger})
-
-    // ** emitting disconnect (this emits only when server disconnects)
-    socket.on('disconnect', () => this.emit(DealerEvent.DISCONNECT))
-
-    // ** monitoring connect / disconnect
-    socket.monitor(monitorTimeout, 0)
+    super({id, socket, options, config})
 
     let _scope = {
       socket,
+      connectionPromise: null,
       routerAddress: null
     }
 
@@ -50,54 +44,75 @@ export default class DealerSocket extends Socket {
   }
 
   connect (routerAddress, timeout = -1) {
-    if (this.isOnline()) {
-      this.logger.info(`Dealer already connected`)
+    if (this.isOnline() && routerAddress === this.getAddress()) {
       return Promise.resolve(true)
     }
 
-    return new Promise((resolve, reject) => {
-      let {socket} = _private.get(this)
-      let rejectionTimeout
+    let _scope = _private.get(this)
+    let connectionPromise = _scope.connectionPromise
+
+    if (connectionPromise && routerAddress !== this.getAddress()) {
+      // ** if trying to connect to other address you need to disconnect first
+      return Promise.reject(new Error(`Already connected to ${this.getAddress()}, disconnect before changing connection address`))
+    }
+
+    // ** if connection is still pending then returning it
+    if (connectionPromise && connectionPromise.isPending() && routerAddress === this.getAddress()) return connectionPromise
+
+    // ** if connect is called for the first time then creating the connection promise
+    _scope.connectionPromise = new Promise((resolve, reject) => {
+      let {socket} = _scope
+      let rejectionTimeout = null
 
       if (routerAddress) {
         this.setAddress(routerAddress)
       }
 
-      socket.removeAllListeners('connect')
-
-      if (timeout !== -1) {
-        rejectionTimeout = setTimeout(() => {
-          socket.removeAllListeners('connect')
-          reject(new Error('Dealer connection timeouted'))
-          this.disconnect()
-        }, timeout)
-      }
-
-      socket.on('connect', () => {
+      const onConnectionHandler = () => {
         if (rejectionTimeout) {
           clearTimeout(rejectionTimeout)
         }
 
+        this.once(SocketEvent.DISCONNECT, onDisconnectionHandler)
+
         this.setOnline()
-
-        socket.removeAllListeners('connect')
-        socket.on('connect', (fd, serverAddress) => {
-          this.emit(DealerEvent.RECONNECT, {fd, serverAddress})
-        })
-
         resolve()
-      })
+      }
+
+      const onReConnectionHandler = (fd, endpoint) => {
+        this.once(SocketEvent.DISCONNECT, onDisconnectionHandler)
+        this.setOnline()
+        this.emit(SocketEvent.RECONNECT, {fd, endpoint})
+      }
+
+      const onDisconnectionHandler = () => {
+        this.setOffline()
+        this.once(SocketEvent.CONNECT, onReConnectionHandler)
+      }
+
+      if (timeout !== -1) {
+        rejectionTimeout = setTimeout(() => {
+          this.removeListener(SocketEvent.CONNECT, onConnectionHandler)
+          // ** reject the connection promise and then disconnect
+          reject(new Error(`Timeout to connect to ${this.getAddress()} `))
+          this.disconnect()
+        }, timeout)
+      }
+
+      this.once(SocketEvent.CONNECT, onConnectionHandler)
 
       socket.connect(this.getAddress())
     })
+
+    return _scope.connectionPromise
   }
 
-    // ** not actually disconnected
+  // ** not actually disconnected
   disconnect () {
     this.close()
   }
 
-    //* Polymorphic functions
+  // ** Polymorphic functions
   request ({to, event, data, timeout, mainEvent = false} = {}) {
     let envelop = new Envelop({type: EnvelopType.SYNC, tag: event, data, owner: this.getId(), recipient: to, mainEvent})
     return super.request(envelop, timeout)
@@ -109,12 +124,19 @@ export default class DealerSocket extends Socket {
   }
 
   close () {
+    //* closing and removing all listeners on socket
     super.close()
 
-    let {socket, routerAddress} = _private.get(this)
+    let _scope = _private.get(this)
+    let { socket, routerAddress, connectionPromise } = _scope
+
+    //* if connection promise is pending then cancel it
+    if (connectionPromise && connectionPromise.isPending()) {
+      connectionPromise.cancel()
+    }
+    _scope.connectionPromise = null
 
     socket.disconnect(routerAddress)
-    socket.removeAllListeners('connect')
 
     this.setOffline()
   }

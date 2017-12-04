@@ -91,6 +91,7 @@ export default class Node extends EventEmitter {
       _scope.nodeClients.forEach((client) => {
         let actorModel = client.getServerActor()
         if (actorModel && actorModel.isOnline()) {
+
           NodeUtils.checkNodeReducer(actorModel, predicate, nodes)
         }
       }, this)
@@ -208,34 +209,34 @@ export default class Node extends EventEmitter {
     await Promise.all(stopPromise)
   }
 
-  onRequest (endpoint, fn) {
+  onRequest (requestEvent, fn) {
     let _scope = _private.get(this)
     let {requestWatcherMap, nodeClients, nodeServer} = _scope
 
-    let requestWatcher = requestWatcherMap.get(endpoint)
+    let requestWatcher = requestWatcherMap.get(requestEvent)
     if (!requestWatcher) {
-      requestWatcher = new Watchers(endpoint)
-      requestWatcherMap.set(endpoint, requestWatcher)
+      requestWatcher = new Watchers(requestEvent)
+      requestWatcherMap.set(requestEvent, requestWatcher)
     }
 
     requestWatcher.addFn(fn)
 
-    nodeServer.onRequest(endpoint, fn)
+    nodeServer.onRequest(requestEvent, fn)
 
     nodeClients.forEach((client) => {
-      client.onRequest(endpoint, fn)
+      client.onRequest(requestEvent, fn)
     }, this)
   }
 
-  offRequest (endpoint, fn) {
+  offRequest (requestEvent, fn) {
     let _scope = _private.get(this)
 
-    _scope.nodeServer.offRequest(endpoint)
+    _scope.nodeServer.offRequest(requestEvent)
     _scope.nodeClients.forEach((client) => {
-      client.offRequest(endpoint, fn)
+      client.offRequest(requestEvent, fn)
     })
 
-    let requestWatcher = _scope.requestWatcherMap.get(endpoint)
+    let requestWatcher = _scope.requestWatcherMap.get(requestEvent)
     if (requestWatcher) {
       requestWatcher.removeFn(fn)
     }
@@ -328,7 +329,7 @@ export default class Node extends EventEmitter {
     let filteredNodes = this.getFilteredNodes(nodesFilter)
 
     if (!filteredNodes.length) {
-      throw new Error('There is no node with that filter', {code: Errors.NO_NODE})
+      throw new Error('There is no node with that filter')
     }
 
     // ** find the node id where the request will be sent
@@ -357,7 +358,7 @@ export default class Node extends EventEmitter {
     let filteredNodes = this.getFilteredNodes(nodesFilter)
 
     if (!filteredNodes.length) {
-      throw new Error('There is no node with that filter', {code: Errors.NO_NODE})
+      throw new Error('There is no node with that filter')
     }
     let nodeId = this::_getWinnerNode(filteredNodes, event)
     return this.tick({ to: nodeId, event, data })
@@ -427,7 +428,7 @@ export default class Node extends EventEmitter {
     metric.info.flush()
   }
 
-  setOptions (options) {
+  async setOptions (options) {
     let _scope = _private.get(this)
     _scope.options = options
 
@@ -503,10 +504,10 @@ function _addExistingListenersToClient (client) {
   }, this)
 
   // ** adding previously added onRequests-s for this client to
-  _scope.requestWatcherMap.forEach((requestWatcher, endpoint) => {
+  _scope.requestWatcherMap.forEach((requestWatcher, requestEvent) => {
         // ** TODO what about order of functions ?
     requestWatcher.getFnMap().forEach((index, fn) => {
-      client.onRequest(endpoint, this::fn)
+      client.onRequest(requestEvent, this::fn)
     }, this)
   }, this)
 }
@@ -520,8 +521,8 @@ function _removeClientAllListeners (client) {
   }, this)
 
   // ** removing all handlers
-  _scope.requestWatcherMap.forEach((requestWatcher, endpoint) => {
-    client.offRequest(endpoint)
+  _scope.requestWatcherMap.forEach((requestWatcher, requestEvent) => {
+    client.offRequest(requestEvent)
   }, this)
 }
 

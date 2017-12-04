@@ -2,8 +2,9 @@ import _ from 'underscore'
 import animal from 'animal-id'
 import EventEmitter from 'pattern-emitter'
 
+import SocketEvent from './events'
 import Envelop from './envelope'
-import {EnvelopType, MetricType} from './enum'
+import { EnvelopType, MetricType, Timeouts } from './enum'
 import Watchers from './watchers'
 
 let _private = new WeakMap()
@@ -15,16 +16,63 @@ class SocketIsNotOnline extends Error {
   }
 }
 
-export default class Socket extends EventEmitter {
+function buildSocketEventHandler (eventName) {
+  const handler =  (fd, endpoint) => {
+    if(this.debugMode()) {
+      this.logger.info(`Emitted '${eventName}' on socket '${this.getId()}'`)
+    }
+    this.emit(eventName, {fd, endpoint})
+  }
+
+  return this::handler
+}
+
+class Socket extends EventEmitter {
   static generateSocketId () {
     return animal.getId()
   }
 
-  constructor ({id, socket, logger}) {
+  constructor ({id, socket, config, options} = {}) {
     super()
+    options = options || {}
+    config = config || {}
+
+    let logger = config.logger || console
+
+    // ** config is for internal usage (logger, timeouts etc ...) and options is for node filtering later on
+    config = config || {}
+    options = options || {}
+
+    // ** setting the logger as soon as possible
+    this.setLogger(logger)
+
+    // ** creating the socket
     let socketId = id || Socket.generateSocketId()
     socket.identity = socketId
     socket.on('message', this::onSocketMessage)
+
+    // ** start monitoring socket events
+    let monitorTimeout = config.MONITOR_TIMEOUT || Timeouts.MONITOR_TIMEOUT
+    let monitorRestartTimeout = config.MONITOR_RESTART_TIMEOUT || Timeouts.MONITOR_RESTART_TIMEOUT
+
+    // ** start socket monitoring
+    socket.monitor(monitorTimeout, 0)
+
+    // ** Handle monitor error and restart it
+    socket.on('monitor_error', (err) => {
+      _scope.monitorRestartInterval = setTimeout(() => socket.monitor(monitorTimeout, 0), monitorRestartTimeout);
+    });
+
+    socket.on('connect', this::buildSocketEventHandler(SocketEvent.CONNECT))
+    socket.on('disconnect', this::buildSocketEventHandler(SocketEvent.DISCONNECT))
+    socket.on('connect_delay', this::buildSocketEventHandler(SocketEvent.CONNECT_DELAY))
+    socket.on('connect_retry', this::buildSocketEventHandler(SocketEvent.CONNECT_RETRY))
+    socket.on('listen', this::buildSocketEventHandler(SocketEvent.LISTEN))
+    socket.on('bind_error', this::buildSocketEventHandler(SocketEvent.BIND_ERROR))
+    socket.on('accept', this::buildSocketEventHandler(SocketEvent.ACCEPT))
+    socket.on('accept_error', this::buildSocketEventHandler(SocketEvent.ACCEPT_ERROR))
+    socket.on('close', this::buildSocketEventHandler(SocketEvent.CLOSE))
+    socket.on('close_error', this::buildSocketEventHandler(SocketEvent.CLOSE_ERROR))
 
     let _scope = {}
     _scope.id = socketId
@@ -41,10 +89,12 @@ export default class Socket extends EventEmitter {
       custom: new EventEmitter()
     }
     _scope.socket = socket
-    _scope.options = {}
+    _scope.config = config
+    _scope.options = options
+    _scope.monitorRestartInterval = null
     _private.set(this, _scope)
 
-    this.logger = logger || console
+    this.debugMode(false)
   }
 
   getId () {
@@ -72,14 +122,27 @@ export default class Socket extends EventEmitter {
     _scope.options = options
   }
 
+  getOptions () {
+    let {options} = _private.get(this)
+    return options
+  }
+
   setMetric (status) {
     let _scope = _private.get(this)
     _scope.metric = status
   }
 
-  getOptions () {
-    let {options} = _private.get(this)
-    return options
+  setLogger(logger) {
+    this.logger = logger || console
+  }
+
+  debugMode(val) {
+    let _scope = _private.get(this)
+    if(val) {
+      _scope.isDebugMode = !!val
+    } else {
+      return _scope.isDebugMode
+    }
   }
 
   request (envelop, reqTimeout = 5000) {
@@ -138,8 +201,12 @@ export default class Socket extends EventEmitter {
   }
 
   close () {
-    let {socket} = _private.get(this)
-    socket.removeAllListeners('message')
+    let {socket, monitorRestartInterval} = _private.get(this)
+    // ** remove all listeners
+    socket.removeAllListeners()
+    // ** if during closing there is a monitor restart scheduled then clear the schedule
+    if(monitorRestartInterval) clearInterval(monitorRestartInterval)
+    socket.unmonitor();
   }
 
   onRequest (endpoint, fn, main = false) {
@@ -301,4 +368,14 @@ function responseEnvelopHandler (envelop) {
   } else {
     this.logger.warn(`Response ${id} is probably time outed`)
   }
+}
+
+
+// ** exports
+export { SocketEvent as SocketEvent }
+export { Socket as Socket }
+
+export default {
+  SocketEvent,
+  Socket
 }

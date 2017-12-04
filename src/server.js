@@ -10,12 +10,11 @@ import { Router as RouterSocket } from './sockets'
 let _private = new WeakMap()
 
 export default class Server extends RouterSocket {
-  constructor (data = {}) {
-    let {id, bind, logger, options} = data
-    let routerSocketOptions = {logger}
+  constructor ({id, bind, config, options} = {}) {
+    options = options || {}
+    config = config || {}
 
-    super({id, options: routerSocketOptions})
-    super.setOptions(options)
+    super({id, options, config})
 
     let _scope = {
       clientModels: new Map(),
@@ -65,7 +64,7 @@ export default class Server extends RouterSocket {
     super.setOptions(options)
     if (notify) {
       _.each(this.getOnlineClients(), (client) => {
-        this.tick({event: events.OPTIONS_SYNC, data: {actorId: this.getId(), options}, to: client.id})
+        this.tick({event: events.OPTIONS_SYNC, data: {actorId: this.getId(), options}, to: client.id, mainEvent: true})
       })
     }
   }
@@ -85,7 +84,7 @@ export default class Server extends RouterSocket {
   unbind () {
     try {
       _.each(this.getOnlineClients(), (client) => {
-        this.tick({ to: client.getId(), event: events.SERVER_STOP })
+        this.tick({ to: client.getId(), event: events.SERVER_STOP, mainEvent: true })
       })
       return super.unbind()
     } catch (err) {

@@ -18,21 +18,18 @@ let MetricType = {
   REQUEST_TIMEOUT: 'requestTimeout'
 }
 
-let DealerEvent = {
-  RECONNECT: 'DEALER_RECONNECT',
-  DISCONNECT: 'DEALER_DISCONNECT'
+let Timeouts = {
+  MONITOR_TIMEOUT: 10,
+  // ** when monitor fials restart it after milliseconds
+  MONITOR_RESTART_TIMEOUT: 1000
 }
-
-let Timeouts = {MONITOR_TIMEOUT: 10}
 
 export { EnvelopType }
 export { MetricType }
 export { Timeouts }
-export { DealerEvent }
 
 export default {
   EnvelopType,
   MetricType,
-  Timeouts,
-  DealerEvent
+  Timeouts
 }
