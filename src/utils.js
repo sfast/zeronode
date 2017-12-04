@@ -22,7 +22,7 @@ const optionsPredicateBuilder = (options) => {
         }
 
         if (_.isString(optionValue)) {
-          return optionValue != nodeOptionValue
+          return optionValue !== nodeOptionValue
         }
       }
 

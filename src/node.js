@@ -292,7 +292,7 @@ export default class Node extends EventEmitter {
 
     if (nodeClients.has(to)) {
       // ** to is the serverId of node so we request
-      return nodeClients.get(to).request({ event:  endpoint, data, timeout })
+      return nodeClients.get(to).request({ event: endpoint, data, timeout })
     }
 
     throw new Error(`Node with ${to} is not found.`)
@@ -311,7 +311,7 @@ export default class Node extends EventEmitter {
     throw new Error(`Node with ${to} is not found.`)
   }
 
-  async requestAny ({ event, data, timeout, filter, down = true, up = true } = {}) {
+  async requestAny ({ endpoint, data, timeout, filter, down = true, up = true } = {}) {
     // ** if no timeout provided then we try to get from options and then from our internal global
     if (!timeout) {
       let {options} = _private.get(this)
@@ -332,17 +332,17 @@ export default class Node extends EventEmitter {
     }
 
     // ** find the node id where the request will be sent
-    let to = this::_getWinnerNode(filteredNodes, event)
-    return this.request({ to, event, data, timeout })
+    let to = this::_getWinnerNode(filteredNodes, endpoint)
+    return this.request({ to, event: endpoint, data, timeout })
   }
 
-  async requestDownAny ({ event, data, timeout, filter } = {}) {
-    let result = await this.requestAny({ event, data, timeout, filter, down: true, up: false })
+  async requestDownAny ({ endpoint, data, timeout, filter } = {}) {
+    let result = await this.requestAny({ endpoint, data, timeout, filter, down: true, up: false })
     return result
   }
 
-  async requestUpAny ({ event, data, timeout, filter } = {}) {
-    let result = await this.requestAny({ event, data, timeout, filter, down: false, up: true })
+  async requestUpAny ({ endpoint, data, timeout, filter } = {}) {
+    let result = await this.requestAny({ endpoint, data, timeout, filter, down: false, up: true })
     return result
   }
 
