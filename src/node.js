@@ -333,7 +333,7 @@ export default class Node extends EventEmitter {
 
     // ** find the node id where the request will be sent
     let to = this::_getWinnerNode(filteredNodes, endpoint)
-    return this.request({ to, event: endpoint, data, timeout })
+    return this.request({ to, endpoint, data, timeout })
   }
 
   async requestDownAny ({ endpoint, data, timeout, filter } = {}) {
