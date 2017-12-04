@@ -292,7 +292,7 @@ export default class Node extends EventEmitter {
 
     if (nodeClients.has(to)) {
       // ** to is the serverId of node so we request
-      return nodeClients.get(to).request({ event, data, timeout })
+      return nodeClients.get(to).request({ event:  endpoint, data, timeout })
     }
 
     throw new Error(`Node with ${to} is not found.`)
