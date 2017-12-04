@@ -274,7 +274,7 @@ export default class Node extends EventEmitter {
     }
   }
 
-  async request ({ to, event, data, timeout } = {}) {
+  async request ({ to, endpoint, data, timeout } = {}) {
     let _scope = _private.get(this)
 
     // ** if no timeout provided then we try to get from options and then from our internal global
@@ -287,7 +287,7 @@ export default class Node extends EventEmitter {
 
     let clientActor = this::_getClientByNode(to)
     if (clientActor) {
-      return nodeServer.request({ to: clientActor.getId(), event, data, timeout })
+      return nodeServer.request({ to: clientActor.getId(), event: endpoint, data, timeout })
     }
 
     if (nodeClients.has(to)) {
