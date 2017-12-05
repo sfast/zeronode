@@ -102,6 +102,7 @@ export default class DealerSocket extends Socket {
       this.once(SocketEvent.CONNECT, onConnectionHandler)
 
       socket.connect(this.getAddress())
+      this.attachSocketMonitor()
     })
 
     return _scope.connectionPromise

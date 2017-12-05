@@ -51,29 +51,6 @@ class Socket extends EventEmitter {
     socket.identity = socketId
     socket.on('message', this::onSocketMessage)
 
-    // ** start monitoring socket events
-    let monitorTimeout = config.MONITOR_TIMEOUT || Timeouts.MONITOR_TIMEOUT
-    let monitorRestartTimeout = config.MONITOR_RESTART_TIMEOUT || Timeouts.MONITOR_RESTART_TIMEOUT
-
-    // ** start socket monitoring
-    socket.monitor(monitorTimeout, 0)
-
-    // ** Handle monitor error and restart it
-    socket.on('monitor_error', (err) => {
-      _scope.monitorRestartInterval = setTimeout(() => socket.monitor(monitorTimeout, 0), monitorRestartTimeout);
-    });
-
-    socket.on('connect', this::buildSocketEventHandler(SocketEvent.CONNECT))
-    socket.on('disconnect', this::buildSocketEventHandler(SocketEvent.DISCONNECT))
-    socket.on('connect_delay', this::buildSocketEventHandler(SocketEvent.CONNECT_DELAY))
-    socket.on('connect_retry', this::buildSocketEventHandler(SocketEvent.CONNECT_RETRY))
-    socket.on('listen', this::buildSocketEventHandler(SocketEvent.LISTEN))
-    socket.on('bind_error', this::buildSocketEventHandler(SocketEvent.BIND_ERROR))
-    socket.on('accept', this::buildSocketEventHandler(SocketEvent.ACCEPT))
-    socket.on('accept_error', this::buildSocketEventHandler(SocketEvent.ACCEPT_ERROR))
-    socket.on('close', this::buildSocketEventHandler(SocketEvent.CLOSE))
-    socket.on('close_error', this::buildSocketEventHandler(SocketEvent.CLOSE_ERROR))
-
     let _scope = {}
     _scope.id = socketId
     _scope.metric = false
@@ -198,6 +175,34 @@ class Socket extends EventEmitter {
       }
     }
     socket.send(this.getSocketMsg(envelop))
+  }
+
+  attachSocketMonitor () {
+    let _scope = _private.get(this)
+    let { config, socket } = _scope
+
+    // ** start monitoring socket events
+    let monitorTimeout = config.MONITOR_TIMEOUT || Timeouts.MONITOR_TIMEOUT
+    let monitorRestartTimeout = config.MONITOR_RESTART_TIMEOUT || Timeouts.MONITOR_RESTART_TIMEOUT
+
+    // ** start socket monitoring
+    socket.monitor(monitorTimeout, 0)
+
+    // ** Handle monitor error and restart it
+    socket.on('monitor_error', (err) => {
+      _scope.monitorRestartInterval = setTimeout(() => socket.monitor(monitorTimeout, 0), monitorRestartTimeout);
+    });
+
+    socket.on('connect', this::buildSocketEventHandler(SocketEvent.CONNECT))
+    socket.on('disconnect', this::buildSocketEventHandler(SocketEvent.DISCONNECT))
+    socket.on('connect_delay', this::buildSocketEventHandler(SocketEvent.CONNECT_DELAY))
+    socket.on('connect_retry', this::buildSocketEventHandler(SocketEvent.CONNECT_RETRY))
+    socket.on('listen', this::buildSocketEventHandler(SocketEvent.LISTEN))
+    socket.on('bind_error', this::buildSocketEventHandler(SocketEvent.BIND_ERROR))
+    socket.on('accept', this::buildSocketEventHandler(SocketEvent.ACCEPT))
+    socket.on('accept_error', this::buildSocketEventHandler(SocketEvent.ACCEPT_ERROR))
+    socket.on('close', this::buildSocketEventHandler(SocketEvent.CLOSE))
+    socket.on('close_error', this::buildSocketEventHandler(SocketEvent.CLOSE_ERROR))
   }
 
   close () {
@@ -369,7 +374,6 @@ function responseEnvelopHandler (envelop) {
     this.logger.warn(`Response ${id} is probably time outed`)
   }
 }
-
 
 // ** exports
 export { SocketEvent as SocketEvent }
