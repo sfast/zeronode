@@ -1,7 +1,7 @@
 /**
  * Created by artak on 3/2/17.
  */
-import zmq from 'zmq'
+import zmq from 'zeromq'
 import Promise from 'bluebird'
 
 import { Socket } from './socket'
@@ -64,10 +64,12 @@ export default class RouterSocket extends Socket {
 
     _scope.bindPromise = new Promise((resolve, reject) => {
       let { socket } = _scope
+
+      this.attachSocketMonitor()
+
       socket.bind(this.getAddress(), (err) => {
         if (err) return reject(err)
         this.setOnline()
-        this.attachSocketMonitor()
         resolve(`Router (${this.getId()}) is binded at address ${this.getAddress()}`)
       })
     })
@@ -77,33 +79,34 @@ export default class RouterSocket extends Socket {
 
   // ** returns promise
   unbind () {
-    return this.close()
+    return new Promise((resolve, reject) => {
+      //* closing and removing all listeners on socket
+      super.close()
+
+      let _scope = _private.get(this)
+      let {socket, bindAddress, bindPromise} = _scope
+
+      //* if bind promise is pending then cancel it
+      if (bindPromise && bindPromise.isPending()) {
+        bindPromise.cancel()
+      }
+
+      _scope.bindPromise = null
+
+      socket.unbindSync(bindAddress)
+
+      this.setOffline()
+      resolve()
+    })
   }
 
   // ** returns promise
-  close () {
-    return new Promise((resolve, reject) => {
-      try {
-        //* closing and removing all listeners on socket
-        super.close()
+  async close () {
+    await this.unbind()
 
-        let _scope = _private.get(this)
-        let {socket, bindAddress, bindPromise} = _scope
+    let { socket } = _private.get(this)
 
-        //* if bind promise is pending then cancel it
-        if (bindPromise && bindPromise.isPending()) {
-          bindPromise.cancel()
-        }
-
-        _scope.bindPromise = null
-
-        socket.unbindSync(bindAddress)
-        this.setOffline()
-        resolve()
-      } catch (err) {
-        reject(err)
-      }
-    })
+    socket.close()
   }
 
   //* Polymorphic Functions

@@ -195,13 +195,11 @@ export default class Node extends EventEmitter {
     let {nodeServer, nodeClients} = _private.get(this)
     let stopPromise = []
     if (nodeServer.isOnline()) {
-      nodeServer.unbind()
+      nodeServer.close()
     }
 
     nodeClients.forEach((client) => {
-      if (client.isOnline()) {
-        stopPromise.push(client.disconnect())
-      }
+      stopPromise.push(client.close())
     }, this)
 
     await Promise.all(stopPromise)
