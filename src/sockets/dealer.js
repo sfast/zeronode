@@ -3,7 +3,7 @@
  */
 
 import Promise from 'bluebird'
-import zmq from 'zmq'
+import zmq from 'zeromq'
 
 import { Socket, SocketEvent } from './socket'
 import Envelop from './envelope'
@@ -20,6 +20,7 @@ export default class DealerSocket extends Socket {
     config = config || {}
 
     let socket = zmq.socket('dealer')
+
     super({id, socket, options, config})
 
     let _scope = {
@@ -101,8 +102,9 @@ export default class DealerSocket extends Socket {
 
       this.once(SocketEvent.CONNECT, onConnectionHandler)
 
-      socket.connect(this.getAddress())
       this.attachSocketMonitor()
+
+      socket.connect(this.getAddress())
     })
 
     return _scope.connectionPromise
@@ -110,21 +112,6 @@ export default class DealerSocket extends Socket {
 
   // ** not actually disconnected
   disconnect () {
-    this.close()
-  }
-
-  // ** Polymorphic functions
-  request ({to, event, data, timeout, mainEvent = false} = {}) {
-    let envelop = new Envelop({type: EnvelopType.SYNC, tag: event, data, owner: this.getId(), recipient: to, mainEvent})
-    return super.request(envelop, timeout)
-  }
-
-  tick ({to, event, data, mainEvent = false} = {}) {
-    let envelop = new Envelop({type: EnvelopType.ASYNC, tag: event, data, owner: this.getId(), recipient: to, mainEvent})
-    return super.tick(envelop)
-  }
-
-  close () {
     //* closing and removing all listeners on socket
     super.close()
 
@@ -140,6 +127,24 @@ export default class DealerSocket extends Socket {
     socket.disconnect(routerAddress)
 
     this.setOffline()
+  }
+
+  // ** Polymorphic functions
+  request ({to, event, data, timeout, mainEvent = false} = {}) {
+    let envelop = new Envelop({type: EnvelopType.SYNC, tag: event, data, owner: this.getId(), recipient: to, mainEvent})
+    return super.request(envelop, timeout)
+  }
+
+  tick ({to, event, data, mainEvent = false} = {}) {
+    let envelop = new Envelop({type: EnvelopType.ASYNC, tag: event, data, owner: this.getId(), recipient: to, mainEvent})
+    return super.tick(envelop)
+  }
+
+  async close () {
+    await this.disconnect()
+    let { socket } = _private.get(this)
+
+    socket.close()
   }
 
   getSocketMsg (envelop) {
