@@ -2,115 +2,147 @@
  * Created by artak on 3/2/17.
  */
 
+import Promise from 'bluebird'
 import zmq from 'zmq'
 
-import  Socket from './socket'
+import { Socket, SocketEvent } from './socket'
 import Envelop from './envelope'
-import Enum from './enum'
+import { EnvelopType } from './enum'
 
-let EnvelopType = Enum.EnvelopType;
+// ** enable cancellation , by default it's turned off
+Promise.config({ cancellation: true })
 
-let _private = new WeakMap();
+let _private = new WeakMap()
 
 export default class DealerSocket extends Socket {
-    constructor({id, logger}) {
-        let socket =  zmq.socket('dealer');
-        super({id, socket, logger});
+  constructor ({id, options, config} = {}) {
+    options = options || {}
+    config = config || {}
 
-        let _scope = {};
-        _scope.socket = socket;
+    let socket = zmq.socket('dealer')
+    super({id, socket, options, config})
 
-        // ** monitoring connect / disconnect
-
-        _scope.socket.on('disconnect', this::this.serverFailHandler);
-
-        _scope.socket.monitor(Enum.MONITOR_TIMEOUT, 0);
-
-        _scope.routerAddress = null;
-        _private.set(this, _scope);
+    let _scope = {
+      socket,
+      connectionPromise: null,
+      routerAddress: null
     }
 
-    getAddress() {
-        let _scope = _private.get(this);
-        return _scope.routerAddress;
+    _private.set(this, _scope)
+  }
+
+  getAddress () {
+    let {routerAddress} = _private.get(this)
+    return routerAddress
+  }
+
+  setAddress (routerAddress) {
+    let _scope = _private.get(this)
+    if (typeof routerAddress === 'string' && routerAddress.length) {
+      _scope.routerAddress = routerAddress
+    }
+  }
+
+  connect (routerAddress, timeout = -1) {
+    if (this.isOnline() && routerAddress === this.getAddress()) {
+      return Promise.resolve(true)
     }
 
-    setAddress(routerAddress) {
-        let _scope = _private.get(this);
-        if (typeof routerAddress == 'string' && routerAddress.length) {
-            _scope.routerAddress = routerAddress;
+    let _scope = _private.get(this)
+    let connectionPromise = _scope.connectionPromise
+
+    if (connectionPromise && routerAddress !== this.getAddress()) {
+      // ** if trying to connect to other address you need to disconnect first
+      return Promise.reject(new Error(`Already connected to ${this.getAddress()}, disconnect before changing connection address`))
+    }
+
+    // ** if connection is still pending then returning it
+    if (connectionPromise && connectionPromise.isPending() && routerAddress === this.getAddress()) return connectionPromise
+
+    // ** if connect is called for the first time then creating the connection promise
+    _scope.connectionPromise = new Promise((resolve, reject) => {
+      let {socket} = _scope
+      let rejectionTimeout = null
+
+      if (routerAddress) {
+        this.setAddress(routerAddress)
+      }
+
+      const onConnectionHandler = () => {
+        if (rejectionTimeout) {
+          clearTimeout(rejectionTimeout)
         }
+
+        this.once(SocketEvent.DISCONNECT, onDisconnectionHandler)
+
+        this.setOnline()
+        resolve()
+      }
+
+      const onReConnectionHandler = (fd, endpoint) => {
+        this.once(SocketEvent.DISCONNECT, onDisconnectionHandler)
+        this.setOnline()
+        this.emit(SocketEvent.RECONNECT, {fd, endpoint})
+      }
+
+      const onDisconnectionHandler = () => {
+        this.setOffline()
+        this.once(SocketEvent.CONNECT, onReConnectionHandler)
+      }
+
+      if (timeout !== -1) {
+        rejectionTimeout = setTimeout(() => {
+          this.removeListener(SocketEvent.CONNECT, onConnectionHandler)
+          // ** reject the connection promise and then disconnect
+          reject(new Error(`Timeout to connect to ${this.getAddress()} `))
+          this.disconnect()
+        }, timeout)
+      }
+
+      this.once(SocketEvent.CONNECT, onConnectionHandler)
+
+      socket.connect(this.getAddress())
+      this.attachSocketMonitor()
+    })
+
+    return _scope.connectionPromise
+  }
+
+  // ** not actually disconnected
+  disconnect () {
+    this.close()
+  }
+
+  // ** Polymorphic functions
+  request ({to, event, data, timeout, mainEvent = false} = {}) {
+    let envelop = new Envelop({type: EnvelopType.SYNC, tag: event, data, owner: this.getId(), recipient: to, mainEvent})
+    return super.request(envelop, timeout)
+  }
+
+  tick ({to, event, data, mainEvent = false} = {}) {
+    let envelop = new Envelop({type: EnvelopType.ASYNC, tag: event, data, owner: this.getId(), recipient: to, mainEvent})
+    return super.tick(envelop)
+  }
+
+  close () {
+    //* closing and removing all listeners on socket
+    super.close()
+
+    let _scope = _private.get(this)
+    let { socket, routerAddress, connectionPromise } = _scope
+
+    //* if connection promise is pending then cancel it
+    if (connectionPromise && connectionPromise.isPending()) {
+      connectionPromise.cancel()
     }
+    _scope.connectionPromise = null
 
-    // ** not actually connected
-    connect(routerAddress, timeout = -1) {
-        return new Promise((resolve, reject) => {
-            let _scope = _private.get(this);
-            let rejectionTimeout;
+    socket.disconnect(routerAddress)
 
-            if(this.isOnline()) {
-                resolve(true);
-                return;
-            }
+    this.setOffline()
+  }
 
-            if(routerAddress) {
-                this.setAddress(routerAddress);
-            }
-
-            _scope.socket.removeAllListeners('connect');
-
-            if (timeout != -1) {
-                rejectionTimeout = setTimeout(() => {
-                    _scope.socket.removeAllListeners('connect');
-                    reject('connection timeouted');
-                    this.disconnect();
-                }, timeout);
-            }
-
-            _scope.socket.on('connect', () => {
-                if (rejectionTimeout) {
-                    clearTimeout(rejectionTimeout);
-                }
-
-                this.setOnline();
-
-                _scope.socket.removeAllListeners('connect');
-                _scope.socket.on('connect', this::this.handleReconnecting);
-
-                resolve();
-            });
-
-            _scope.socket.connect(this.getAddress());
-
-            this.setOnline();
-        });
-    }
-
-    // ** not actually disconnected
-    disconnect() {
-        this.close();
-    }
-
-    //** Polymorfic Functions
-    async request(event, data, timeout = 5000, to) {
-        let envelop = new Envelop({type: EnvelopType.SYNC, tag : event, data : data , owner : this.getId(), recipient: to});
-        return super.request(envelop, timeout);
-    }
-
-    async tick(event, data, to) {
-        let envelop = new Envelop({type: EnvelopType.ASYNC, tag: event, data: data, owner: this.getId(), recipient: to});
-        return super.tick(envelop);
-    }
-
-    close () {
-        super.close();
-        let _scope = _private.get(this);
-        _scope.socket.disconnect(_scope.routerAddress);
-        _scope.socket.removeAllListeners('conenct');
-        this.setOffline();
-    }
-
-    getSocketMsg(envelop) {
-        return  envelop.getBuffer();
-    }
+  getSocketMsg (envelop) {
+    return envelop.getBuffer()
+  }
 }

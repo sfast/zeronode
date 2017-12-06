@@ -2,99 +2,99 @@
  * Created by artak on 3/2/17.
  */
 
+// ** ActorModel is a general model for describing both client and server nodes/actors
+
 export default class ActorModel {
-    constructor({id, online = true, ping = 0, ghost = 0, fail = 0, stop = 0, address = null, options = {}}) {
-        this.id = id;
+  constructor (data = {}) {
+    let {id, online = true, address, options} = data
+    this.id = id
 
-        if(online) {
-            this.setOnline();
-        }
-
-        this.address = address;
-        this.pingStamp = ping;
-        this.ghost = ghost;
-        this.fail = fail;
-        this.stop = stop;
-        this.options = options;
+    if (online) {
+      this.setOnline()
     }
 
-    toJSON () {
-        return {
-            address: this.address,
-            id: this.id,
-            options: this.options
-        }
-    }
+    this.address = address
+    this.options = options || {}
 
-    getId() {
-        return this.id;
-    }
+    this.pingStamp = null
+    this.ghost = false
+    this.fail = false
+    this.stop = false
+  }
 
-    markStopped() {
-        this.stop = Date.now();
-        this.setOffline();
+  toJSON () {
+    return {
+      id: this.id,
+      address: this.address,
+      options: this.options
     }
+  }
 
-    markFailed() {
-        this.fail = Date.now();
-        this.setOffline();
-    }
+  getId () {
+    return this.id
+  }
 
-    markGhost() {
-        this.ghost = Date.now();
-    }
+  markStopped () {
+    this.stop = Date.now()
+    this.setOffline()
+  }
 
-    isGhost() {
-        return !!this.ghost;
-    }
+  markFailed () {
+    this.fail = Date.now()
+    this.setOffline()
+  }
 
-    isOnline() {
-        return !!this.online;
-    }
+    // ** marking ghost means that there was some ping delay but that doeas not actually mean that its not there
+  markGhost () {
+    this.ghost = Date.now()
+  }
 
-    setOnline() {
-        this.online = Date.now();
-        this.ghost = false;
-    }
+  isGhost () {
+    return !!this.ghost
+  }
 
-    setOffline() {
-        this.online = false;
-        this.ghost = false;
-    }
+  isOnline () {
+    return !!this.online
+  }
 
-    ping(stamp, data) {
-        this.pingStamp = stamp;
-        if (data) {
-            if (this.ghost) {
-                this.setOffline()
-            }
-            if (!this.online) {
-                this.markGhost()
-            }
-            return;
-        }
-        this.ghost = false;
-        this.setOnline()
-    }
+  setOnline () {
+    this.online = Date.now()
+    this.ghost = false
+    this.fail = false
+    this.stop = false
+  }
 
-    setAddress(address) {
-       this.address = address;
-    }
+  setOffline () {
+    this.online = false
+  }
 
-    getAddress () {
-        return this.address;
-    }
+  ping (stamp) {
+    this.pingStamp = stamp
+    this.setOnline()
+  }
 
-    setOptions(options) {
-        this.options = options;
-    }
+  setId (newId) {
+    this.id = newId
+  }
 
-    mergeOptions(options) {
-        this.options = Object.assign(this.options, options);
-        return this.options;
-    }
+  setAddress (address) {
+    this.address = address
+  }
 
-    getOptions() {
-        return this.options;
-    }
+  getAddress () {
+    return this.address
+  }
+
+  setOptions (options) {
+    this.options = options
+  }
+
+  mergeOptions (options) {
+    this.options = Object.assign({}, this.options, options)
+    return this.options
+  }
+
+  getOptions () {
+    return this.options
+  }
 }
