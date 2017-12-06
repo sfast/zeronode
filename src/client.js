@@ -200,7 +200,6 @@ function _serverOptionsSync ({options, actorId}) {
 }
 
 function _startServerPinging () {
-
   let _scope = _private.get(this)
   let {pingInterval} = _scope
 
@@ -213,7 +212,6 @@ function _startServerPinging () {
 
   _scope.pingInterval = setInterval(() => {
     try {
-
       let pingData = {actor: this.getId(), stamp: Date.now()}
       this.tick({event: events.CLIENT_PING, data: pingData, mainEvent: true})
     } catch (err) {

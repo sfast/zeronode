@@ -83,9 +83,18 @@ export default class Server extends RouterSocket {
 
   unbind () {
     try {
+      let _scope = _private.get(this)
+
       _.each(this.getOnlineClients(), (client) => {
         this.tick({ to: client.getId(), event: events.SERVER_STOP, mainEvent: true })
       })
+
+      // ** clear the heartbeat checking interval
+      if (_scope.clientCheckInterval) {
+        clearInterval(_scope.clientCheckInterval)
+      }
+      _scope.clientCheckInterval = null
+
       return super.unbind()
     } catch (err) {
       throw new Errors.BindError({id: this.getId(), err, state: 'unbinding'})

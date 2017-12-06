@@ -4,7 +4,7 @@
 import zmq from 'zmq'
 import Promise from 'bluebird'
 
-import { Socket, SocketEvent } from './socket'
+import { Socket } from './socket'
 import Envelop from './envelope'
 import {EnvelopType} from './enum'
 
@@ -67,6 +67,7 @@ export default class RouterSocket extends Socket {
       socket.bind(this.getAddress(), (err) => {
         if (err) return reject(err)
         this.setOnline()
+        this.attachSocketMonitor()
         resolve(`Router (${this.getId()}) is binded at address ${this.getAddress()}`)
       })
     })
