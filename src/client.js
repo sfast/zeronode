@@ -1,7 +1,7 @@
 import {events} from './enum'
 import Globals from './globals'
 import ActorModel from './actor'
-import * as Errors from './errors'
+import { ZeronodeError, ErrorCodes } from './errors'
 
 import {Dealer as DealerSocket, SocketEvent} from './sockets'
 
@@ -63,7 +63,10 @@ export default class Client extends DealerSocket {
       this::_startServerPinging()
       return {actorId, options}
     } catch (err) {
-      this.emit('error', new Errors.ConnectionError({err, id: this.getId()}))
+      let clientConnectError = new ZeronodeError({ socketId: this.getId(), code: ErrorCodes.CLIENT_CONNECT, error: err })
+      clientConnectError.description = `Error while disconnecting client '${this.getId()}'`
+      this.logger.error(clientConnectError)
+      this.emit('error', clientConnectError)
     }
   }
 
@@ -92,7 +95,10 @@ export default class Client extends DealerSocket {
 
       super.disconnect()
     } catch (err) {
-      this.emit('error', new Errors.ConnectionError({err, id: this.getId(), state: 'disconnecting'}))
+      let clientDisconnectError = new ZeronodeError({ socketId: this.getId(), code: ErrorCodes.CLIENT_DISCONNECT, error: err })
+      clientDisconnectError.description = `Error while disconnecting client '${this.getId()}'`
+      this.logger.error(clientDisconnectError)
+      this.emit('error', clientDisconnectError)
     }
   }
 
@@ -104,16 +110,11 @@ export default class Client extends DealerSocket {
       return super.request({ event, data, timeout, mainEvent })
     }
 
-    if (!server || !server.isOnline()) return Promise.reject(new Error(`Server is offline during request, on client: ${this.getId()}`))
-
     return super.request({event, data, timeout, to: server.getId(), mainEvent})
   }
 
   tick ({event, data, mainEvent} = {}) {
     let server = this.getServerActor()
-    if (!server || !server.isOnline()) {
-      throw new Error(`Server is offline during tick, on client: ${this.getId()}`)
-    }
     super.tick({event, data, to: server.getId(), mainEvent})
   }
 }
@@ -130,7 +131,10 @@ function _serverFailHandler () {
 
     this.emit(events.SERVER_FAILURE, server)
   } catch (err) {
-    this.logger.error(err)
+    let serverFailHandlerError = new ZeronodeError({ socketId: this.getId(), code: ErrorCodes.SERVER_RECONNECT_HANDLER, error: err })
+    serverFailHandlerError.description = `Error while handling server failure on client ${this.getId()}`
+    this.logger.error(serverFailHandlerError)
+    this.emit('error', serverFailHandlerError)
   }
 }
 
@@ -154,8 +158,7 @@ async function _serverReconnectHandler (/* { fd, serverAddress } */) {
 
     // **  TODO։։avar remove this after some time (server should always be available at this point)
     if (!server) {
-      this.logger.warn(`Server actor is not available on reconnect`, this.getId())
-      return
+      throw new Error(`Server actor is not available on client '${this.getId()}'`)
     }
 
     server.setId(actorId)
@@ -166,7 +169,10 @@ async function _serverReconnectHandler (/* { fd, serverAddress } */) {
 
     this::_startServerPinging()
   } catch (err) {
-    this.emit('error', new Errors.ConnectionError({err, id: this.getId(), state: 'reconnecting'}))
+    let serverReconnectHandlerError = new ZeronodeError({ socketId: this.getId(), code: ErrorCodes.SERVER_RECONNECT_HANDLER, error: err })
+    serverReconnectHandlerError.description = `Error while handling server reconnect on client ${this.getId()}`
+    this.logger.error(serverReconnectHandlerError)
+    this.emit('error', serverReconnectHandlerError)
   }
 }
 
@@ -174,8 +180,9 @@ function _serverStopHandler () {
   try {
     let server = this.getServerActor()
 
+    // ** TODO:: this should not happen, please describe the situation
     if (!server) {
-      throw new Error('Client doesn\'t have server actor')
+      throw new Error(`Server actor is not available on client '${this.getId()}'`)
     }
 
     this::_stopServerPinging()
@@ -183,7 +190,10 @@ function _serverStopHandler () {
     server.markStopped()
     this.emit(events.SERVER_STOP, server)
   } catch (err) {
-    this.logger.error('Error while handling server stop', err)
+    let serverStopHandlerError = new ZeronodeError({ socketId: this.getId(), code: ErrorCodes.SERVER_STOP_HANDLER, error: err })
+    serverStopHandlerError.description = `Error while handling server stop on client ${this.getId()}`
+    this.logger.error(serverStopHandlerError)
+    this.emit('error', serverStopHandlerError)
   }
 }
 
@@ -191,11 +201,14 @@ function _serverOptionsSync ({options, actorId}) {
   try {
     let server = this.getServerActor()
     if (!server) {
-      throw new Error(`Client: ${this.getId()}, does not have server`)
+      throw new Error(`Server actor is not available on client '${this.getId()}'`)
     }
     server.setOptions(options)
   } catch (err) {
-    this.logger.error('Error while handling server options sync:', err)
+    let serverOptionsSyncHandlerError = new ZeronodeError({ socketId: this.getId(), code: ErrorCodes.SERVER_OPTIONS_SYNC_HANDLER, error: err })
+    serverOptionsSyncHandlerError.description = `Error while handling server options sync on client ${this.getId()}`
+    this.logger.error(serverOptionsSyncHandlerError)
+    this.emit('error', serverOptionsSyncHandlerError)
   }
 }
 
@@ -212,10 +225,12 @@ function _startServerPinging () {
 
   _scope.pingInterval = setInterval(() => {
     try {
-      let pingData = {actor: this.getId(), stamp: Date.now()}
-      this.tick({event: events.CLIENT_PING, data: pingData, mainEvent: true})
+      let pingData = { actor: this.getId(), stamp: Date.now() }
+      this.tick({ event: events.CLIENT_PING, data: pingData, mainEvent: true })
     } catch (err) {
-      this.logger.error('Error while pinging to server:', err)
+      let pingError = new ZeronodeError({ socketId: this.getId(), code: ErrorCodes.SERVER_PING_ERROR, error: err })
+      this.logger.error(pingError)
+      this.emit('error', pingError)
     }
   }, interval)
 }

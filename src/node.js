@@ -7,6 +7,7 @@ import md5 from 'md5'
 import animal from 'animal-id'
 import { EventEmitter } from 'events'
 
+import { ZeronodeError, ErrorCodes } from './errors'
 import NodeUtils from './utils'
 import Server from './server'
 import Client from './client'
@@ -292,7 +293,7 @@ export default class Node extends EventEmitter {
       return nodeClients.get(to).request({ event, data, timeout })
     }
 
-    throw new Error(`Node with ${to} is not found.`)
+    throw new ZeronodeError({ message: `Node with id '${to}' is not found.`, code: ErrorCodes.NODE_NOT_FOUND })
   }
 
   tick ({ to, event, data } = {}) {
@@ -305,7 +306,7 @@ export default class Node extends EventEmitter {
     if (nodeClients.has(to)) {
       return nodeClients.get(to).tick({ event, data })
     }
-    throw new Error(`Node with ${to} is not found.`)
+    throw new ZeronodeError({ message: `Node with id '${to}' is not found.`, code: ErrorCodes.NODE_NOT_FOUND })
   }
 
   async requestAny ({ event, data, timeout, filter, down = true, up = true } = {}) {
@@ -325,7 +326,7 @@ export default class Node extends EventEmitter {
     let filteredNodes = this.getFilteredNodes(nodesFilter)
 
     if (!filteredNodes.length) {
-      throw new Error('There is no node with that filter')
+      throw new ZeronodeError({ message: `Node with filter is not found.`, code: ErrorCodes.NODE_NOT_FOUND })
     }
 
     // ** find the node id where the request will be sent
@@ -354,7 +355,7 @@ export default class Node extends EventEmitter {
     let filteredNodes = this.getFilteredNodes(nodesFilter)
 
     if (!filteredNodes.length) {
-      throw new Error('There is no node with that filter')
+      throw new ZeronodeError({ message: `Node with filter is not found.`, code: ErrorCodes.NODE_NOT_FOUND })
     }
     let nodeId = this::_getWinnerNode(filteredNodes, event)
     return this.tick({ to: nodeId, event, data })

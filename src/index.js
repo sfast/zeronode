@@ -3,7 +3,7 @@
  */
 import Node from './node'
 import {events as NodeEvents} from './enum'
-import ErrorCodes from './errors'
+import {ErrorCodes} from './errors'
 import Server from './server'
 import Client from './client'
 
