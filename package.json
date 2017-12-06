@@ -25,6 +25,7 @@
   ],
   "scripts": {
     "test": "mocha --require babel-core/register",
+    "snyktest": "snyk test",
     "standart": "standard './src/**/*.js' --parser babel-eslint --verbose | snazzy",
     "format": "standard './src/**/*.js' --parser babel-eslint  --fix --verbose | snazzy",
     "rimraf": "rimraf",

@@ -17,8 +17,8 @@ class SocketIsNotOnline extends Error {
 }
 
 function buildSocketEventHandler (eventName) {
-  const handler =  (fd, endpoint) => {
-    if(this.debugMode()) {
+  const handler = (fd, endpoint) => {
+    if (this.debugMode()) {
       this.logger.info(`Emitted '${eventName}' on socket '${this.getId()}'`)
     }
     this.emit(eventName, {fd, endpoint})
@@ -109,13 +109,13 @@ class Socket extends EventEmitter {
     _scope.metric = status
   }
 
-  setLogger(logger) {
+  setLogger (logger) {
     this.logger = logger || console
   }
 
-  debugMode(val) {
+  debugMode (val) {
     let _scope = _private.get(this)
-    if(val) {
+    if (val) {
       _scope.isDebugMode = !!val
     } else {
       return _scope.isDebugMode
@@ -189,9 +189,10 @@ class Socket extends EventEmitter {
     socket.monitor(monitorTimeout, 0)
 
     // ** Handle monitor error and restart it
-    socket.on('monitor_error', (err) => {
-      _scope.monitorRestartInterval = setTimeout(() => socket.monitor(monitorTimeout, 0), monitorRestartTimeout);
-    });
+    socket.on('monitor_error', () => {
+      this.logger.warn(`Restarting monitor after ${monitorRestartTimeout} on socket ${this.getId()}`)
+      _scope.monitorRestartInterval = setTimeout(() => socket.monitor(monitorTimeout, 0), monitorRestartTimeout)
+    })
 
     socket.on('connect', this::buildSocketEventHandler(SocketEvent.CONNECT))
     socket.on('disconnect', this::buildSocketEventHandler(SocketEvent.DISCONNECT))
@@ -210,8 +211,8 @@ class Socket extends EventEmitter {
     // ** remove all listeners
     socket.removeAllListeners()
     // ** if during closing there is a monitor restart scheduled then clear the schedule
-    if(monitorRestartInterval) clearInterval(monitorRestartInterval)
-    socket.unmonitor();
+    if (monitorRestartInterval) clearInterval(monitorRestartInterval)
+    socket.unmonitor()
   }
 
   onRequest (endpoint, fn, main = false) {
@@ -376,8 +377,8 @@ function responseEnvelopHandler (envelop) {
 }
 
 // ** exports
-export { SocketEvent as SocketEvent }
-export { Socket as Socket }
+export { SocketEvent }
+export { Socket }
 
 export default {
   SocketEvent,

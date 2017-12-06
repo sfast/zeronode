@@ -4,8 +4,6 @@ let routerAddress1 = 'tcp://127.0.0.1:5034'
 let routerAddress2 = 'tcp://127.0.0.1:5035'
 
 const runDealer = async () => {
-
-
   let dealer1 = new Dealer({ id: 'TestDealer1', options: {layer: 'DealerLayer1'} })
 
   let dealer2 = new Dealer({ id: 'TestDealer2', options: {layer: 'DealerLayer2'} })
@@ -14,16 +12,12 @@ const runDealer = async () => {
   await dealer1.connect(routerAddress1)
   await dealer2.connect(routerAddress2)
 
-  dealer1.on(SocketEvent.RECONNECT, () => { console.log('Reconnecting')})
+  dealer1.on(SocketEvent.RECONNECT, () => { console.log('Reconnecting') })
   dealer1.on(SocketEvent.DISCONNECT, () => {
     console.log('Dealer 1 SocketEvent.DISCONNECT')
 
     dealer1.disconnect()
   })
-  // setTimeout(() => {
-  //   console.log(`Disconnecting from ${routerAddress1}.... `)
-  //   dealer1.disconnect(routerAddress1)
-  // }, 20000)
 }
 
 const runRouter = async () => {
@@ -42,7 +36,6 @@ const runRouter = async () => {
     console.log(`Start unbind from ${routerAddress1} .... `)
     await router1.unbind()
     console.log(`Finish unbind from ${routerAddress1} .... `)
-    // await router1.bind()
   }, 5000)
 }
 

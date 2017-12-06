@@ -4,7 +4,7 @@
 import zmq from 'zmq'
 import Promise from 'bluebird'
 
-import { Socket, SocketEvent } from './socket'
+import { Socket } from './socket'
 import Envelop from './envelope'
 import {EnvelopType} from './enum'
 

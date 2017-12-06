@@ -10,7 +10,6 @@ import { EventEmitter } from 'events'
 import NodeUtils from './utils'
 import Server from './server'
 import Client from './client'
-import Errors from './errors'
 import Metric from './metric'
 import Globals from './globals'
 import { events } from './enum'
@@ -91,7 +90,6 @@ export default class Node extends EventEmitter {
       _scope.nodeClients.forEach((client) => {
         let actorModel = client.getServerActor()
         if (actorModel && actorModel.isOnline()) {
-
           NodeUtils.checkNodeReducer(actorModel, predicate, nodes)
         }
       }, this)

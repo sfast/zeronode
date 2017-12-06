@@ -1,4 +1,8 @@
-[<img src="https://img.shields.io/gitter/room/nwjs/nw.js.svg">](https://gitter.im/npm-zeronode/Lobby) <br/>
+[![JavaScript Style Guide](https://cdn.rawgit.com/standard/standard/master/badge.svg)](https://github.com/standard/standard)<br/><br/><br/>
+[<img src="https://img.shields.io/gitter/room/nwjs/nw.js.svg">](https://gitter.im/npm-zeronode/Lobby) 
+<img src="https://snyk.io/test/npm/zeronode/badge.svg" alt="Known Vulnerabilities" data-canonical-src="https://snyk.io/test/npm/zeronode" style="max-width:100%;"/>
+<img src="https://img.shields.io/twitter/url/http/shields.io.svg?style=social" alt="Tweet" />
+
 ## Zeronode - minimal building block for NodeJS microservices 
 ![Zeronode](https://i.imgur.com/NZVXZPo.png)
 
