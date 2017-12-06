@@ -62,10 +62,11 @@ export default class RouterSocket extends Socket {
 
     if (bindAddress) this.setAddress(bindAddress)
 
-    this.attachSocketMonitor()
-
     _scope.bindPromise = new Promise((resolve, reject) => {
       let { socket } = _scope
+
+      this.attachSocketMonitor()
+
       socket.bind(this.getAddress(), (err) => {
         if (err) return reject(err)
         this.setOnline()
