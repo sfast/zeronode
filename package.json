@@ -1,6 +1,6 @@
 {
   "name": "zeronode",
-  "version": "1.0.14",
+  "version": "1.1.0",
   "description": "Minimal building block for NodeJS microservices",
   "main": "./dist/index.js",
   "directories": {
@@ -24,7 +24,10 @@
     "loadbalance"
   ],
   "scripts": {
-    "test": "snyk test && mocha --require babel-core/register",
+    "test": "mocha --require babel-core/register",
+    "snyktest": "snyk test",
+    "standart": "standard './src/**/*.js' --parser babel-eslint --verbose | snazzy",
+    "format": "standard './src/**/*.js' --parser babel-eslint  --fix --verbose | snazzy",
     "rimraf": "rimraf",
     "clear": "rimraf ./dist",
     "compile": "./node_modules/babel-cli/bin/babel.js -d dist/ src/",
@@ -50,21 +53,23 @@
     "babel-runtime": "^6.26.0",
     "bluebird": "^3.5.0",
     "buffer-alloc": "^1.1.0",
+    "buffer-from": "^0.1.1",
     "crypto": "0.0.3",
     "debug": "^2.6.3",
     "docdash": "^0.4.0",
     "jsdoc": "^3.4.3",
     "md5": "^2.2.1",
     "pattern-emitter": "latest",
+    "snyk": "^1.51.0",
     "underscore": "^1.8.3",
     "uuid": "^3.0.1",
     "winston": "^2.3.1",
-    "zmq": "^2.15.3",
-    "snyk": "^1.51.0"
+    "zmq": "^2.15.3"
   },
   "devDependencies": {
     "babel-cli": "^6.24.1",
     "babel-core": "^6.24.1",
+    "babel-eslint": "^8.0.2",
     "babel-plugin-transform-function-bind": "^6.22.0",
     "babel-plugin-transform-runtime": "^6.23.0",
     "babel-polyfill": "^6.23.0",
@@ -72,9 +77,14 @@
     "babel-preset-es2016": "^6.24.1",
     "babel-preset-es2017": "^6.24.1",
     "chai": "^4.0.2",
+    "eslint-plugin-import": "^2.8.0",
+    "eslint-plugin-node": "^5.2.1",
+    "eslint-plugin-promise": "^3.6.0",
     "jsdoc-strip-async-await": "^0.1.0",
     "mocha": "^3.4.2",
-    "rimraf": "^2.6.2"
+    "rimraf": "^2.6.2",
+    "snazzy": "^7.0.0",
+    "standard": "^10.0.3"
   },
   "snyk": true
 }

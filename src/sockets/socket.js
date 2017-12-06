@@ -1,264 +1,386 @@
-import debugFactory from 'debug';
-let debug = debugFactory('node::sockets::socket');
-
-import _ from 'underscore';
-import animal from 'animal-id';
+import _ from 'underscore'
+import animal from 'animal-id'
 import EventEmitter from 'pattern-emitter'
 
+import SocketEvent from './events'
 import Envelop from './envelope'
-import Enum from './enum'
-import { RequestWatcher} from './watchers'
+import { EnvelopType, MetricType, Timeouts } from './enum'
+import Watchers from './watchers'
 
-let _private = new WeakMap();
+let _private = new WeakMap()
 
 class SocketIsNotOnline extends Error {
-    constructor({socketId, error}) {
-        super(error.message, error.lineNumber, error.fileName);
-        this.socketId = socketId;
-    }
+  constructor ({socketId, error}) {
+    super(error.message, error.lineNumber, error.fileName)
+    this.socketId = socketId
+  }
 }
 
+function buildSocketEventHandler (eventName) {
+  const handler = (fd, endpoint) => {
+    if (this.debugMode()) {
+      this.logger.info(`Emitted '${eventName}' on socket '${this.getId()}'`)
+    }
+    this.emit(eventName, {fd, endpoint})
+  }
 
-export default class Socket extends EventEmitter {
-    constructor ({id, socket, logger}) {
-        super();
-        let _scope = {};
-        let socketId = id || Socket.generateSocketId();
-        socket.identity = socketId;
+  return this::handler
+}
 
-        _scope.logger = logger || console;
-        _scope.id = socketId;
-        _scope.metric = false;
-        _scope.socket = socket;
-        _scope.online = false;
-        _scope.requests = new Map();
-        _scope.requestWatcherMap = new Map();
-        _scope.tickEmitter = new EventEmitter();
-        _scope.socket.on('message', this::onSocketMessage);
-        _scope.options = {};
-        _private.set(this, _scope);
+class Socket extends EventEmitter {
+  static generateSocketId () {
+    return animal.getId()
+  }
+
+  constructor ({id, socket, config, options} = {}) {
+    super()
+    options = options || {}
+    config = config || {}
+
+    let logger = config.logger || console
+
+    // ** config is for internal usage (logger, timeouts etc ...) and options is for node filtering later on
+    config = config || {}
+    options = options || {}
+
+    // ** setting the logger as soon as possible
+    this.setLogger(logger)
+
+    // ** creating the socket
+    let socketId = id || Socket.generateSocketId()
+    socket.identity = socketId
+    socket.on('message', this::onSocketMessage)
+
+    let _scope = {}
+    _scope.id = socketId
+    _scope.metric = false
+    _scope.socket = socket
+    _scope.online = false
+    _scope.requests = new Map()
+    _scope.requestWatcherMap = {
+      main: new Map(),
+      custom: new Map()
+    }
+    _scope.tickEmitter = {
+      main: new EventEmitter(),
+      custom: new EventEmitter()
+    }
+    _scope.socket = socket
+    _scope.config = config
+    _scope.options = options
+    _scope.monitorRestartInterval = null
+    _private.set(this, _scope)
+
+    this.debugMode(false)
+  }
+
+  getId () {
+    let {id} = _private.get(this)
+    return id
+  }
+
+  setOnline () {
+    let _scope = _private.get(this)
+    _scope.online = Date.now()
+  }
+
+  setOffline () {
+    let _scope = _private.get(this)
+    _scope.online = false
+  }
+
+  isOnline () {
+    let {online} = _private.get(this)
+    return !!online
+  }
+
+  setOptions (options = {}) {
+    let _scope = _private.get(this)
+    _scope.options = options
+  }
+
+  getOptions () {
+    let {options} = _private.get(this)
+    return options
+  }
+
+  setMetric (status) {
+    let _scope = _private.get(this)
+    _scope.metric = status
+  }
+
+  setLogger (logger) {
+    this.logger = logger || console
+  }
+
+  debugMode (val) {
+    let _scope = _private.get(this)
+    if (val) {
+      _scope.isDebugMode = !!val
+    } else {
+      return _scope.isDebugMode
+    }
+  }
+
+  request (envelop, reqTimeout = 5000) {
+    let {id, requests, metric} = _private.get(this)
+
+    if (!this.isOnline()) {
+      let err = new Error(`Sending failed as socket ${this.getId()} is not online`)
+      return Promise.reject(new SocketIsNotOnline({socketId: id, error: err}))
     }
 
-    getId() {
-        let _scope = _private.get(this);
-        return _scope.id;
-    }
+    let envelopId = envelop.getId()
 
-    static generateSocketId() {
-        return animal.getId()
-    }
-
-    setOnline() {
-        let _scope = _private.get(this);
-        _scope.online = true;
-    }
-
-    setOffline() {
-        let _scope = _private.get(this);
-        _scope.online = false;
-    }
-
-    isOnline(){
-        let _scope = _private.get(this);
-        return _scope.online;
-    }
-
-    setOptions(options) {
-        let _scope = _private.get(this);
-        _scope.options = options;
-    }
-
-    setMetric(status) {
-        let _scope = _private.get(this);
-        _scope.metric = status;
-    }
-
-    getOptions() {
-        let _scope = _private.get(this);
-        return _scope.options;
-    }
-
-    async request(envelop, reqTimeout = 5000) {
-        let _scope = _private.get(this);
-        if(!this.isOnline()) {
-            let err = new Error(`Sending failed as socket ${this.getId()} is not online`);
-            throw new SocketIsNotOnline({socketId : _scope.id, error: err });
+    return new Promise((resolve, reject) => {
+      let timeout = setTimeout(() => {
+        if (requests.has(envelopId)) {
+          let requestObj = requests.get(envelopId)
+          requests.delete(envelopId)
+          if (metric) {
+            // TODO::avar maybe we need metrics by tags also
+            this.emit(MetricType.REQUEST_TIMEOUT, envelop.getRecipient())
+          }
+          requestObj.reject(new Error(`Request ${envelopId} timeouted on socket ${this.getId()}`))
         }
+      }, reqTimeout)
+      requests.set(envelopId, {resolve: resolve, reject: reject, timeout: timeout, sendTime: process.hrtime()})
+      this.sendEnvelop(envelop)
+    })
+  }
 
-        let envelopId = envelop.getId();
-        let timeout = null;
-
-        return new Promise((resolve, reject) => {
-            timeout = setTimeout(() => {
-                if(_scope.requests.has(envelopId)) {
-                    let requestObj = _scope.requests.get(envelopId);
-                    _scope.requests.delete(envelopId);
-                    if (_scope.metric) {
-                        this.emit(Enum.REQUEST_TIMEOUT, envelop.getRecipient());
-                    }
-                    requestObj.reject(`Request ${envelopId} timeouted on socket ${this.getId()}`);
-                }
-            }, reqTimeout);
-
-            _scope.requests.set(envelopId, {resolve : resolve, reject: reject, timeout : timeout, sendTime: process.hrtime()});
-           this.sendEnvelop(envelop);
-        });
+  tick (envelop) {
+    let {id} = _private.get(this)
+    if (!this.isOnline()) {
+      let err = new Error(`Sending failed as socket ${this.getId()} is not online`)
+      throw new SocketIsNotOnline({socketId: id, error: err})
     }
 
-    tick(envelop) {
-        let _scope = _private.get(this);
-        if (!this.isOnline()) {
-            let err = new Error(`Sending failed as socket ${this.getId()} is not online`);
-            throw new SocketIsNotOnline({socketId: _scope.id, error: err});
-        }
+    this.sendEnvelop(envelop)
+  }
 
-        this.sendEnvelop(envelop);
+  sendEnvelop (envelop) {
+    let {socket, metric} = _private.get(this)
+
+    let self = this
+    if (metric) {
+      switch (envelop.getType()) {
+        case EnvelopType.ASYNC:
+            // TODO::avar maybe we need metrics by tags also
+          self.emit(MetricType.SEND_TICK, envelop.getRecipient())
+          break
+        case EnvelopType.SYNC:
+          self.emit(MetricType.SEND_REQUEST, envelop.getRecipient())
+          break
+      }
     }
+    socket.send(this.getSocketMsg(envelop))
+  }
 
-    sendEnvelop(envelop) {
-        let _scope = _private.get(this);
-        let self = this;
-        if (_scope.metric) {
-            switch (envelop.getType()) {
-                case Enum.EnvelopType.ASYNC:
-                    self.emit(Enum.SEND_TICK, envelop.getRecipient());
-                    break;
-                case Enum.EnvelopType.SYNC:
-                    self.emit(Enum.SEND_REQUEST, envelop.getRecipient());
-                    break;
-            }
-        }
-        _scope.socket.send(this.getSocketMsg(envelop));
-    }
+  attachSocketMonitor () {
+    let _scope = _private.get(this)
+    let { config, socket } = _scope
 
-    close(){
-        let _scope = _private.get(this);
-        _scope.socket.removeAllListeners('message');
-    }
+    // ** start monitoring socket events
+    let monitorTimeout = config.MONITOR_TIMEOUT || Timeouts.MONITOR_TIMEOUT
+    let monitorRestartTimeout = config.MONITOR_RESTART_TIMEOUT || Timeouts.MONITOR_RESTART_TIMEOUT
 
-    onRequest(endpoint, fn) {
+    // ** start socket monitoring
+    socket.monitor(monitorTimeout, 0)
+
+    // ** Handle monitor error and restart it
+    socket.on('monitor_error', () => {
+      this.logger.warn(`Restarting monitor after ${monitorRestartTimeout} on socket ${this.getId()}`)
+      _scope.monitorRestartInterval = setTimeout(() => socket.monitor(monitorTimeout, 0), monitorRestartTimeout)
+    })
+
+    socket.on('connect', this::buildSocketEventHandler(SocketEvent.CONNECT))
+    socket.on('disconnect', this::buildSocketEventHandler(SocketEvent.DISCONNECT))
+    socket.on('connect_delay', this::buildSocketEventHandler(SocketEvent.CONNECT_DELAY))
+    socket.on('connect_retry', this::buildSocketEventHandler(SocketEvent.CONNECT_RETRY))
+    socket.on('listen', this::buildSocketEventHandler(SocketEvent.LISTEN))
+    socket.on('bind_error', this::buildSocketEventHandler(SocketEvent.BIND_ERROR))
+    socket.on('accept', this::buildSocketEventHandler(SocketEvent.ACCEPT))
+    socket.on('accept_error', this::buildSocketEventHandler(SocketEvent.ACCEPT_ERROR))
+    socket.on('close', this::buildSocketEventHandler(SocketEvent.CLOSE))
+    socket.on('close_error', this::buildSocketEventHandler(SocketEvent.CLOSE_ERROR))
+  }
+
+  close () {
+    let {socket, monitorRestartInterval} = _private.get(this)
+    // ** remove all listeners
+    socket.removeAllListeners()
+    // ** if during closing there is a monitor restart scheduled then clear the schedule
+    if (monitorRestartInterval) clearInterval(monitorRestartInterval)
+    socket.unmonitor()
+  }
+
+  onRequest (endpoint, fn, main = false) {
         // ** function will called with argument  request = {body, reply}
-        let _scope = _private.get(this);
-        let requestWatcher = _scope.requestWatcherMap.get(endpoint);
+    if (!(endpoint instanceof RegExp)) {
+      endpoint = endpoint.toString()
+    }
+    let {requestWatcherMap} = _private.get(this)
+    let watcherMap = main ? requestWatcherMap.main : requestWatcherMap.custom
 
-        if(!requestWatcher) {
-            requestWatcher = new RequestWatcher(endpoint);
-            _scope.requestWatcherMap.set(endpoint, requestWatcher);
-        }
-        if (typeof fn == 'function') {
-            requestWatcher.addRequestListener(fn);
-        }
+    let requestWatcher = watcherMap.get(endpoint)
+
+    if (!requestWatcher) {
+      requestWatcher = new Watchers(endpoint)
+      watcherMap.set(endpoint, requestWatcher)
     }
 
-    offRequest(endpoint, fn){
-        let _scope = _private.get(this);
-        if(_.isFunction(fn)) {
-            let endpointWatcher = _scope.requestWatcherMap.get(endpoint);
-            if (!endpointWatcher) return;
-            endpointWatcher.removeFn(fn);
-            return;
-        }
+    requestWatcher.addFn(fn)
+  }
 
-        _scope.requestWatcherMap.delete(endpoint);
+  offRequest (endpoint, fn, main = false) {
+    let {requestWatcherMap} = _private.get(this)
+    let watcherMap = main ? requestWatcherMap.main : requestWatcherMap.custom
+
+    if (_.isFunction(fn)) {
+      let endpointWatcher = watcherMap.get(endpoint)
+      if (!endpointWatcher) return
+      endpointWatcher.removeFn(fn)
+      return
     }
 
-    onTick(event, fn) {
-        let _scope = _private.get(this);
-        _scope.tickEmitter.on(event, fn);
+    watcherMap.delete(endpoint)
+  }
+
+  onTick (event, fn, main = false) {
+    let {tickEmitter} = _private.get(this)
+    main ? tickEmitter.main.on(event, fn) : tickEmitter.custom.on(event, fn)
+  }
+
+  offTick (event, fn, main = false) {
+    let {tickEmitter} = _private.get(this)
+    let eventTickEmitter = main ? tickEmitter.main : tickEmitter.custom
+
+    if (_.isFunction(fn)) {
+      eventTickEmitter.removeListener(event, fn)
+      return
     }
 
-    offTick(event, fn) {
-        let _scope = _private.get(this);
-        if(_.isFunction(fn)) {
-            _scope.tickEmitter.removeListener(event, fn);
-            return;
-        }
-
-        _scope.tickEmitter.removeAllListeners(event);
-    }
+    eventTickEmitter.removeAllListeners(event)
+  }
 }
 
-//** Handlers of specific envelop msg-es
+//* * Handlers of specific envelop msg-es
 
-//** when socket is dealer identity is empty
-//** when socket is router, identity is the dealer which sends data
-function onSocketMessage(empty, envelopBuffer) {
-    let _scope = _private.get(this);
-    let self = this;
-    let {type, id, owner, recipient, tag} = Envelop.readMetaFromBuffer(envelopBuffer);
-    let envelop = new Envelop({type, id, owner, recipient, tag});
-    let envelopData = Envelop.readDataFromBuffer(envelopBuffer);
+//* * when socket is dealer identity is empty
+//* * when socket is router, identity is the dealer which sends data
+function onSocketMessage (empty, envelopBuffer) {
+  let {metric, tickEmitter} = _private.get(this)
 
-    switch (type) {
-        case Enum.EnvelopType.ASYNC:
-            if (_scope.metric) self.emit(Enum.GOT_TICK, owner);
-            _scope.tickEmitter.emit(tag, envelopData);
-            break;
-        case Enum.EnvelopType.SYNC:
-            envelop.setData(envelopData);
-            if (_scope.metric) self.emit(Enum.GOT_REQUEST, owner);
-            this::syncEnvelopHandler(envelop);
-            break;
-        case Enum.EnvelopType.RESPONSE:
-            envelop.setData(envelopData);
-            this::responseEnvelopHandler(envelop);
-            break;
-    }
+  let {type, id, owner, recipient, tag, mainEvent} = Envelop.readMetaFromBuffer(envelopBuffer)
+  let envelop = new Envelop({type, id, owner, recipient, tag, mainEvent})
+  let envelopData = Envelop.readDataFromBuffer(envelopBuffer)
+
+  switch (type) {
+    case EnvelopType.ASYNC:
+      if (metric) this.emit(MetricType.GOT_TICK, owner)
+      mainEvent ? tickEmitter.main.emit(tag, envelopData) : tickEmitter.custom.emit(tag, envelopData)
+      break
+    case EnvelopType.SYNC:
+      envelop.setData(envelopData)
+      if (metric) this.emit(MetricType.GOT_REQUEST, owner)
+      this::syncEnvelopHandler(envelop)
+      break
+    case EnvelopType.RESPONSE:
+      envelop.setData(envelopData)
+      this::responseEnvelopHandler(envelop)
+      break
+  }
 }
 
-function syncEnvelopHandler(envelop) {
-    let self = this;
-    let _scope = _private.get(this);
-    let getTime = process.hrtime();
+function syncEnvelopHandler (envelop) {
+  let self = this
+  let getTime = process.hrtime()
 
-    let prevOwner = envelop.getOwner();
-    let handlers = [];
-    for (let endpoint of _scope.requestWatcherMap.keys()) {
-        if (endpoint instanceof RegExp){
-            if (endpoint.test(envelop.getTag())) {
-                handlers = handlers.concat([..._scope.requestWatcherMap.get(endpoint).getFnSet()])
-            }
-        } else if(endpoint == envelop.getTag()) {
-            handlers = handlers.concat([..._scope.requestWatcherMap.get(endpoint).getFnSet()]);
-        }
+  let prevOwner = envelop.getOwner()
+  let handlers = self::determineHandlersByTag(envelop.getTag(), envelop.isMain())
+
+  if (!handlers.length) return
+
+  let requestOb = {
+    body: envelop.getData(),
+    reply: (data) => {
+      envelop.setRecipient(prevOwner)
+      envelop.setOwner(self.getId())
+      envelop.setType(EnvelopType.RESPONSE)
+      envelop.setData({getTime, replyTime: process.hrtime(), data})
+      self.sendEnvelop(envelop)
+    },
+    next: (err) => {
+      // TODO::avar lets refactor next and add it under documentation
+      if (err) {
+        self.logger.error(err)
+        return this.reply({error: err})
+      }
+
+      if (!handlers.length) {
+        throw new Error(`There is no handlers available as to process next() on socket ${self.getId()}`)
+      }
+
+      handlers.shift()(requestOb)
     }
-    let request = {
-        body: envelop.getData(),
-        reply : (data) => {
-            envelop.setRecipient(prevOwner);
-            envelop.setOwner(self.getId());
-            envelop.setType(Enum.EnvelopType.RESPONSE);
-            envelop.setData({getTime, replyTime: process.hrtime(), data});
-            self.sendEnvelop(envelop);
-        },
-        next: (data) => {
-            if (!handlers.length) {
-                return this.reply(data);
-            }
-            this.body = data;
-            handlers.pop()(this);
-        }
-    };
-    if (handlers.length) {
-        handlers.pop()(request);
-    }
+  }
+
+  handlers.shift()(requestOb)
 }
 
-function responseEnvelopHandler(envelop) {
-    let _scope = _private.get(this);
+function determineHandlersByTag (tag, main = false) {
+  let handlers = []
 
-    let id = envelop.getId();
-    if(_scope.requests.has(id)) {
-        //** requestObj is like {resolve, reject, timeout : clearRequestTimeout}
-        let requestObj = _scope.requests.get(id);
-        let {getTime, replyTime, data} = envelop.getData();
-        if (_scope.metric) this.emit(Enum.GOT_REPLY, {id: envelop.getOwner(), sendTime: requestObj.sendTime, getTime, replyTime, replyGetTime: process.hrtime()})
-        clearTimeout(requestObj.timeout);
-        //** resolving request promise with response data
-        requestObj.resolve(data);
-        _scope.requests.delete(id);
+  let {requestWatcherMap} = _private.get(this)
+  let watcherMap = main ? requestWatcherMap.main : requestWatcherMap.custom
+
+  for (let endpoint of watcherMap.keys()) {
+    if (endpoint instanceof RegExp) {
+      if (endpoint.test(tag)) {
+        watcherMap.get(endpoint).getFnMap().forEach((index, fnKey) => {
+          handlers.push({index, fnKey})
+        })
+      }
+    } else if (endpoint === tag) {
+      watcherMap.get(endpoint).getFnMap().forEach((index, fnKey) => {
+        handlers.push({index, fnKey})
+      })
     }
-    else {
-        _scope.logger.warn(`Response ${id} is probably time outed`);
-    }
+  }
+
+  return handlers.sort((a, b) => {
+    return a.index - b.index
+  }).map((ob) => ob.fnKey)
+}
+
+function responseEnvelopHandler (envelop) {
+  let {requests, metric} = _private.get(this)
+
+  let id = envelop.getId()
+  if (requests.has(id)) {
+        //* * requestObj is like {resolve, reject, timeout : clearRequestTimeout}
+    let {timeout, sendTime, resolve} = requests.get(id)
+    // ** getTime is the time when message arrives to server
+    // ** replyTime is the time when message is send from server
+    let {getTime, replyTime, data} = envelop.getData()
+
+    let gotReplyMetric = {id: envelop.getOwner(), sendTime, getTime, replyTime, replyGetTime: process.hrtime()}
+    if (metric) this.emit(MetricType.GOT_REPLY, gotReplyMetric)
+    clearTimeout(timeout)
+        //* * resolving request promise with response data
+    resolve(data)
+    requests.delete(id)
+  } else {
+    this.logger.warn(`Response ${id} is probably time outed`)
+  }
+}
+
+// ** exports
+export { SocketEvent }
+export { Socket }
+
+export default {
+  SocketEvent,
+  Socket
 }

@@ -1,174 +1,178 @@
-import _ from 'underscore';
+import _ from 'underscore'
 
-import { events } from './enum';
-import globals from './globals';
-import ActorModel from './actor';
+import { events } from './enum'
+import Globals from './globals'
+import ActorModel from './actor'
 import * as Errors from './errors'
 
-import { Router as RouterSocket } from './sockets';
+import { Router as RouterSocket } from './sockets'
 
-let _private = new WeakMap();
+let _private = new WeakMap()
 
 export default class Server extends RouterSocket {
-    constructor(data) {
-        let {id, bind, logger,  options} = data;
+  constructor ({id, bind, config, options} = {}) {
+    options = options || {}
+    config = config || {}
 
-        super({id, logger});
-        super.setOptions(options);
-        this.setAddress(bind);
+    super({id, options, config})
 
-        let _scope = {
-            clientModels : new Map(),
-            clientCheckInterval : null,
-            logger: logger || console
-        };
-
-        _private.set(this, _scope);
-        _scope.logger.info(`Server ${this.getId()} started`);
+    let _scope = {
+      clientModels: new Map(),
+      clientCheckInterval: null
     }
 
-    getClientById(clientId) {
-        let _scope = _private.get(this);
-        return _scope.clientModels.has(clientId) ?_scope.clientModels.get(clientId) : null;
+    _private.set(this, _scope)
+
+    this.setAddress(bind)
+
+      // ** ATTACHING client connected
+    this.onRequest(events.CLIENT_CONNECTED, this::_clientConnectedRequest, true)
+
+      // ** ATTACHING client stop
+    this.onRequest(events.CLIENT_STOP, this::_clientStopRequest, true)
+
+      // ** ATTACHING client ping
+    this.onTick(events.CLIENT_PING, this::_clientPingTick, true)
+
+      // ** ATTACHING CLIENT OPTIONS SYNCING
+    this.onTick(events.OPTIONS_SYNC, this::_clientOptionsSync, true)
+  }
+
+  getClientById (clientId) {
+    let {clientModels} = _private.get(this)
+    return clientModels.has(clientId) ? clientModels.get(clientId) : null
+  }
+
+  isClientOnline (id) {
+    let clientModel = this.getClientById(id)
+    return clientModel ? clientModel.isOnline() : false
+  }
+
+  getOnlineClients () {
+    let {clientModels} = _private.get(this)
+    let onlineClients = []
+    clientModels.forEach((actor) => {
+      if (actor.isOnline()) {
+        onlineClients.push(actor)
+      }
+    }, this)
+
+    return onlineClients
+  }
+
+  setOptions (options, notify = true) {
+    super.setOptions(options)
+    if (notify) {
+      _.each(this.getOnlineClients(), (client) => {
+        this.tick({event: events.OPTIONS_SYNC, data: {actorId: this.getId(), options}, to: client.id, mainEvent: true})
+      })
     }
+  }
 
-    isClientOnline(id){
-        return this.getClientById(id) ? this.getClientById(id).isOnline() : false;
+  bind (bindAddress) {
+    try {
+      if (_.isString(bindAddress)) {
+        this.setAddress(bindAddress)
+      }
+
+      return super.bind(this.getAddress())
+    } catch (err) {
+      throw new Errors.BindError({id: this.getId(), err})
     }
+  }
 
-    getOnlineClients() {
-        let _scope = _private.get(this);
-        let onlineClients = [];
-        _scope.clientModels.forEach((actor) => {
-           if( actor.isOnline()) {
-               onlineClients.push(actor);
-           }
-        }, this);
+  unbind () {
+    try {
+      let _scope = _private.get(this)
 
-        return onlineClients;
+      _.each(this.getOnlineClients(), (client) => {
+        this.tick({ to: client.getId(), event: events.SERVER_STOP, mainEvent: true })
+      })
+
+      // ** clear the heartbeat checking interval
+      if (_scope.clientCheckInterval) {
+        clearInterval(_scope.clientCheckInterval)
+      }
+      _scope.clientCheckInterval = null
+
+      return super.unbind()
+    } catch (err) {
+      throw new Errors.BindError({id: this.getId(), err, state: 'unbinding'})
     }
-
-    setOptions(options) {
-        super.setOptions();
-        _.each(this.getOnlineClients(), (client) => {
-            this.tick(client.id, events.OPTIONS_SYNC, {actorId: this.getId(), options});
-        })
-    }
-
-    async bind(bindAddress) {
-        try {
-            if(_.isString(bindAddress)) {
-                this.setAddress(bindAddress);
-            }
-            // ** ATTACHING client connected
-            this.onRequest(events.CLIENT_CONNECTED, this::_clientConnectedRequest);
-
-            // ** ATTACHING client stop
-            this.onRequest(events.CLIENT_STOP, this::_clientStopRequest);
-
-            // ** ATTACHING client ping
-            this.onTick(events.CLIENT_PING, this::_clientPingTick);
-
-            // ** ATTACHING CLIENT OPTIONS SYNCING
-            this.onTick(events.OPTIONS_SYNC, this::_clientOptionsSync);
-
-            return super.bind(this.getAddress());
-        } catch (err) {
-            this.emit('error', new Errors.BindError({id: this.getId(), err}))
-        }
-    }
-
-    unbind(){
-        try {
-            this.offRequest(events.CLIENT_CONNECTED);
-            this.offRequest(events.CLIENT_STOP);
-            this.offRequest(events.CLIENT_PING);
-            this.offTick(events.OPTIONS_SYNC);
-
-            _.each(this.getOnlineClients(), (client) => {
-                this.tick(client.getId(), events.SERVER_STOP);
-            });
-            super.unbind();
-        } catch(err) {
-            this.emit('error', new Errors.BindError({id: this.getId(), err, state: 'unbinding'}))
-        }
-    }
-
-    onServerFail (fn) {
-        let _scope = _private.get(this);
-        _scope.ServerFailHandler = fn;
-    }
+  }
 }
 
 // ** Request handlers
-function _clientPingTick({actor, stamp, data}) {
-    let _scope = _private.get(this);
+function _clientPingTick ({actor, stamp}) {
+  let {clientModels} = _private.get(this)
     // ** PING DATA FROM CLIENT, actor is client id
 
-    let actorModel = _scope.clientModels.get(actor);
+  let actorModel = clientModels.get(actor)
 
-    if(actorModel) {
-        actorModel.ping(stamp, data);
-    }
+  if (actorModel) {
+    actorModel.ping(stamp)
+  }
 }
 
-//TODO:: @dave, @avar why merge options when disconnecting
-function _clientStopRequest(request){
-    let context = this;
-    let _scope = _private.get(context);
-    let {actorId, options} = request.body;
+function _clientStopRequest (request) {
+  let {clientModels} = _private.get(this)
+  let {actorId, options} = request.body
 
-    let actorModel = _scope.clientModels.get(actorId);
-    actorModel.markStopped();
-    actorModel.mergeOptions(options);
+  // ** just replying acknowledgment
+  request.reply({stamp: Date.now()})
 
-    context.emit(events.CLIENT_STOP, actorModel);
-    request.reply(actorModel.getId());
+  let actorModel = clientModels.get(actorId)
+  actorModel.markStopped()
+  actorModel.mergeOptions(options)
+
+  this.emit(events.CLIENT_STOP, actorModel)
 }
 
-function _clientConnectedRequest(request) {
-    let _scope = _private.get(this);
+function _clientConnectedRequest (request) {
+  let _scope = _private.get(this)
+  let {clientModels, clientCheckInterval} = _scope
 
-    let {actorId, options} = request.body;
+  let {actorId, options} = request.body
 
-    let actorModel = new ActorModel({id: actorId, options: options, online: true});
+  let actorModel = new ActorModel({id: actorId, options: options, online: true})
 
-    if(!_scope.clientCheckInterval) {
-        _scope.clientCheckInterval = setInterval(this::_checkClientHeartBeat, globals.CLIENT_MUST_HEARTBEAT_INTERVAL);
-    }
+  clientModels.set(actorId, actorModel)
 
-    let replyData = Object.assign({actorId: this.getId(), options: this.getOptions()});
+  if (!clientCheckInterval) {
+    let options = this.getOptions()
+    let clientHeartbeatInterval = options.CLIENT_MUST_HEARTBEAT_INTERVAL || Globals.CLIENT_MUST_HEARTBEAT_INTERVAL
+    _scope.clientCheckInterval = setInterval(this::_checkClientHeartBeat, clientHeartbeatInterval)
+  }
+
+  let replyData = {actorId: this.getId(), options: this.getOptions()}
     // ** replyData {actorId, options}
-    request.reply(replyData);
+  request.reply(replyData)
 
-    _scope.clientModels.set(actorId, actorModel);
-    this.emit(events.CLIENT_CONNECTED, actorModel);
+  this.emit(events.CLIENT_CONNECTED, actorModel)
 }
 
 // ** check clients heartbeat
-function _checkClientHeartBeat(){
-    let context = this;
-    let _scope = _private.get(this);
-    this.getOnlineClients().forEach((actor) => {
-        if (!actor.isGhost()) {
-            actor.markGhost();
-        } else {
-            actor.markFailed();
-            _scope.logger.warn(`Server ${context.getId()} identifies client failure`, actor);
-            context.emit(events.CLIENT_FAILURE, actor);
-        }
-    }, this);
+function _checkClientHeartBeat () {
+  _.each(this.getOnlineClients(), (actor) => {
+    if (!actor.isGhost()) {
+      actor.markGhost()
+    } else {
+      actor.markFailed()
+      this.emit(events.CLIENT_FAILURE, actor)
+      this.logger.warn(`Server ${this.getId()} identifies client failure`, actor)
+    }
+  })
 }
 
-function _clientOptionsSync({actorId, options}){
-    try {
-        let _scope = _private.get(this);
-        let actorModel = _scope.clientModels.get(actorId);
-        if (!actorModel) {
-            throw new Error(`there is no client actor whit that id: ${actorId}`);
-        }
-        actorModel.setOptions(options);
-    } catch (err) {
-        console.error('error while handling clientOptionsSync:', err);
+function _clientOptionsSync ({actorId, options}) {
+  try {
+    let {clientModels} = _private.get(this)
+    let actorModel = clientModels.get(actorId)
+    if (!actorModel) {
+      throw new Error(`there is no client actor whit that id: ${actorId}`)
     }
+    actorModel.setOptions(options)
+  } catch (err) {
+    this.logger.error('Error while handling clientOptionsSync:', err)
+  }
 }
