@@ -24,12 +24,20 @@ let Timeouts = {
   MONITOR_RESTART_TIMEOUT: 1000
 }
 
+let DealerStateType = {
+  CONNECTED: 'connected',
+  DISCONNECTED: 'disconnected',
+  RECONNECTING: 'reconnecting'
+}
+
 export { EnvelopType }
 export { MetricType }
 export { Timeouts }
+export { DealerStateType }
 
 export default {
   EnvelopType,
   MetricType,
-  Timeouts
+  Timeouts,
+  DealerStateType
 }

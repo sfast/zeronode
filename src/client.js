@@ -151,8 +151,6 @@ function _serverFailHandler () {
 
 async function _serverReconnectHandler (/* { fd, serverAddress } */) {
   try {
-    this.setOnline()
-
     let server = this.getServerActor()
 
     let requestObj = {

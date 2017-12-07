@@ -8,7 +8,7 @@ import zmq from 'zeromq'
 import { ZeronodeError, ErrorCodes } from '../errors'
 import { Socket, SocketEvent } from './socket'
 import Envelop from './envelope'
-import { EnvelopType } from './enum'
+import { EnvelopType, DealerStateType } from './enum'
 
 // ** enable cancellation , by default it's turned off
 Promise.config({ cancellation: true })
@@ -26,6 +26,7 @@ export default class DealerSocket extends Socket {
 
     let _scope = {
       socket,
+      state: DealerStateType.DISCONNECTED,
       connectionPromise: null,
       routerAddress: null
     }
@@ -43,6 +44,17 @@ export default class DealerSocket extends Socket {
     if (typeof routerAddress === 'string' && routerAddress.length) {
       _scope.routerAddress = routerAddress
     }
+  }
+
+  setOnline () {
+    let _scope = _private.get(this)
+    super.setOnline()
+    _scope.state = DealerStateType.CONNECTED
+  }
+
+  getState () {
+    let { state } = _private.get(this)
+    return state
   }
 
   connect (routerAddress, timeout = -1) {
@@ -90,6 +102,7 @@ export default class DealerSocket extends Socket {
 
       const onDisconnectionHandler = () => {
         this.setOffline()
+        _scope.state = DealerStateType.RECONNECTING
         this.once(SocketEvent.CONNECT, onReConnectionHandler)
       }
 
@@ -127,7 +140,10 @@ export default class DealerSocket extends Socket {
     }
     _scope.connectionPromise = null
 
-    socket.disconnect(routerAddress)
+    if (this.getState() !== DealerStateType.DISCONNECTED) {
+      socket.disconnect(routerAddress)
+      _scope.state = DealerStateType.DISCONNECTED
+    }
 
     this.setOffline()
   }
