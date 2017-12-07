@@ -4,6 +4,7 @@
 import zmq from 'zeromq'
 import Promise from 'bluebird'
 
+import { ZeronodeError, ErrorCodes } from '../errors'
 import { Socket } from './socket'
 import Envelop from './envelope'
 import {EnvelopType} from './enum'
@@ -54,7 +55,8 @@ export default class RouterSocket extends Socket {
 
     if (bindPromise && bindAddress !== this.getAddress()) {
       // ** if trying to bind to other address you need to unbind first
-      return Promise.reject(new Error(`Already binded to ${this.getAddress()}, unbind before changing bind address`))
+      let alreadyBindedError = new Error(`Already binded to '${this.getAddress()}', unbind before changing bind address to '${bindAddress}'`)
+      return Promise.reject(new ZeronodeError({ socketId: this.getId(), code: ErrorCodes.ALREADY_BINDED, error: alreadyBindedError }))
     }
 
     // ** if bind is still pending then returning it

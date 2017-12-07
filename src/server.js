@@ -3,7 +3,7 @@ import _ from 'underscore'
 import { events } from './enum'
 import Globals from './globals'
 import ActorModel from './actor'
-import * as Errors from './errors'
+import { ZeronodeError, ErrorCodes } from './errors'
 
 import { Router as RouterSocket } from './sockets'
 
@@ -70,15 +70,10 @@ export default class Server extends RouterSocket {
   }
 
   bind (bindAddress) {
-    try {
-      if (_.isString(bindAddress)) {
-        this.setAddress(bindAddress)
-      }
-
-      return super.bind(this.getAddress())
-    } catch (err) {
-      throw new Errors.BindError({id: this.getId(), err})
+    if (_.isString(bindAddress)) {
+      this.setAddress(bindAddress)
     }
+    return super.bind(this.getAddress())
   }
 
   unbind () {
@@ -97,7 +92,8 @@ export default class Server extends RouterSocket {
 
       return super.unbind()
     } catch (err) {
-      throw new Errors.BindError({id: this.getId(), err, state: 'unbinding'})
+      let serverUnbindError = new ZeronodeError({ socketId: this.getId(), code: ErrorCodes.SERVER_UNBIND, error: err })
+      return Promise.reject(serverUnbindError)
     }
   }
 }
@@ -168,11 +164,15 @@ function _clientOptionsSync ({actorId, options}) {
   try {
     let {clientModels} = _private.get(this)
     let actorModel = clientModels.get(actorId)
+    // TODO::remove after some time
     if (!actorModel) {
-      throw new Error(`there is no client actor whit that id: ${actorId}`)
+      throw new Error(`Client actor '${actorId}' is not available on server '${this.getId()}'`)
     }
     actorModel.setOptions(options)
   } catch (err) {
-    this.logger.error('Error while handling clientOptionsSync:', err)
+    let clientOptionsSyncHandlerError = new ZeronodeError({ socketId: this.getId(), code: ErrorCodes.CLIENT_OPTIONS_SYNC_HANDLER, error: err })
+    clientOptionsSyncHandlerError.description = `Error while handling client options sync on server ${this.getId()}`
+    this.logger.error(clientOptionsSyncHandlerError)
+    this.emit('error', clientOptionsSyncHandlerError)
   }
 }
