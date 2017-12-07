@@ -3,11 +3,11 @@
  */
 
 import Promise from 'bluebird'
-import zmq from 'zmq'
+import zmq from 'zeromq'
 
 import { Socket, SocketEvent } from './socket'
 import Envelop from './envelope'
-import { EnvelopType } from './enum'
+import { EnvelopType, DealerStateType } from './enum'
 
 // ** enable cancellation , by default it's turned off
 Promise.config({ cancellation: true })
@@ -20,12 +20,15 @@ export default class DealerSocket extends Socket {
     config = config || {}
 
     let socket = zmq.socket('dealer')
+
+
     super({id, socket, options, config})
 
     let _scope = {
       socket,
       connectionPromise: null,
-      routerAddress: null
+      routerAddress: null,
+      state: DealerStateType.DISCONNECTED
     }
 
     _private.set(this, _scope)
@@ -75,18 +78,18 @@ export default class DealerSocket extends Socket {
 
         this.once(SocketEvent.DISCONNECT, onDisconnectionHandler)
 
-        this.setOnline()
+        this.setState(DealerStateType.CONNECTED)
         resolve()
       }
 
       const onReConnectionHandler = (fd, endpoint) => {
         this.once(SocketEvent.DISCONNECT, onDisconnectionHandler)
-        this.setOnline()
+        this.setState(DealerStateType.CONNECTED)
         this.emit(SocketEvent.RECONNECT, {fd, endpoint})
       }
 
       const onDisconnectionHandler = () => {
-        this.setOffline()
+        this.setState(DealerStateType.RECONNECTING)
         this.once(SocketEvent.CONNECT, onReConnectionHandler)
       }
 
@@ -101,8 +104,9 @@ export default class DealerSocket extends Socket {
 
       this.once(SocketEvent.CONNECT, onConnectionHandler)
 
-      socket.connect(this.getAddress())
       this.attachSocketMonitor()
+
+      socket.connect(this.getAddress())
     })
 
     return _scope.connectionPromise
@@ -110,7 +114,23 @@ export default class DealerSocket extends Socket {
 
   // ** not actually disconnected
   disconnect () {
-    this.close()
+    //* closing and removing all listeners on socket
+    super.close()
+
+    let _scope = _private.get(this)
+    let { socket, routerAddress, connectionPromise } = _scope
+
+    //* if connection promise is pending then cancel it
+    if (connectionPromise && connectionPromise.isPending()) {
+      connectionPromise.cancel()
+    }
+    _scope.connectionPromise = null
+
+    if (this.getState() !== DealerStateType.DISCONNECTED) {
+      socket.disconnect(routerAddress)
+    }
+
+    this.setState(DealerStateType.DISCONNECTED)
   }
 
   // ** Polymorphic functions
@@ -124,22 +144,29 @@ export default class DealerSocket extends Socket {
     return super.tick(envelop)
   }
 
-  close () {
-    //* closing and removing all listeners on socket
-    super.close()
+  async close () {
+    await this.disconnect()
+    let { socket } = _private.get(this)
 
+    socket.close()
+  }
+
+  setState(state) {
     let _scope = _private.get(this)
-    let { socket, routerAddress, connectionPromise } = _scope
 
-    //* if connection promise is pending then cancel it
-    if (connectionPromise && connectionPromise.isPending()) {
-      connectionPromise.cancel()
+    _scope.state = state
+
+    if (state === DealerStateType.CONNECTED) {
+      this.setOnline()
+      return
     }
-    _scope.connectionPromise = null
-
-    socket.disconnect(routerAddress)
 
     this.setOffline()
+  }
+
+  getState() {
+    let { state } = _private.get(this)
+    return state
   }
 
   getSocketMsg (envelop) {
