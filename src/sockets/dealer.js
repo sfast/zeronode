@@ -5,9 +5,10 @@
 import Promise from 'bluebird'
 import zmq from 'zeromq'
 
+import { ZeronodeError, ErrorCodes } from '../errors'
 import { Socket, SocketEvent } from './socket'
 import Envelop from './envelope'
-import { EnvelopType } from './enum'
+import { EnvelopType, DealerStateType } from './enum'
 
 // ** enable cancellation , by default it's turned off
 Promise.config({ cancellation: true })
@@ -25,6 +26,7 @@ export default class DealerSocket extends Socket {
 
     let _scope = {
       socket,
+      state: DealerStateType.DISCONNECTED,
       connectionPromise: null,
       routerAddress: null
     }
@@ -44,6 +46,17 @@ export default class DealerSocket extends Socket {
     }
   }
 
+  setOnline () {
+    let _scope = _private.get(this)
+    super.setOnline()
+    _scope.state = DealerStateType.CONNECTED
+  }
+
+  getState () {
+    let { state } = _private.get(this)
+    return state
+  }
+
   connect (routerAddress, timeout = -1) {
     if (this.isOnline() && routerAddress === this.getAddress()) {
       return Promise.resolve(true)
@@ -54,7 +67,8 @@ export default class DealerSocket extends Socket {
 
     if (connectionPromise && routerAddress !== this.getAddress()) {
       // ** if trying to connect to other address you need to disconnect first
-      return Promise.reject(new Error(`Already connected to ${this.getAddress()}, disconnect before changing connection address`))
+      let alreadyConnectedError = new Error(`Already connected to '${this.getAddress()}', disconnect before changing connection address to '${routerAddress}'`)
+      return Promise.reject(new ZeronodeError({ socketId: this.getId(), code: ErrorCodes.ALREADY_CONNECTED, error: alreadyConnectedError }))
     }
 
     // ** if connection is still pending then returning it
@@ -88,6 +102,7 @@ export default class DealerSocket extends Socket {
 
       const onDisconnectionHandler = () => {
         this.setOffline()
+        _scope.state = DealerStateType.RECONNECTING
         this.once(SocketEvent.CONNECT, onReConnectionHandler)
       }
 
@@ -95,7 +110,8 @@ export default class DealerSocket extends Socket {
         rejectionTimeout = setTimeout(() => {
           this.removeListener(SocketEvent.CONNECT, onConnectionHandler)
           // ** reject the connection promise and then disconnect
-          reject(new Error(`Timeout to connect to ${this.getAddress()} `))
+          let connectionTimeoutError = new Error(`Timeout to connect to ${this.getAddress()} `)
+          reject(new ZeronodeError({ socketId: this.getId(), code: ErrorCodes.CONNECTION_TIMEOUT, error: connectionTimeoutError }))
           this.disconnect()
         }, timeout)
       }
@@ -124,7 +140,10 @@ export default class DealerSocket extends Socket {
     }
     _scope.connectionPromise = null
 
-    socket.disconnect(routerAddress)
+    if (this.getState() !== DealerStateType.DISCONNECTED) {
+      socket.disconnect(routerAddress)
+      _scope.state = DealerStateType.DISCONNECTED
+    }
 
     this.setOffline()
   }

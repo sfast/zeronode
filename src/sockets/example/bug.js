@@ -1,4 +1,4 @@
-import zmq from 'zmq'
+import zmq from 'zeromq'
 
 zmq.Context.setMaxThreads(8)
 
