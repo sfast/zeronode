@@ -105,9 +105,14 @@ export default class Client extends DealerSocket {
   request ({event, data, timeout, mainEvent} = {}) {
     let server = this.getServerActor()
 
-        // this is first request, and there is no need to check if server online or not
+    // this is first request, and there is no need to check if server online or not
     if (mainEvent && event === events.CLIENT_CONNECTED) {
       return super.request({ event, data, timeout, mainEvent })
+    }
+
+    if (!server || !server.isOnline()) {
+      let serverOfflineError = new Error(`Server is offline during request, on client: ${this.getId()}`)
+      return Promise.reject(new ZeronodeError({ socketId: this.getId(), error: serverOfflineError, code: ErrorCodes.SERVER_IS_OFFLINE }))
     }
 
     return super.request({event, data, timeout, to: server.getId(), mainEvent})
@@ -115,6 +120,12 @@ export default class Client extends DealerSocket {
 
   tick ({event, data, mainEvent} = {}) {
     let server = this.getServerActor()
+
+    if (!server || !server.isOnline()) {
+      let serverOfflineError = new Error(`Server is offline during request, on client: ${this.getId()}`)
+      return Promise.reject(new ZeronodeError({ socketId: this.getId(), error: serverOfflineError, code: ErrorCodes.SERVER_IS_OFFLINE }))
+    }
+
     super.tick({event, data, to: server.getId(), mainEvent})
   }
 }

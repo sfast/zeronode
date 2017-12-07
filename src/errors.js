@@ -18,7 +18,8 @@ const ErrorCodes = {
   SERVER_RECONNECT_HANDLER: 13,
   NODE_NOT_FOUND: 14,
   CLIENT_DISCONNECT: 15,
-  CLIENT_CONNECT: 16
+  CLIENT_CONNECT: 16,
+  SERVER_IS_OFFLINE: 17
 }
 
 class ZeronodeError extends Error {
