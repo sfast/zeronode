@@ -9,6 +9,8 @@ export default class ActorModel {
     let {id, online = true, address, options} = data
     this.id = id
 
+    this.online = false
+
     if (online) {
       this.setOnline()
     }
@@ -26,7 +28,11 @@ export default class ActorModel {
     return {
       id: this.id,
       address: this.address,
-      options: this.options
+      options: this.options,
+      fail: this.fail,
+      stop: this.stop,
+      online: this.online,
+      ghost: this.ghost
     }
   }
 
