@@ -2,19 +2,14 @@ import _ from 'underscore'
 import animal from 'animal-id'
 import EventEmitter from 'pattern-emitter'
 
+import { ZeronodeError, ErrorCodes } from '../errors'
+
 import SocketEvent from './events'
 import Envelop from './envelope'
 import { EnvelopType, MetricType, Timeouts } from './enum'
 import Watchers from './watchers'
 
 let _private = new WeakMap()
-
-class SocketIsNotOnline extends Error {
-  constructor ({socketId, error}) {
-    super(error.message, error.lineNumber, error.fileName)
-    this.socketId = socketId
-  }
-}
 
 function buildSocketEventHandler (eventName) {
   const handler = (fd, endpoint) => {
@@ -126,8 +121,8 @@ class Socket extends EventEmitter {
     let {id, requests, metric} = _private.get(this)
 
     if (!this.isOnline()) {
-      let err = new Error(`Sending failed as socket ${this.getId()} is not online`)
-      return Promise.reject(new SocketIsNotOnline({socketId: id, error: err}))
+      let err = new Error(`Sending failed as socket '${this.getId()}' is not online`)
+      return Promise.reject(new ZeronodeError({ socketId: id, error: err, code: ErrorCodes.SOCKET_ISNOT_ONLINE }))
     }
 
     let envelopId = envelop.getId()
@@ -141,7 +136,8 @@ class Socket extends EventEmitter {
             // TODO::avar maybe we need metrics by tags also
             this.emit(MetricType.REQUEST_TIMEOUT, envelop.getRecipient())
           }
-          requestObj.reject(new Error(`Request ${envelopId} timeouted on socket ${this.getId()}`))
+          let requestTimeoutedError = new Error(`Request envelop '${envelopId}' timeouted on socket '${this.getId()}'`)
+          requestObj.reject(new ZeronodeError({socketId: this.getId(), envelopId: envelopId, error: requestTimeoutedError, code: ErrorCodes.REQUEST_TIMEOUTED}))
         }
       }, reqTimeout)
       requests.set(envelopId, {resolve: resolve, reject: reject, timeout: timeout, sendTime: process.hrtime()})
@@ -150,10 +146,10 @@ class Socket extends EventEmitter {
   }
 
   tick (envelop) {
-    let {id} = _private.get(this)
+    let socketId = this.getId()
     if (!this.isOnline()) {
-      let err = new Error(`Sending failed as socket ${this.getId()} is not online`)
-      throw new SocketIsNotOnline({socketId: id, error: err})
+      let socketNotOnlineError = new Error(`Sending failed as socket ${socketId} is not online`)
+      throw new ZeronodeError({ socketId, error: socketNotOnlineError, code: ErrorCodes.SOCKET_ISNOT_ONLINE })
     }
 
     this.sendEnvelop(envelop)
@@ -319,7 +315,8 @@ function syncEnvelopHandler (envelop) {
       }
 
       if (!handlers.length) {
-        throw new Error(`There is no handlers available as to process next() on socket ${self.getId()}`)
+        let noHandlerErr = new Error(`There is no handlers available as to process next() on socket '${self.getId()}'`)
+        throw new ZeronodeError({ socketId: self.getId(), code: ErrorCodes.NO_NEXT_HANDLER_AVAILABLE, error: noHandlerErr })
       }
 
       handlers.shift()(requestOb)
