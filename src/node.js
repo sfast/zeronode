@@ -1,6 +1,7 @@
 /**
  * Created by avar and dave on 2/14/17.
  */
+import winston from 'winston'
 import _ from 'underscore'
 import Promise from 'bluebird'
 import md5 from 'md5'
@@ -15,7 +16,6 @@ import Metric from './metric'
 import Globals from './globals'
 import { events } from './enum'
 import {Enum, Watchers} from './sockets'
-import winston from 'winston'
 
 let MetricType = Enum.MetricType
 
@@ -28,20 +28,20 @@ let defaultLogger = new (winston.Logger)({
 })
 
 export default class Node extends EventEmitter {
-  constructor (data = {}) {
+  constructor ({ id, bind, options, config } = {}) {
     super()
 
-    let {id, bind, options, logger} = data
-    options = options || {}
     id = id || _generateNodeId()
-    logger = logger || defaultLogger
+    options = options || {}
+    config = config || { logger: defaultLogger }
 
-    this.logger = logger
+    this.logger = config.logger || defaultLogger
 
     let _scope = {
       id,
       bind,
       options,
+      config,
       metric: {
         status: false,
         info: new Metric({id}),
@@ -149,7 +149,7 @@ export default class Node extends EventEmitter {
     }
 
     let _scope = _private.get(this)
-    let {id, metric, nodeClientsAddressIndex, nodeClients} = _scope
+    let { id, metric, nodeClientsAddressIndex, nodeClients, config } = _scope
     let metricEnabled = metric.status
     let metricInfo = metric.info
 
@@ -160,7 +160,7 @@ export default class Node extends EventEmitter {
       return client.getServerActor().toJSON()
     }
 
-    let client = new Client({ id, options: _scope.options, logger: this.logger })
+    let client = new Client({ id, options: _scope.options, config })
 
     // ** attaching client handlers
     client.on('error', (err) => this.emit('error', err))
@@ -463,12 +463,12 @@ export default class Node extends EventEmitter {
 
 function _initNodeServer () {
   let _scope = _private.get(this)
-  let {id, bind, options, metric} = _scope
+  let {id, bind, options, metric, config} = _scope
 
   let metricStatus = metric.status
   let metricsInfo = metric.info
 
-  let nodeServer = new Server({id, bind, logger: this.logger, options})
+  let nodeServer = new Server({ id, bind, options, config })
   // ** handlers for nodeServer
   nodeServer.on('error', (err) => this.emit('error', err))
   nodeServer.on(events.CLIENT_FAILURE, (clientActor) => this.emit(events.CLIENT_FAILURE, clientActor.toJSON()))

@@ -1,4 +1,5 @@
 import _ from 'underscore'
+import winston from 'winston'
 import animal from 'animal-id'
 import EventEmitter from 'pattern-emitter'
 
@@ -10,6 +11,12 @@ import { EnvelopType, MetricType, Timeouts } from './enum'
 import Watchers from './watchers'
 
 let _private = new WeakMap()
+
+let defaultLogger = new (winston.Logger)({
+  transports: [
+    new (winston.transports.Console)({level: 'error'})
+  ]
+})
 
 function buildSocketEventHandler (eventName) {
   const handler = (fd, endpoint) => {
@@ -32,7 +39,7 @@ class Socket extends EventEmitter {
     options = options || {}
     config = config || {}
 
-    let logger = config.logger || console
+    let logger = config.logger || defaultLogger
 
     // ** config is for internal usage (logger, timeouts etc ...) and options is for node filtering later on
     config = config || {}
