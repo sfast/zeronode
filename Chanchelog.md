@@ -1,3 +1,9 @@
+Version: 1.1.4 (Dec 9 2017, Artak Vardanyan, David Harutyunyan)
+- fixed a monitor bug (changed zmq package to zeromq package )
+- added getClientInfo andgetServerInfo node functions which return the actor info
+- all node events will emit the full actor information (online, options etc ...)
+- from now on we'll tag all releases as a tagged branch to keep it transparent the changes between version
+
 Version: 1.1.0 (Dec 6 2017, Artak Vardanyan, David Harutyunyan)
 - Breaking changes for request and tick methods and 
 - CLIENT_PING_INTERVAL can be set for the client through client setOptions(options)

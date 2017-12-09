@@ -140,7 +140,7 @@ function _serverFailHandler () {
 
     server.markFailed()
 
-    this.emit(events.SERVER_FAILURE, server)
+    this.emit(events.SERVER_FAILURE, server.toJSON())
   } catch (err) {
     let serverFailHandlerError = new ZeronodeError({ socketId: this.getId(), code: ErrorCodes.SERVER_RECONNECT_HANDLER, error: err })
     serverFailHandlerError.description = `Error while handling server failure on client ${this.getId()}`
@@ -174,7 +174,7 @@ async function _serverReconnectHandler (/* { fd, serverAddress } */) {
     server.setOnline()
     server.setOptions(options)
 
-    this.emit(events.SERVER_RECONNECT, server)
+    this.emit(events.SERVER_RECONNECT, server.toJSON())
 
     this::_startServerPinging()
   } catch (err) {
@@ -197,7 +197,7 @@ function _serverStopHandler () {
     this::_stopServerPinging()
 
     server.markStopped()
-    this.emit(events.SERVER_STOP, server)
+    this.emit(events.SERVER_STOP, server.toJSON())
   } catch (err) {
     let serverStopHandlerError = new ZeronodeError({ socketId: this.getId(), code: ErrorCodes.SERVER_STOP_HANDLER, error: err })
     serverStopHandlerError.description = `Error while handling server stop on client ${this.getId()}`

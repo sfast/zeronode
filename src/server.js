@@ -121,7 +121,7 @@ function _clientStopRequest (request) {
   actorModel.markStopped()
   actorModel.mergeOptions(options)
 
-  this.emit(events.CLIENT_STOP, actorModel)
+  this.emit(events.CLIENT_STOP, actorModel.toJSON())
 }
 
 function _clientConnectedRequest (request) {
@@ -144,7 +144,7 @@ function _clientConnectedRequest (request) {
     // ** replyData {actorId, options}
   request.reply(replyData)
 
-  this.emit(events.CLIENT_CONNECTED, actorModel)
+  this.emit(events.CLIENT_CONNECTED, actorModel.toJSON())
 }
 
 // ** check clients heartbeat
@@ -154,7 +154,7 @@ function _checkClientHeartBeat () {
       actor.markGhost()
     } else {
       actor.markFailed()
-      this.emit(events.CLIENT_FAILURE, actor)
+      this.emit(events.CLIENT_FAILURE, actor.toJSON())
       this.logger.warn(`Server ${this.getId()} identifies client failure`, actor)
     }
   })
