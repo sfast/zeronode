@@ -73,6 +73,30 @@ export default class Node extends EventEmitter {
     return options
   }
 
+  getServerInfo ({ address, id }) {
+    let {nodeClients, nodeClientsAddressIndex} = _private.get(this)
+    if (!id) {
+      if (!nodeClientsAddressIndex.has(address)) return null
+      id = nodeClientsAddressIndex.get(address)
+    }
+
+    let client = nodeClients.get(id)
+
+    if (!client) return null
+
+    let serverActor = client.getServerActor()
+
+    return serverActor ? serverActor.toJSON() : null
+  }
+
+  getClientInfo ({ id }) {
+    let { nodeServer } = _private.get(this)
+
+    let client = nodeServer.getClientById(id)
+
+    return client ? client.toJSON() : null
+  }
+
   getFilteredNodes ({ options, predicate, up = true, down = true } = {}) {
     let _scope = _private.get(this)
     let nodes = new Set()
@@ -132,7 +156,8 @@ export default class Node extends EventEmitter {
     let addressHash = md5(address)
 
     if (nodeClientsAddressIndex.has(addressHash)) {
-      return nodeClientsAddressIndex.get(addressHash)
+      let client = nodeClients.get(nodeClientsAddressIndex.get(addressHash))
+      return client.getServerActor().toJSON()
     }
 
     let client = new Client({ id, options: _scope.options, logger: this.logger })
@@ -145,7 +170,7 @@ export default class Node extends EventEmitter {
     // **
     client.setMetric(metricEnabled)
 
-    let { actorId, options } = await client.connect(address, timeout)
+    let { actorId } = await client.connect(address, timeout)
 
     this::_attachMetricsHandlers(client, metricInfo)
 
@@ -156,10 +181,7 @@ export default class Node extends EventEmitter {
 
     this::_addExistingListenersToClient(client)
 
-    return {
-      actorId,
-      options
-    }
+    return client.getServerActor().toJSON()
   }
 
     // TODO::avar maybe disconnect from node ?
