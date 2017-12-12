@@ -16,9 +16,10 @@ Promise.config({ cancellation: true })
 let _private = new WeakMap()
 
 export default class DealerSocket extends Socket {
-  constructor ({id, options, config} = {}) {
+  constructor ({id, options, config, reconnectionTimeout} = {}) {
     options = options || {}
     config = config || {}
+    reconnectionTimeout = reconnectionTimeout || -1
 
     let socket = zmq.socket('dealer')
 
@@ -26,6 +27,7 @@ export default class DealerSocket extends Socket {
 
     let _scope = {
       socket,
+      reconnectionTimeout,
       state: DealerStateType.DISCONNECTED,
       connectionPromise: null,
       routerAddress: null
@@ -76,8 +78,9 @@ export default class DealerSocket extends Socket {
 
     // ** if connect is called for the first time then creating the connection promise
     _scope.connectionPromise = new Promise((resolve, reject) => {
-      let {socket} = _scope
+      let {socket, reconnectionTimeout} = _scope
       let rejectionTimeout = null
+      let reconnectionTimeoutInstance = null
 
       if (routerAddress) {
         this.setAddress(routerAddress)
@@ -95,6 +98,8 @@ export default class DealerSocket extends Socket {
       }
 
       const onReConnectionHandler = (fd, endpoint) => {
+        if (reconnectionTimeoutInstance) clearTimeout(reconnectionTimeoutInstance)
+
         this.once(SocketEvent.DISCONNECT, onDisconnectionHandler)
         this.setOnline()
         this.emit(SocketEvent.RECONNECT, {fd, endpoint})
@@ -104,6 +109,14 @@ export default class DealerSocket extends Socket {
         this.setOffline()
         _scope.state = DealerStateType.RECONNECTING
         this.once(SocketEvent.CONNECT, onReConnectionHandler)
+        if (reconnectionTimeout !== -1) {
+          reconnectionTimeoutInstance = setTimeout(() => {
+            // ** removing reconnection listener
+            this.removeListener(SocketEvent.CONNECT, onReConnectionHandler)
+            // ** disconnecting socket
+            this.disconnect()
+          }, reconnectionTimeout)
+        }
       }
 
       if (timeout !== -1) {

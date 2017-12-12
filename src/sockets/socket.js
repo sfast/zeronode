@@ -21,8 +21,9 @@ let defaultLogger = new (winston.Logger)({
 function buildSocketEventHandler (eventName) {
   const handler = (fd, endpoint) => {
     if (this.debugMode()) {
-      this.logger.info(`Emitted '${eventName}' on socket '${this.getId()}'`)
+      console.info(`Emitted '${eventName}' on socket '${this.getId()}'`)
     }
+    // console.log('event', eventName)
     this.emit(eventName, {fd, endpoint})
   }
 
@@ -209,13 +210,27 @@ class Socket extends EventEmitter {
     socket.on('close_error', this::buildSocketEventHandler(SocketEvent.CLOSE_ERROR))
   }
 
-  close () {
+  detachSocketMonitor() {
     let {socket, monitorRestartInterval} = _private.get(this)
     // ** remove all listeners
-    socket.removeAllListeners()
+    socket.removeAllListeners('connect')
+    socket.removeAllListeners('disconnect')
+    socket.removeAllListeners('connect_delay')
+    socket.removeAllListeners('connect_retry')
+    socket.removeAllListeners('listen')
+    socket.removeAllListeners('bind_error')
+    socket.removeAllListeners('accept')
+    socket.removeAllListeners('accept_error')
+    socket.removeAllListeners('close')
+    socket.removeAllListeners('close_error')
+
     // ** if during closing there is a monitor restart scheduled then clear the schedule
     if (monitorRestartInterval) clearInterval(monitorRestartInterval)
     socket.unmonitor()
+  }
+
+  close () {
+    this.detachSocketMonitor()
   }
 
   onRequest (endpoint, fn, main = false) {

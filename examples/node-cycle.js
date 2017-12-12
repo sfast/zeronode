@@ -36,14 +36,14 @@ let run = async () => {
 
     await Promise.all(all)
     console.log('All nodes are binded')
-    await layerA.connect(layerB.getAddress())
+    await layerA.connect({address: layerB.getAddress()})
     console.log('Layer A connected to B')
-    await layerB.connect(layerC.getAddress())
+    await layerB.connect({address: layerC.getAddress()})
     console.log('Layer B connected C')
-    await layerC.connect(layerA.getAddress())
+    await layerC.connect({address: layerA.getAddress()})
     console.log('Layer C connected to A')
 
-    await runner.connect(layerA.getAddress())
+    await runner.connect({address: layerA.getAddress()})
     console.log('Runner connected to A')
 
     layerA.onTick('WELCOME', (data) => {
