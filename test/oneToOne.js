@@ -19,6 +19,32 @@ describe('oneToOne, failures', () => {
     serverNode = null
   })
 
+  it('connect wrong argument', async () => {
+    try {
+      await clientNode.connect({ address: null })
+    } catch (err) {
+      assert.equal(err.message, `Wrong type for argument address null`)
+    }
+  })
+
+  it('second connect attempt', async () => {
+    await serverNode.bind()
+    await clientNode.connect({ address: serverNode.getAddress() })
+    await clientNode.connect({ address: serverNode.getAddress() })
+  })
+
+  it('disconnect wrong argument', async () => {
+    try {
+      await clientNode.disconnect(null)
+    } catch (err) {
+      assert.equal(err.message, `Wrong type for argument address null`)
+    }
+  })
+
+  it('disconnect from not connected address', async () => {
+    await clientNode.disconnect(serverNode.getAddress())
+  })
+
   it('connect timeout', async () => {
     try {
       await clientNode.connect({ address: serverNode.getAddress(), timeout: 1000 })
@@ -37,12 +63,38 @@ describe('oneToOne, failures', () => {
     }
   })
 
+  it('request after offRequest', async () => {
+    try {
+      await serverNode.bind()
+      await clientNode.connect({ address: serverNode.getAddress() })
+      serverNode.onRequest('foo', ({ body, reply }) => {
+        reply(body)
+      })
+      serverNode.offRequest('foo')
+      await clientNode.request({ to: serverNode.getId(), event: 'foo', data: 'bar', timeout: 200 })
+      return Promise.reject('fail')
+    } catch (err) {
+      assert.include(err.message, 'timeouted')
+    }
+  })
+
   it('request after disconnect', async () => {
     try {
       await serverNode.bind()
       await clientNode.connect({ address: serverNode.getAddress() })
       await clientNode.disconnect(serverNode.getAddress())
       await clientNode.request({ to: serverNode.getId(), event: 'foo', data: 'bar' })
+    } catch (err) {
+      assert.equal(err.code, ErrorCodes.NODE_NOT_FOUND)
+    }
+  })
+
+  it('tick after disconnect', async () => {
+    try {
+      await serverNode.bind()
+      await clientNode.connect({ address: serverNode.getAddress() })
+      await clientNode.disconnect(serverNode.getAddress())
+      clientNode.tick({ to: serverNode.getId(), event: 'foo', data: 'bar' })
     } catch (err) {
       assert.equal(err.code, ErrorCodes.NODE_NOT_FOUND)
     }
@@ -65,7 +117,7 @@ describe('oneToOne successfully connected', () => {
 
   beforeEach(async () => {
     clientNode = new Node({})
-    serverNode = new Node({ bind: 'tcp://127.0.0.1:3000' })
+    serverNode = new Node({ bind: 'tcp://127.0.0.1:3020' })
     await serverNode.bind()
     await clientNode.connect({ address: serverNode.getAddress() })
   })
@@ -82,6 +134,7 @@ describe('oneToOne successfully connected', () => {
 
     serverNode.onTick('foo', (message) => {
       assert.equal(message, expectedMessage)
+      serverNode.offTick('foo')
       done()
     })
 
@@ -126,6 +179,13 @@ describe('oneToOne successfully connected', () => {
 
     assert.equal(expectedMessage2, response)
   })
+
+  it('set new options', async () => {
+    await clientNode.setOptions(Object.assign({}, clientNode.getOptions(), { foo: 'bar' }))
+    await serverNode.setOptions(Object.assign({}, serverNode.getOptions(), { foo: 'bar' }))
+    assert.equal(serverNode.getOptions().foo, 'bar')
+    assert.equal(clientNode.getOptions().foo, 'bar')
+  })
 })
 
 describe('reconnect', () => {
@@ -133,7 +193,7 @@ describe('reconnect', () => {
 
   beforeEach(async () => {
     clientNode = new Node({})
-    serverNode = new Node({ bind: 'tcp://127.0.0.1:3000' })
+    serverNode = new Node({ bind: 'tcp://127.0.0.1:3021' })
     await serverNode.bind()
     await clientNode.connect({ address: serverNode.getAddress() })
   })
@@ -153,5 +213,58 @@ describe('reconnect', () => {
       .then(() => {
         serverNode.bind()
       })
+  })
+})
+
+describe('information', () => {
+  let clientNode, serverNode
+
+  beforeEach(async () => {
+    clientNode = new Node({})
+    serverNode = new Node({ bind: 'tcp://127.0.0.1:4001' })
+    await serverNode.bind()
+    await clientNode.connect({ address: serverNode.getAddress() })
+  })
+
+  afterEach(async () => {
+    await serverNode.stop()
+    await clientNode.stop()
+    clientNode = null
+    serverNode = null
+  })
+
+  it('get server information with address', (done) => {
+    let serverInfo = clientNode.getServerInfo({ address: serverNode.getAddress() })
+    assert.equal(serverInfo.id, serverNode.getId())
+    assert.equal(serverInfo.address, serverNode.getAddress())
+    assert.notEqual(serverInfo.online, false)
+    done()
+  })
+
+  it('get server information with id', (done) => {
+    let serverInfo = clientNode.getServerInfo({ id: serverNode.getId() })
+    assert.equal(serverInfo.id, serverNode.getId())
+    assert.equal(serverInfo.address, serverNode.getAddress())
+    assert.notEqual(serverInfo.online, false)
+    done()
+  })
+
+  it('get server information, wrong id/address', (done) => {
+    let serverInfo = clientNode.getServerInfo({ id: 'foo' })
+    assert.equal(serverInfo, null)
+    done()
+  })
+
+  it('get client information with id', (done) => {
+    let clientInfo = serverNode.getClientInfo({ id: clientNode.getId() })
+    assert.equal(clientInfo.id, clientNode.getId())
+    assert.notEqual(clientInfo.online, false)
+    done()
+  })
+
+  it('get client information, wrong id', (done) => {
+    let clientInfo = serverNode.getClientInfo({ id: 'foo' })
+    assert.equal(clientInfo, null)
+    done()
   })
 })

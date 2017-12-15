@@ -217,6 +217,9 @@ export default class Node extends EventEmitter {
   async stop () {
     let {nodeServer, nodeClients} = _private.get(this)
     let stopPromise = []
+
+    this.disableMetrics()
+
     if (nodeServer.isOnline()) {
       nodeServer.close()
     }
@@ -428,21 +431,22 @@ export default class Node extends EventEmitter {
 
     nodeServer.setMetric(true)
 
-    metric.interval = setInterval(() => {
+    metric.interval = setInterval( () => {
+      metric.info.getCpu()
+      metric.info.getMemory()
       this.emit(events.METRICS, metric.info)
-      metric.info.flush()
     }, interval)
   }
 
   disableMetrics () {
     let _scope = _private.get(this)
     let {metric, nodeClients, nodeServer} = _scope
+    clearInterval(metric.interval)
     metric.status = false
     nodeClients.forEach((client) => {
       client.setMetric(false)
     }, this)
     nodeServer.setMetric(false)
-    clearInterval(metric.interval)
     metric.interval = null
     metric.info.flush()
   }
