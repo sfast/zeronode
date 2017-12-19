@@ -164,8 +164,8 @@ export default class Node extends EventEmitter {
 
     // ** attaching client handlers
     client.on('error', (err) => this.emit('error', err))
-    client.on(events.SERVER_FAILURE, (serverActor) => this.emit(events.SERVER_FAILURE, serverActor.toJSON()))
-    client.on(events.SERVER_STOP, (serverActor) => this.emit(events.SERVER_STOP, serverActor.toJSON()))
+    client.on(events.SERVER_FAILURE, (serverActor) => this.emit(events.SERVER_FAILURE, serverActor))
+    client.on(events.SERVER_STOP, (serverActor) => this.emit(events.SERVER_STOP, serverActor))
 
     // **
     client.setMetric(metricEnabled)
@@ -471,9 +471,9 @@ function _initNodeServer () {
   let nodeServer = new Server({ id, bind, options, config })
   // ** handlers for nodeServer
   nodeServer.on('error', (err) => this.emit('error', err))
-  nodeServer.on(events.CLIENT_FAILURE, (clientActor) => this.emit(events.CLIENT_FAILURE, clientActor.toJSON()))
-  nodeServer.on(events.CLIENT_CONNECTED, (clientActor) => this.emit(events.CLIENT_CONNECTED, clientActor.toJSON()))
-  nodeServer.on(events.CLIENT_STOP, (clientActor) => this.emit(events.CLIENT_STOP, clientActor.toJSON()))
+  nodeServer.on(events.CLIENT_FAILURE, (clientActor) => this.emit(events.CLIENT_FAILURE, clientActor))
+  nodeServer.on(events.CLIENT_CONNECTED, (clientActor) => this.emit(events.CLIENT_CONNECTED, clientActor))
+  nodeServer.on(events.CLIENT_STOP, (clientActor) => this.emit(events.CLIENT_STOP, clientActor))
 
   // ** enabling metrics
   nodeServer.setMetric(metricStatus)
