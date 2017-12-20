@@ -8,11 +8,11 @@ import {Dealer as DealerSocket, SocketEvent} from './sockets'
 let _private = new WeakMap()
 
 export default class Client extends DealerSocket {
-  constructor ({id, options, config, reconnectionTimeout} = {}) {
+  constructor ({ id, options, config } = {}) {
     options = options || {}
     config = config || {}
 
-    super({id, options, config, reconnectionTimeout})
+    super({ id, options, config })
     let _scope = {
       server: null,
       pingInterval: null
@@ -163,7 +163,6 @@ async function _serverReconnectHandler (/* { fd, serverAddress } */) {
       mainEvent: true
     }
 
-    await new Promise((res) => setTimeout(res, 1000))
     let {actorId, options} = await this.request(requestObj)
 
     // **  TODO։։avar remove this after some time (server should always be available at this point)

@@ -28,15 +28,13 @@ let defaultLogger = new (winston.Logger)({
 })
 
 export default class Node extends EventEmitter {
-  constructor ({ id, bind, options, config, reconnectionTimeout } = {}) {
+  constructor ({ id, bind, options, config } = {}) {
     super()
 
     id = id || _generateNodeId()
     options = options || {}
     config = config || {}
     config.logger = defaultLogger
-
-    reconnectionTimeout = reconnectionTimeout || -1
 
     this.logger = config.logger || defaultLogger
 
@@ -45,7 +43,6 @@ export default class Node extends EventEmitter {
       bind,
       options,
       config,
-      reconnectionTimeout,
       metric: {
         status: false,
         info: new Metric({id}),
@@ -159,8 +156,10 @@ export default class Node extends EventEmitter {
     let { id, metric, nodeClientsAddressIndex, nodeClients, config } = _scope
     let metricEnabled = metric.status
     let metricInfo = metric.info
+    let clientConfig = config
 
-    reconnectionTimeout = reconnectionTimeout || _scope.reconnectionTimeout
+    if (reconnectionTimeout) clientConfig = Object.assign({}, config, { RECONNECTION_TIMEOUT: reconnectionTimeout })
+
     address = address || 'tcp://127.0.0.1:3000'
 
     let addressHash = md5(address)
@@ -170,7 +169,7 @@ export default class Node extends EventEmitter {
       return client.getServerActor().toJSON()
     }
 
-    let client = new Client({ id, options: _scope.options, config, reconnectionTimeout })
+    let client = new Client({ id, options: _scope.options, config: clientConfig })
 
     // ** attaching client handlers
     client.on('error', (err) => this.emit('error', err))

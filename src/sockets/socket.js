@@ -21,9 +21,8 @@ let defaultLogger = new (winston.Logger)({
 function buildSocketEventHandler (eventName) {
   const handler = (fd, endpoint) => {
     if (this.debugMode()) {
-      console.info(`Emitted '${eventName}' on socket '${this.getId()}'`)
+      this.logger.info(`Emitted '${eventName}' on socket '${this.getId()}'`)
     }
-    // console.log('event', eventName)
     this.emit(eventName, {fd, endpoint})
   }
 
@@ -105,6 +104,11 @@ class Socket extends EventEmitter {
   getOptions () {
     let {options} = _private.get(this)
     return options
+  }
+
+  getConfig () {
+    let {config} = _private.get(this)
+    return config
   }
 
   setMetric (status) {
@@ -210,7 +214,7 @@ class Socket extends EventEmitter {
     socket.on('close_error', this::buildSocketEventHandler(SocketEvent.CLOSE_ERROR))
   }
 
-  detachSocketMonitor() {
+  detachSocketMonitor () {
     let {socket, monitorRestartInterval} = _private.get(this)
     // ** remove all listeners
     socket.removeAllListeners('connect')

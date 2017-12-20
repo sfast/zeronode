@@ -21,7 +21,9 @@ let MetricType = {
 let Timeouts = {
   MONITOR_TIMEOUT: 10,
   // ** when monitor fials restart it after milliseconds
-  MONITOR_RESTART_TIMEOUT: 1000
+  MONITOR_RESTART_TIMEOUT: 1000,
+  RECONNECTION_TIMEOUT: -1,
+  INFINITY: -1
 }
 
 let DealerStateType = {
