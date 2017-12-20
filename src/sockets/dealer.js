@@ -115,8 +115,8 @@ export default class DealerSocket extends Socket {
             // ** removing reconnection listener
             this.removeListener(SocketEvent.CONNECT, onReConnectionHandler)
             // ** disconnecting socket
+            this.emit(SocketEvent.RECONNECT_FAILURE)
             this.disconnect()
-            this.emit(SocketEvent.RECONNECT_FAIL, {})
           }, RECONNECTION_TIMEOUT)
         }
       }

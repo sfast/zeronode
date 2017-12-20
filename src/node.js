@@ -176,6 +176,7 @@ export default class Node extends EventEmitter {
     client.on(events.SERVER_FAILURE, (serverActor) => this.emit(events.SERVER_FAILURE, serverActor))
     client.on(events.SERVER_STOP, (serverActor) => this.emit(events.SERVER_STOP, serverActor))
     client.on(events.SERVER_RECONNECT, (serverActor) => this.emit(events.SERVER_RECONNECT, serverActor))
+    client.on(events.SERVER_RECONNECT_FAILURE, (serverActor) => this.emit(events.SERVER_RECONNECT_FAILURE, serverActor))
 
     // **
     client.setMetric(metricEnabled)
