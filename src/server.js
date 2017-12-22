@@ -43,11 +43,6 @@ export default class Server extends RouterSocket {
     return clientModels.has(clientId) ? clientModels.get(clientId) : null
   }
 
-  isClientOnline (id) {
-    let clientModel = this.getClientById(id)
-    return clientModel ? clientModel.isOnline() : false
-  }
-
   getOnlineClients () {
     let {clientModels} = _private.get(this)
     let onlineClients = []
@@ -80,9 +75,11 @@ export default class Server extends RouterSocket {
     try {
       let _scope = _private.get(this)
 
-      _.each(this.getOnlineClients(), (client) => {
-        this.tick({ to: client.getId(), event: events.SERVER_STOP, mainEvent: true })
-      })
+      if (this.isOnline()) {
+        _.each(this.getOnlineClients(), (client) => {
+          this.tick({ to: client.getId(), event: events.SERVER_STOP, mainEvent: true })
+        })
+      }
 
       // ** clear the heartbeat checking interval
       if (_scope.clientCheckInterval) {
@@ -155,7 +152,6 @@ function _checkClientHeartBeat () {
     } else {
       actor.markFailed()
       this.emit(events.CLIENT_FAILURE, actor.toJSON())
-      this.logger.warn(`Server ${this.getId()} identifies client failure`, actor)
     }
   })
 }
@@ -172,7 +168,6 @@ function _clientOptionsSync ({actorId, options}) {
   } catch (err) {
     let clientOptionsSyncHandlerError = new ZeronodeError({ socketId: this.getId(), code: ErrorCodes.CLIENT_OPTIONS_SYNC_HANDLER, error: err })
     clientOptionsSyncHandlerError.description = `Error while handling client options sync on server ${this.getId()}`
-    this.logger.error(clientOptionsSyncHandlerError)
     this.emit('error', clientOptionsSyncHandlerError)
   }
 }

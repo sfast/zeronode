@@ -8,11 +8,11 @@ import {Dealer as DealerSocket, SocketEvent} from './sockets'
 let _private = new WeakMap()
 
 export default class Client extends DealerSocket {
-  constructor ({id, options, config} = {}) {
+  constructor ({ id, options, config } = {}) {
     options = options || {}
     config = config || {}
 
-    super({id, options, config})
+    super({ id, options, config })
     let _scope = {
       server: null,
       pingInterval: null
@@ -20,6 +20,7 @@ export default class Client extends DealerSocket {
 
     this.on(SocketEvent.DISCONNECT, this::_serverFailHandler)
     this.on(SocketEvent.RECONNECT, this::_serverReconnectHandler)
+    this.on(SocketEvent.RECONNECT_FAILURE, () => this.emit(events.SERVER_RECONNECT_FAILURE, _scope.server.toJSON()))
 
     this.onTick(events.SERVER_STOP, this::_serverStopHandler, true)
     this.onTick(events.OPTIONS_SYNC, this::_serverOptionsSync, true)
@@ -65,7 +66,6 @@ export default class Client extends DealerSocket {
     } catch (err) {
       let clientConnectError = new ZeronodeError({ socketId: this.getId(), code: ErrorCodes.CLIENT_CONNECT, error: err })
       clientConnectError.description = `Error while disconnecting client '${this.getId()}'`
-      this.logger.error(clientConnectError)
       this.emit('error', clientConnectError)
     }
   }
@@ -97,7 +97,6 @@ export default class Client extends DealerSocket {
     } catch (err) {
       let clientDisconnectError = new ZeronodeError({ socketId: this.getId(), code: ErrorCodes.CLIENT_DISCONNECT, error: err })
       clientDisconnectError.description = `Error while disconnecting client '${this.getId()}'`
-      this.logger.error(clientDisconnectError)
       this.emit('error', clientDisconnectError)
     }
   }
@@ -144,7 +143,6 @@ function _serverFailHandler () {
   } catch (err) {
     let serverFailHandlerError = new ZeronodeError({ socketId: this.getId(), code: ErrorCodes.SERVER_RECONNECT_HANDLER, error: err })
     serverFailHandlerError.description = `Error while handling server failure on client ${this.getId()}`
-    this.logger.error(serverFailHandlerError)
     this.emit('error', serverFailHandlerError)
   }
 }
@@ -180,7 +178,6 @@ async function _serverReconnectHandler (/* { fd, serverAddress } */) {
   } catch (err) {
     let serverReconnectHandlerError = new ZeronodeError({ socketId: this.getId(), code: ErrorCodes.SERVER_RECONNECT_HANDLER, error: err })
     serverReconnectHandlerError.description = `Error while handling server reconnect on client ${this.getId()}`
-    this.logger.error(serverReconnectHandlerError)
     this.emit('error', serverReconnectHandlerError)
   }
 }
@@ -201,7 +198,6 @@ function _serverStopHandler () {
   } catch (err) {
     let serverStopHandlerError = new ZeronodeError({ socketId: this.getId(), code: ErrorCodes.SERVER_STOP_HANDLER, error: err })
     serverStopHandlerError.description = `Error while handling server stop on client ${this.getId()}`
-    this.logger.error(serverStopHandlerError)
     this.emit('error', serverStopHandlerError)
   }
 }
@@ -216,7 +212,6 @@ function _serverOptionsSync ({options, actorId}) {
   } catch (err) {
     let serverOptionsSyncHandlerError = new ZeronodeError({ socketId: this.getId(), code: ErrorCodes.SERVER_OPTIONS_SYNC_HANDLER, error: err })
     serverOptionsSyncHandlerError.description = `Error while handling server options sync on client ${this.getId()}`
-    this.logger.error(serverOptionsSyncHandlerError)
     this.emit('error', serverOptionsSyncHandlerError)
   }
 }
@@ -238,7 +233,6 @@ function _startServerPinging () {
       this.tick({ event: events.CLIENT_PING, data: pingData, mainEvent: true })
     } catch (err) {
       let pingError = new ZeronodeError({ socketId: this.getId(), code: ErrorCodes.SERVER_PING_ERROR, error: err })
-      this.logger.error(pingError)
       this.emit('error', pingError)
     }
   }, interval)
