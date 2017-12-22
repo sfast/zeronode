@@ -235,7 +235,7 @@ describe('reconnect', () => {
     clientNode = new Node({})
     serverNode = new Node({ bind: 'tcp://127.0.0.1:3021' })
     await serverNode.bind()
-    await clientNode.connect({ address: serverNode.getAddress() })
+    await clientNode.connect({ address: serverNode.getAddress(), reconnectionTimeout: 500 })
   })
 
   afterEach(async () => {
@@ -245,7 +245,7 @@ describe('reconnect', () => {
     serverNode = null
   })
 
-  it('successfully reconnect', () => {
+  it('successfully reconnect', (done) => {
     clientNode.on(NodeEvents.SERVER_RECONNECT, () => {
       done()
     })
@@ -255,7 +255,7 @@ describe('reconnect', () => {
       })
   })
 
-  it('reconnect failure', () => {
+  it('reconnect failure', (done) => {
     clientNode.on(NodeEvents.SERVER_RECONNECT_FAILURE, () => {
       done()
     })

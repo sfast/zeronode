@@ -232,7 +232,7 @@ export default class Node extends EventEmitter {
     this.disableMetrics()
 
     if (nodeServer.isOnline()) {
-      nodeServer.close()
+      stopPromise.push(nodeServer.close())
     }
 
     nodeClients.forEach((client) => {

@@ -75,9 +75,11 @@ export default class Server extends RouterSocket {
     try {
       let _scope = _private.get(this)
 
-      _.each(this.getOnlineClients(), (client) => {
-        this.tick({ to: client.getId(), event: events.SERVER_STOP, mainEvent: true })
-      })
+      if (this.isOnline()) {
+        _.each(this.getOnlineClients(), (client) => {
+          this.tick({ to: client.getId(), event: events.SERVER_STOP, mainEvent: true })
+        })
+      }
 
       // ** clear the heartbeat checking interval
       if (_scope.clientCheckInterval) {
