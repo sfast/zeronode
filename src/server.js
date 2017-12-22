@@ -43,11 +43,6 @@ export default class Server extends RouterSocket {
     return clientModels.has(clientId) ? clientModels.get(clientId) : null
   }
 
-  isClientOnline (id) {
-    let clientModel = this.getClientById(id)
-    return clientModel ? clientModel.isOnline() : false
-  }
-
   getOnlineClients () {
     let {clientModels} = _private.get(this)
     let onlineClients = []

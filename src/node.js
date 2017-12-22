@@ -33,7 +33,8 @@ export default class Node extends EventEmitter {
 
     id = id || _generateNodeId()
     options = options || {}
-    config = config || { logger: defaultLogger }
+    config = config || {}
+    config.logger = defaultLogger
 
     this.logger = config.logger || defaultLogger
 
@@ -75,9 +76,12 @@ export default class Node extends EventEmitter {
 
   getServerInfo ({ address, id }) {
     let {nodeClients, nodeClientsAddressIndex} = _private.get(this)
+
     if (!id) {
-      if (!nodeClientsAddressIndex.has(address)) return null
-      id = nodeClientsAddressIndex.get(address)
+      let addressHash = md5(address)
+
+      if (!nodeClientsAddressIndex.has(addressHash)) return null
+      id = nodeClientsAddressIndex.get(addressHash)
     }
 
     let client = nodeClients.get(id)
@@ -143,7 +147,7 @@ export default class Node extends EventEmitter {
   }
 
     // ** connect returns the id of the connected node
-  async connect (address = 'tcp://127.0.0.1:3000', timeout) {
+  async connect ({ address, timeout, reconnectionTimeout } = {}) {
     if (typeof address !== 'string' || address.length === 0) {
       throw new Error(`Wrong type for argument address ${address}`)
     }
@@ -152,6 +156,11 @@ export default class Node extends EventEmitter {
     let { id, metric, nodeClientsAddressIndex, nodeClients, config } = _scope
     let metricEnabled = metric.status
     let metricInfo = metric.info
+    let clientConfig = config
+
+    if (reconnectionTimeout) clientConfig = Object.assign({}, config, { RECONNECTION_TIMEOUT: reconnectionTimeout })
+
+    address = address || 'tcp://127.0.0.1:3000'
 
     let addressHash = md5(address)
 
@@ -160,12 +169,14 @@ export default class Node extends EventEmitter {
       return client.getServerActor().toJSON()
     }
 
-    let client = new Client({ id, options: _scope.options, config })
+    let client = new Client({ id, options: _scope.options, config: clientConfig })
 
     // ** attaching client handlers
     client.on('error', (err) => this.emit('error', err))
     client.on(events.SERVER_FAILURE, (serverActor) => this.emit(events.SERVER_FAILURE, serverActor))
     client.on(events.SERVER_STOP, (serverActor) => this.emit(events.SERVER_STOP, serverActor))
+    client.on(events.SERVER_RECONNECT, (serverActor) => this.emit(events.SERVER_RECONNECT, serverActor))
+    client.on(events.SERVER_RECONNECT_FAILURE, (serverActor) => this.emit(events.SERVER_RECONNECT_FAILURE, serverActor))
 
     // **
     client.setMetric(metricEnabled)
@@ -217,6 +228,9 @@ export default class Node extends EventEmitter {
   async stop () {
     let {nodeServer, nodeClients} = _private.get(this)
     let stopPromise = []
+
+    this.disableMetrics()
+
     if (nodeServer.isOnline()) {
       nodeServer.close()
     }
@@ -428,21 +442,22 @@ export default class Node extends EventEmitter {
 
     nodeServer.setMetric(true)
 
-    metric.interval = setInterval(() => {
+    metric.interval = setInterval( () => {
+      metric.info.getCpu()
+      metric.info.getMemory()
       this.emit(events.METRICS, metric.info)
-      metric.info.flush()
     }, interval)
   }
 
   disableMetrics () {
     let _scope = _private.get(this)
     let {metric, nodeClients, nodeServer} = _scope
+    clearInterval(metric.interval)
     metric.status = false
     nodeClients.forEach((client) => {
       client.setMetric(false)
     }, this)
     nodeServer.setMetric(false)
-    clearInterval(metric.interval)
     metric.interval = null
     metric.info.flush()
   }

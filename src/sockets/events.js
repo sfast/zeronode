@@ -1,6 +1,7 @@
 const SocketEvent = {
   CONNECT: 'zmq::socket::connect',
   RECONNECT: 'zmq::socket::reconnect',
+  RECONNECT_FAILURE: 'zmq::socket:reconnect-failure',
   DISCONNECT: 'zmq::socket::disconnect',
   CONNECT_DELAY: 'zmq::socket::connect-delay',
   CONNECT_RETRY: 'zmq::socket::connect-retry',

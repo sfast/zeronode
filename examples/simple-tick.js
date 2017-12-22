@@ -22,7 +22,7 @@ nodeClient.onTick('foo-client', (data) => {
 const runSimpleTick = () => {
   nodeServer.bind()
     .then(() => {
-      return nodeClient.connect(nodeServer.getAddress())
+      return nodeClient.connect({address: nodeServer.getAddress() })
     })
     .then(() => {
       nodeClient.tick({ to: nodeServer.getId(), event: 'foo-server', data: {stamp: Date.now()} })

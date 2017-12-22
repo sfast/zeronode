@@ -45,14 +45,17 @@ export default class Metric {
     this.ticks = new Map()
     this.cpu = 0
     this.memory = process.memoryUsage().heapTotal / 1000000
+    this.actualUsag = 0
   }
 
-  async getCpu () {
-    let startUsage = process.cpuUsage()
-    await new Promise((resolve, reject) => setTimeout(resolve, 100))
-    let actualUsage = process.cpuUsage(startUsage)
-    this.cpu = (actualUsage.user + actualUsage.system) / 10000
+  getCpu (interval = 100) {
+    this.actualUsage = process.cpuUsage(this.actualUsag)
+    this.cpu = (this.actualUsage.user + this.actualUsage.system) / ( 100 * interval)
     return this.cpu
+  }
+
+  getMemory () {
+    this.memory = process.memoryUsage().heapTotal / 1000000
   }
 
   sendRequest (id) {
