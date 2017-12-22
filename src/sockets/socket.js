@@ -318,7 +318,7 @@ function syncEnvelopHandler (envelop) {
       // TODO::avar lets refactor next and add it under documentation
       if (err) {
         self.logger.error(err)
-        return this.reply({error: err})
+        return requestOb.reply({error: err})
       }
 
       if (!handlers.length) {
@@ -364,7 +364,7 @@ function responseEnvelopHandler (envelop) {
   let id = envelop.getId()
   if (requests.has(id)) {
         //* * requestObj is like {resolve, reject, timeout : clearRequestTimeout}
-    let {timeout, sendTime, resolve} = requests.get(id)
+    let {timeout, sendTime, resolve, reject} = requests.get(id)
     // ** getTime is the time when message arrives to server
     // ** replyTime is the time when message is send from server
     let {getTime, replyTime, data} = envelop.getData()
@@ -373,7 +373,9 @@ function responseEnvelopHandler (envelop) {
     if (metric) this.emit(MetricType.GOT_REPLY, gotReplyMetric)
     clearTimeout(timeout)
         //* * resolving request promise with response data
-    resolve(data)
+
+    if (_.isObject(data) && data.error) reject(data.error)
+    else resolve(data)
     requests.delete(id)
   } else {
     this.logger.warn(`Response ${id} is probably time outed`)

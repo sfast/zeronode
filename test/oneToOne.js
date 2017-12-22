@@ -89,6 +89,28 @@ describe('oneToOne, failures', () => {
     }
   })
 
+  it('request-next-error', async () => {
+    let expectedError = 'some error message'
+
+    try {
+      let expectedMessage = 'bar'
+
+      await serverNode.bind()
+      await clientNode.connect({ address: serverNode.getAddress() })
+      serverNode.onRequest('foo', ({ body, reply, next }) => {
+        assert.equal(body, expectedMessage)
+        next(expectedError)
+      })
+      serverNode.onRequest('foo', ({ body, reply, next }) => {
+        reply()
+      })
+
+      console.log(await clientNode.request({ to: serverNode.getId(), event: 'foo', data: expectedMessage }))
+    } catch (err) {
+      assert.equal(err, expectedError)
+    }
+  })
+
   it('tick after disconnect', async () => {
     try {
       await serverNode.bind()
@@ -166,6 +188,24 @@ describe('oneToOne successfully connected', () => {
     assert.equal(expectedMessage2, response)
   })
 
+  it('request-next', async () => {
+    let expectedMessage = 'bar'
+    let expectedMessage2 = 'baz'
+
+    serverNode.onRequest('foo', ({ body, reply, next }) => {
+      assert.equal(body, expectedMessage)
+      next()
+    })
+    serverNode.onRequest(/fo+/, ({ body, reply }) => {
+      assert.equal(body, expectedMessage)
+      reply(expectedMessage2)
+    })
+
+    let response = await clientNode.request({ to: serverNode.getId(), event: 'foo', data: expectedMessage })
+
+    assert.equal(expectedMessage2, response)
+  })
+
   it('requestFromServer', async () => {
     let expectedMessage = 'bar'
     let expectedMessage2 = 'baz'
@@ -213,6 +253,14 @@ describe('reconnect', () => {
       .then(() => {
         serverNode.bind()
       })
+  })
+
+  it('reconnect failure', () => {
+    clientNode.on(NodeEvents.SERVER_RECONNECT_FAILURE, () => {
+      done()
+    })
+
+    serverNode.unbind()
   })
 })
 
