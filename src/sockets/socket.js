@@ -297,7 +297,10 @@ function onSocketMessage (empty, envelopBuffer) {
   switch (type) {
     case EnvelopType.ASYNC:
       if (metric) this.emit(MetricType.GOT_TICK, owner)
-      mainEvent ? tickEmitter.main.emit(tag, envelopData) : tickEmitter.custom.emit(tag, envelopData)
+      mainEvent ? tickEmitter.main.emit(tag, envelopData) : tickEmitter.custom.emit(tag, envelopData, {
+        id: owner,
+        event: tag
+      })
       break
     case EnvelopType.SYNC:
       envelop.setData(envelopData)
@@ -321,6 +324,10 @@ function syncEnvelopHandler (envelop) {
   if (!handlers.length) return
 
   let requestOb = {
+    head: {
+      id: envelop.getOwner(),
+      event: envelop.getTag()
+    },
     body: envelop.getData(),
     reply: (data) => {
       envelop.setRecipient(prevOwner)
