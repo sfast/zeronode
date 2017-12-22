@@ -41,10 +41,6 @@ class Socket extends EventEmitter {
 
     let logger = config.logger || defaultLogger
 
-    // ** config is for internal usage (logger, timeouts etc ...) and options is for node filtering later on
-    config = config || {}
-    options = options || {}
-
     // ** setting the logger as soon as possible
     this.setLogger(logger)
 

@@ -78,6 +78,8 @@ export default class DealerSocket extends Socket {
     _scope.connectionPromise = new Promise((resolve, reject) => {
       let {socket} = _scope
       let { RECONNECTION_TIMEOUT } = this.getConfig()
+      RECONNECTION_TIMEOUT = RECONNECTION_TIMEOUT || Timeouts.RECONNECTION_TIMEOUT
+
       let rejectionTimeout = null
 
       if (routerAddress) {
