@@ -38,8 +38,8 @@ nodeB.onRequest('foo-client', ({body, reply, next}) => {
 const runLoadBalancedRequest = () => {
   nodeDns.bind()
     .then(async () => {
-      await nodeA.connect(nodeDns.getAddress())
-      await nodeB.connect(nodeDns.getAddress())
+      await nodeA.connect({address: nodeDns.getAddress()})
+      await nodeB.connect({address: nodeDns.getAddress()})
     })
     .then(async () => {
       console.log(`-- Example 1 --`)

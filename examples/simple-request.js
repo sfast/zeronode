@@ -20,7 +20,7 @@ nodeClient.onRequest('foo-client', ({body, reply, next}) => {
 const runSimpleRequest = () => {
   nodeServer.bind()
     .then(() => {
-      return nodeClient.connect(nodeServer.getAddress())
+      return nodeClient.connect({address: nodeServer.getAddress()})
     })
     .then(async () => {
       console.log(`-- Step 1 --`)

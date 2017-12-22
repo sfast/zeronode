@@ -48,9 +48,9 @@ let run = async () => {
 
   await Promise.all(all)
   console.log('All nodes are binded')
-  await layerA.connect(dns.getAddress())
+  await layerA.connect({ address: dns.getAddress() })
   console.log('Layer A connected')
-  await layerB.connect(dns.getAddress())
+  await layerB.connect({ address: dns.getAddress() })
   console.log('Layer B connected')
 
   dns.onTick(/^WELCOME/, (data) => {
