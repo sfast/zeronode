@@ -152,7 +152,6 @@ function _checkClientHeartBeat () {
     } else {
       actor.markFailed()
       this.emit(events.CLIENT_FAILURE, actor.toJSON())
-      this.logger.warn(`Server ${this.getId()} identifies client failure`, actor)
     }
   })
 }
@@ -169,7 +168,6 @@ function _clientOptionsSync ({actorId, options}) {
   } catch (err) {
     let clientOptionsSyncHandlerError = new ZeronodeError({ socketId: this.getId(), code: ErrorCodes.CLIENT_OPTIONS_SYNC_HANDLER, error: err })
     clientOptionsSyncHandlerError.description = `Error while handling client options sync on server ${this.getId()}`
-    this.logger.error(clientOptionsSyncHandlerError)
     this.emit('error', clientOptionsSyncHandlerError)
   }
 }
