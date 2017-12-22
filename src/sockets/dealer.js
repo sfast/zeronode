@@ -8,7 +8,7 @@ import zmq from 'zeromq'
 import { ZeronodeError, ErrorCodes } from '../errors'
 import { Socket, SocketEvent } from './socket'
 import Envelop from './envelope'
-import { EnvelopType, DealerStateType } from './enum'
+import { EnvelopType, DealerStateType, Timeouts } from './enum'
 
 // ** enable cancellation , by default it's turned off
 Promise.config({ cancellation: true })
@@ -16,7 +16,7 @@ Promise.config({ cancellation: true })
 let _private = new WeakMap()
 
 export default class DealerSocket extends Socket {
-  constructor ({id, options, config} = {}) {
+  constructor ({ id, options, config } = {}) {
     options = options || {}
     config = config || {}
 
@@ -77,6 +77,9 @@ export default class DealerSocket extends Socket {
     // ** if connect is called for the first time then creating the connection promise
     _scope.connectionPromise = new Promise((resolve, reject) => {
       let {socket} = _scope
+      let { RECONNECTION_TIMEOUT } = this.getConfig()
+      RECONNECTION_TIMEOUT = RECONNECTION_TIMEOUT || Timeouts.RECONNECTION_TIMEOUT
+
       let rejectionTimeout = null
 
       if (routerAddress) {
@@ -95,6 +98,11 @@ export default class DealerSocket extends Socket {
       }
 
       const onReConnectionHandler = (fd, endpoint) => {
+        if (_scope.reconnectionTimeoutInstance) {
+          clearTimeout(_scope.reconnectionTimeoutInstance)
+          _scope.reconnectionTimeoutInstance = null
+        }
+
         this.once(SocketEvent.DISCONNECT, onDisconnectionHandler)
         this.setOnline()
         this.emit(SocketEvent.RECONNECT, {fd, endpoint})
@@ -104,6 +112,15 @@ export default class DealerSocket extends Socket {
         this.setOffline()
         _scope.state = DealerStateType.RECONNECTING
         this.once(SocketEvent.CONNECT, onReConnectionHandler)
+        if (RECONNECTION_TIMEOUT !== Timeouts.INFINITY) {
+          _scope.reconnectionTimeoutInstance = setTimeout(() => {
+            // ** removing reconnection listener
+            this.removeListener(SocketEvent.CONNECT, onReConnectionHandler)
+            // ** disconnecting socket
+            this.emit(SocketEvent.RECONNECT_FAILURE)
+            this.disconnect()
+          }, RECONNECTION_TIMEOUT)
+        }
       }
 
       if (timeout !== -1) {
@@ -132,12 +149,16 @@ export default class DealerSocket extends Socket {
     super.close()
 
     let _scope = _private.get(this)
-    let { socket, routerAddress, connectionPromise } = _scope
+    let { socket, routerAddress, connectionPromise, reconnectionTimeoutInstance } = _scope
 
     //* if connection promise is pending then cancel it
-    if (connectionPromise && connectionPromise.isPending()) {
-      connectionPromise.cancel()
+    if (connectionPromise && connectionPromise.isPending()) connectionPromise.cancel()
+
+    if (reconnectionTimeoutInstance) {
+      clearTimeout(reconnectionTimeoutInstance)
+      _scope.reconnectionTimeoutInstance = null
     }
+
     _scope.connectionPromise = null
 
     if (this.getState() !== DealerStateType.DISCONNECTED) {

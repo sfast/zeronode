@@ -41,10 +41,6 @@ class Socket extends EventEmitter {
 
     let logger = config.logger || defaultLogger
 
-    // ** config is for internal usage (logger, timeouts etc ...) and options is for node filtering later on
-    config = config || {}
-    options = options || {}
-
     // ** setting the logger as soon as possible
     this.setLogger(logger)
 
@@ -104,6 +100,11 @@ class Socket extends EventEmitter {
   getOptions () {
     let {options} = _private.get(this)
     return options
+  }
+
+  getConfig () {
+    let {config} = _private.get(this)
+    return config
   }
 
   setMetric (status) {
@@ -209,13 +210,27 @@ class Socket extends EventEmitter {
     socket.on('close_error', this::buildSocketEventHandler(SocketEvent.CLOSE_ERROR))
   }
 
-  close () {
+  detachSocketMonitor () {
     let {socket, monitorRestartInterval} = _private.get(this)
     // ** remove all listeners
-    socket.removeAllListeners()
+    socket.removeAllListeners('connect')
+    socket.removeAllListeners('disconnect')
+    socket.removeAllListeners('connect_delay')
+    socket.removeAllListeners('connect_retry')
+    socket.removeAllListeners('listen')
+    socket.removeAllListeners('bind_error')
+    socket.removeAllListeners('accept')
+    socket.removeAllListeners('accept_error')
+    socket.removeAllListeners('close')
+    socket.removeAllListeners('close_error')
+
     // ** if during closing there is a monitor restart scheduled then clear the schedule
     if (monitorRestartInterval) clearInterval(monitorRestartInterval)
     socket.unmonitor()
+  }
+
+  close () {
+    this.detachSocketMonitor()
   }
 
   onRequest (endpoint, fn, main = false) {

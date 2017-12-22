@@ -8,11 +8,11 @@ import {Dealer as DealerSocket, SocketEvent} from './sockets'
 let _private = new WeakMap()
 
 export default class Client extends DealerSocket {
-  constructor ({id, options, config} = {}) {
+  constructor ({ id, options, config } = {}) {
     options = options || {}
     config = config || {}
 
-    super({id, options, config})
+    super({ id, options, config })
     let _scope = {
       server: null,
       pingInterval: null
@@ -20,6 +20,7 @@ export default class Client extends DealerSocket {
 
     this.on(SocketEvent.DISCONNECT, this::_serverFailHandler)
     this.on(SocketEvent.RECONNECT, this::_serverReconnectHandler)
+    this.on(SocketEvent.RECONNECT_FAILURE, () => this.emit(events.SERVER_RECONNECT_FAILURE, _scope.server.toJSON()))
 
     this.onTick(events.SERVER_STOP, this::_serverStopHandler, true)
     this.onTick(events.OPTIONS_SYNC, this::_serverOptionsSync, true)

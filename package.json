@@ -54,7 +54,6 @@
     "bluebird": "^3.5.0",
     "buffer-alloc": "^1.1.0",
     "buffer-from": "^0.1.1",
-    "crypto": "0.0.3",
     "debug": "^2.6.3",
     "md5": "^2.2.1",
     "pattern-emitter": "latest",
