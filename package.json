@@ -24,7 +24,7 @@
     "loadbalance"
   ],
   "scripts": {
-    "test": "cross-env NODE_ENV=test nyc --check-coverage mocha",
+    "test": "cross-env NODE_ENV=test nyc --check-coverage mocha --timeout 10000",
     "snyktest": "snyk test",
     "standard": "standard './src/**/*.js' --parser babel-eslint --verbose | snazzy",
     "format": "standard './src/**/*.js' --parser babel-eslint  --fix --verbose | snazzy",
