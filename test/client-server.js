@@ -2,19 +2,20 @@ import { assert } from 'chai'
 import Client from '../src/client'
 import Server from '../src/server'
 
-const address = 'tcp://127.0.0.1:3000'
+const address = 'tcp://127.0.0.1:5001'
 
 describe('Client/Server', () => {
   let client, server
 
-  beforeEach(() => {
+  beforeEach((done) => {
     client = new Client({})
     server = new Server({})
+    done()
   })
 
-  afterEach(() => {
-    server.unbind()
-    client.disconnect()
+  afterEach(async () => {
+    await client.close()
+    await server.close()
     client = null
     server = null
   })

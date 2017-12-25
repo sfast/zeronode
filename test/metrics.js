@@ -3,19 +3,19 @@ import _ from 'underscore'
 
 import { Node, NodeEvents, ErrorCodes } from '../src'
 
-describe('oneToOne, failures', () => {
+describe('metrics', () => {
   let clientNode, serverNode
 
   beforeEach(async() => {
     clientNode = new Node({})
-    serverNode = new Node({bind: 'tcp://127.0.0.1:4000'})
+    serverNode = new Node({bind: 'tcp://127.0.0.1:3000'})
     await serverNode.bind()
     await clientNode.connect({ address: serverNode.getAddress() })
   })
 
   afterEach(async() => {
-    await serverNode.stop()
     await clientNode.stop()
+    await serverNode.stop()
     clientNode = null
     serverNode = null
   })

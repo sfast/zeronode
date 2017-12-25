@@ -3,6 +3,7 @@
  */
 import { assert } from 'chai'
 import { Node, NodeEvents, ErrorCodes } from '../src'
+import { Dealer, Router } from '../src/sockets'
 
 describe('oneToOne, failures', () => {
   let clientNode, serverNode
@@ -13,8 +14,8 @@ describe('oneToOne, failures', () => {
   })
 
   afterEach(async () => {
-    await serverNode.stop()
     await clientNode.stop()
+    await serverNode.stop()
     clientNode = null
     serverNode = null
   })
@@ -78,6 +79,25 @@ describe('oneToOne, failures', () => {
     }
   })
 
+  it('request after offRequest(function)', async () => {
+    try {
+      await serverNode.bind()
+      await clientNode.connect({ address: serverNode.getAddress() })
+
+      let fooListener = ({ body, reply }) => {
+        reply(body)
+      }
+
+      serverNode.onRequest('foo', fooListener)
+      serverNode.offRequest('foo', fooListener)
+
+      await clientNode.request({ to: serverNode.getId(), event: 'foo', data: 'bar', timeout: 200 })
+      return Promise.reject('fail')
+    } catch (err) {
+      assert.include(err.message, 'timeouted')
+    }
+  })
+
   it('request after disconnect', async () => {
     try {
       await serverNode.bind()
@@ -105,7 +125,7 @@ describe('oneToOne, failures', () => {
         reply()
       })
 
-      console.log(await clientNode.request({ to: serverNode.getId(), event: 'foo', data: expectedMessage }))
+      await clientNode.request({ to: serverNode.getId(), event: 'foo', data: expectedMessage })
     } catch (err) {
       assert.equal(err, expectedError)
     }
@@ -132,6 +152,59 @@ describe('oneToOne, failures', () => {
       assert.equal(err.message, `Sending failed as socket '${serverNode.getId()}' is not online`)
     }
   })
+
+  it('client failure', (done) => {
+    let dealerClient = new Dealer()
+
+    serverNode.on(NodeEvents.CLIENT_FAILURE, () => {
+      done()
+    })
+
+    serverNode.bind()
+      .then(() => {
+        return dealerClient.connect(serverNode.getAddress())
+      })
+      .then(() => {
+        let requestData = {
+          event: NodeEvents.CLIENT_CONNECTED,
+          data: {
+            actorId: dealerClient.getId(),
+            options: {}
+          },
+          mainEvent: true
+        }
+
+        return dealerClient.request(requestData)
+      })
+      .then(() => {
+        return dealerClient.close()
+      })
+  }).timeout(15000)
+
+  it('server failure', (done) => {
+    let routerServer = new Router()
+
+    routerServer.onRequest(NodeEvents.CLIENT_CONNECTED, ({ reply }) => {
+      let replyData = {
+        actorId: routerServer.getId(),
+        options: {}
+      }
+
+      reply(replyData)
+    }, true)
+
+    clientNode.on(NodeEvents.SERVER_FAILURE, () => {
+      done()
+    })
+
+    routerServer.bind('tcp://127.0.0.1:3000')
+      .then(() => {
+        return clientNode.connect({ address: routerServer.getAddress() })
+      })
+      .then(() => {
+        return routerServer.close()
+      })
+  })
 })
 
 describe('oneToOne successfully connected', () => {
@@ -139,14 +212,14 @@ describe('oneToOne successfully connected', () => {
 
   beforeEach(async () => {
     clientNode = new Node({})
-    serverNode = new Node({ bind: 'tcp://127.0.0.1:3020' })
+    serverNode = new Node({ bind: 'tcp://127.0.0.1:3000' })
     await serverNode.bind()
     await clientNode.connect({ address: serverNode.getAddress() })
   })
 
   afterEach(async () => {
-    await serverNode.stop()
     await clientNode.stop()
+    await serverNode.stop()
     clientNode = null
     serverNode = null
   })
@@ -233,26 +306,16 @@ describe('reconnect', () => {
 
   beforeEach(async () => {
     clientNode = new Node({})
-    serverNode = new Node({ bind: 'tcp://127.0.0.1:3021' })
+    serverNode = new Node({ bind: 'tcp://127.0.0.1:3000' })
     await serverNode.bind()
     await clientNode.connect({ address: serverNode.getAddress(), reconnectionTimeout: 500 })
   })
 
   afterEach(async () => {
-    await serverNode.stop()
     await clientNode.stop()
+    await serverNode.stop()
     clientNode = null
     serverNode = null
-  })
-
-  it('successfully reconnect', (done) => {
-    clientNode.on(NodeEvents.SERVER_RECONNECT, () => {
-      done()
-    })
-    serverNode.unbind()
-      .then(() => {
-        serverNode.bind()
-      })
   })
 
   it('reconnect failure', (done) => {
@@ -262,6 +325,16 @@ describe('reconnect', () => {
 
     serverNode.unbind()
   })
+
+  it('successfully reconnect', (done) => {
+    clientNode.on(NodeEvents.SERVER_RECONNECT, () => {
+      serverNode.unbind().then(done)
+    })
+    serverNode.unbind()
+      .then(() => {
+        serverNode.bind()
+      })
+  })
 })
 
 describe('information', () => {
@@ -269,14 +342,14 @@ describe('information', () => {
 
   beforeEach(async () => {
     clientNode = new Node({})
-    serverNode = new Node({ bind: 'tcp://127.0.0.1:4001' })
+    serverNode = new Node({ bind: 'tcp://127.0.0.1:3000' })
     await serverNode.bind()
     await clientNode.connect({ address: serverNode.getAddress() })
   })
 
   afterEach(async () => {
-    await serverNode.stop()
     await clientNode.stop()
+    await serverNode.stop()
     clientNode = null
     serverNode = null
   })

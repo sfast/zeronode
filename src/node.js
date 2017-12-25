@@ -264,7 +264,7 @@ export default class Node extends EventEmitter {
   offRequest (requestEvent, fn) {
     let _scope = _private.get(this)
 
-    _scope.nodeServer.offRequest(requestEvent)
+    _scope.nodeServer.offRequest(requestEvent, fn)
     _scope.nodeClients.forEach((client) => {
       client.offRequest(requestEvent, fn)
     })

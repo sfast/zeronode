@@ -12,13 +12,13 @@ describe('manyToOne', () => {
 
   beforeEach(async () => {
     clients = _.map(_.range(CLIENTS_COUNT), (i) => new Node({ options: {clientName: `client${i}`} }))
-    serverNode = new Node({ bind: 'tcp://127.0.0.1:3001' })
+    serverNode = new Node({ bind: 'tcp://127.0.0.1:3000' })
     await serverNode.bind()
   })
 
   afterEach(async () => {
-    await serverNode.stop()
     await Promise.all(_.map(clients, (client) => client.stop()))
+    await serverNode.stop()
     clients = null
     serverNode = null
   })
