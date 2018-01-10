@@ -192,6 +192,8 @@ export default class Node extends EventEmitter {
 
     this::_addExistingListenersToClient(client)
 
+    this.emit(events.CONNECT_TO_SERVER, client.getServerActor().toJSON())
+
     return client.getServerActor().toJSON()
   }
 
