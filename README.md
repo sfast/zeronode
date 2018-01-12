@@ -52,40 +52,40 @@ For other platforms please open an issue or feel free to contribute.
 
 ### API
 #### Basic methods
-* [**`Node()`**](#node)
-* [`node.`**`bind()`**](#bind)
-* [`node.`**`connect()`**](#connect)
-* [`node.`**`unbind()`**](#unbind)
-* [`node.`**`disconnect()`**](#disconnect)
-* [`node.`**`stop()`**](#stop)
+* [<code>**Node()**</code>](#node)
+* [<code>node.**bind()**</code>](#bind)
+* [<code>node.**connect()**</code>](#connect)
+* [<code>node.**unbind()**</code>](#unbind)
+* [<code>node.**disconnect()**</code>](#disconnect)
+* [<code>node.**stop()**</code>](#stop)
 
 #### Simple messaging methods
-* [`node.`**`request()`**](#request)
-* [`node.`**`tick()`**](#tick)
+* [<code>node.**request()<code>**](#request)
+* [<code>node.**tick()<code>**](#tick)
 
 #### Attaching/Detaching handlers to tick and request 
 
-* [`node.`**`onRequest()`**](#onRequest)
-* [`node.`**`onTick()`**](#onTick)
-* [`node.`**`offRequest()`**](#offRequest)
-* [`node.`**`offTick()`**](#offTick)
+* [<code>node.**onRequest()**</code>](#onRequest)
+* [<code>node.**onTick()**</code>](#onTick)
+* [<code>node.**offRequest()**</code>](#offRequest)
+* [<code>node.**offTick()**</code>](#offTick)
 
 #### Load balancing methods
 
-* [`node.`**`requestAny()`**](#requestAny)
-* [`node.`**`requestDownAny()`**](#requestDownAny)
-* [`node.`**`requestUpAny()`**](#requestUpAny)
-* [`node.`**`tickAny()`**](#tickAny)
-* [`node.`**`tickDownAny()`**](#tickDownAny)
-* [`node.`**`tickUpAny()`**](#tickUpAny)
-* [`node.`**`tickAll()`**](#tickAll)
-* [`node.`**`tickDownAll()`**](#tickDownAll)
-* [`node.`**`tickUpAll()`**](#tickUpAll)
+* [<code>node.**requestAny()**</code>](#requestAny)
+* [<code>node.**requestDownAny()**</code>](#requestDownAny)
+* [<code>node.**requestUpAny()**</code>](#requestUpAny)
+* [<code>node.**tickAny()**</code>](#tickAny)
+* [<code>node.**tickDownAny()**</code>](#tickDownAny)
+* [<code>node.**tickUpAny()**</code>](#tickUpAny)
+* [<code>node.**tickAll()**</code>](#tickAll)
+* [<code>node.**tickDownAll()**</code>](#tickDownAll)
+* [<code>node.**tickUpAll()**</code>](#tickUpAll)
 
 #### Debugging and troubleshooting
 
-* [`node.`**`enableMetrics()`**](#enableMetrics)
-* [`node.`**`enableMetrics()`**](#disableMetrics)
+* [<code>**node.enableMetrics()**</code>](#enableMetrics)
+* [<code>**node.disableMetrics()**</code>](#disableMetrics)
 
 <a name="node"></a>
 ##### new Node({ id: String, bind: Url, options: Object, config: Object })
