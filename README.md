@@ -62,6 +62,26 @@ and it'll also install [zeromq](http://zeromq.org) for you.
 For other platforms please open an issue or feel free to contribute.
 
 
+### Benchmarks
+All Benchmark tests are completed on Azure D4v2 vm (Intel Xeon® E5-2673 v3).
+
+<table><tbody>
+<tr><td>Request Count</td><td>Data Size</td><td>Average Time</td></tr>
+<tr><td>1000</td><td>10 byte</td><td>212ms</td></tr>
+<tr><td>1000</td><td>1 kbyte</td><td>304ms</td></tr>
+<tr><td>50000</td><td>10 byte</td><td>7398ms</td></tr>
+<tr><td>50000</td><td>1 kbyte</td><td>12524ms</td></tr>
+</tbody></table>
+<br/>
+<table><tbody>
+<tr><td>Tick Count</td><td>Data Size</td><td>Average Time</td></tr>
+<tr><td>1000</td><td>10 byte</td><td>108ms</td></tr>
+<tr><td>1000</td><td>1 kbyte</td><td>184ms</td></tr>
+<tr><td>50000</td><td>10 byte</td><td>3852ms</td></tr>
+<tr><td>50000</td><td>1 kbyte</td><td>6531ms</td></tr>
+</tbody></table>
+
+
 <a name="api"></a>
 ### API
 #### Basic methods
