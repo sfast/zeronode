@@ -1,3 +1,4 @@
+![Zeronode](https://i.imgur.com/NZVXZPo.png)
 <br/>
 
 [![JavaScript Style Guide](https://cdn.rawgit.com/standard/standard/master/badge.svg)](https://github.com/standard/standard)<br/><br/>
@@ -7,8 +8,7 @@
 [![Known Vulnerabilities](https://snyk.io/test/npm/zeronode/badge.svg)](https://snyk.io/test/npm/zeronode)
 
 
-## Zeronode - minimal building block for NodeJS microservices 
-![Zeronode](https://i.imgur.com/NZVXZPo.png)
+## Zeronode - minimal building block for NodeJS microservices
 * [Why Zeronode?](#whyZeronode)
 * [Basics](#basics)
 * [Installation](#installation)
@@ -56,7 +56,7 @@ Much more interesting patterns and features you can discover by reading the docu
 Zeronode depends on <a href="http://zeromq.org" target="_blank">zeromq</a>
 <br/> For Debian, Ubuntu, MacOS you can just run
 ```bash
-$ npm install zeronode
+$ npm install zeronode --save
 ```
 and it'll also install [zeromq](http://zeromq.org) for you. 
 <br/>Kudos to <a href="https://github.com/davidharutyunyan" target="_blank">Dave</a> for adding install scripts.
