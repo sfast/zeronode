@@ -9,7 +9,17 @@
 
 ## Zeronode - minimal building block for NodeJS microservices 
 ![Zeronode](https://i.imgur.com/NZVXZPo.png)
+* [Why Zeronode?](#whyZeronode)
+* [Basics](#basics)
+* [Installation](#installation)
+* [API](#api)
+* [Examples](#examples)
+    * [Basic Examples](#basicExamples)
+    * [Advanced Examples](#advancedExamples)
+* [Contributing](#contributing)
+* [License](#license)
 
+<a name="whyZeronode"></a>
 ### Why you need ZeroNode ? 
 Application backends are becoming complex these days and there are lots of moving parts talking to each other through network.
 There is a great difference between sending a few bytes from A to B, and doing messaging in reliable way.
@@ -23,6 +33,7 @@ and some more common problems that developers will face once building solid syst
 <br/>
 With zeronode its just super simple to create complex server-to-server communications (i.e. build network topologies).
 
+<a name="basics"></a>
 ### Basics 
 Zeronode allows to create complex network topologies (i.e. line, ring, partial or full mesh, star, three, hybrid ...) 
 But lets start from the basics.
@@ -39,6 +50,7 @@ Think of every __node__ as an actor (i.e. _participant, minimal building block_)
 Much more interesting patterns and features you can discover by reading the document or try to reach us via Drift Chat under 
 <a href="http://steadfast.tech" target="_blank">Steadfast.tech</a>
 
+<a name="installation"></a>
 ### Installation & Important notes 
 Zeronode depends on <a href="http://zeromq.org" target="_blank">zeromq</a>
 <br/> For Debian, Ubuntu, MacOS you can just run
@@ -50,6 +62,7 @@ and it'll also install [zeromq](http://zeromq.org) for you.
 For other platforms please open an issue or feel free to contribute.
 
 
+<a name="api"></a>
 ### API
 #### Basic methods
 * [<code>**Node()**</code>](#node)
@@ -283,8 +296,10 @@ Enables metrics, events will be triggered by given interval. Default interval is
 #### node.disableMetrics()
 Stops triggering events, and removes all collected data.
 
-
-### Simple client server example
+<a name="examples"></a>
+### Examples
+<a name="basicExamples"></a>
+#### Simple client server example
 NodeServer is listening for events, NodeClient connects to NodeServer and sends events: <br/>
 (myServiceClient) ----> (myServiceServer)
 
@@ -301,7 +316,7 @@ import Node from 'zeronode';
    myServiceServer.onTick('welcome', (data) => {
        console.log('onTick - welcome', data);
    });
-   
+
    // ** attach request listener to myServiceServer
    myServiceServer.onRequest('welcome', ({ body, reply }) => {
        console.log('onRequest - welcome', body);
@@ -340,7 +355,8 @@ import Node from 'zeronode'
 
 ```
 
-### More of layering and grouping of Nodes. 
+<a name="advancedExamples"></a>
+#### More of layering and grouping of Nodes.
 - __node__-s can be grouped in layers (and other options) and then send messages to only filtered nodes by layers or other options.
 - the filtering is done on senders side which keeps all the information about the nodes (both connected to sender node and the ones that
 sender node is connected to)
@@ -430,6 +446,7 @@ server.tickAll({ event: 'foobar', data: { foo: 'bar' }, filter: {layer: /[A-Z]/}
 Try to reach us via Drift Chat under <a href="http://steadfast.tech" target="_blank">Steadfast.tech</a> <br/>
 or ask a question under zeronode gitter <br/> [<img src="https://img.shields.io/gitter/room/nwjs/nw.js.svg">](https://gitter.im/npm-zeronode/Lobby) <br/>
 
+<a name="contributing"></a>
 ### Contributing
 Contributions are always welcome! Please read the [contribution guidelines](https://github.com/sfast/zeronode/blob/master/CONTRIBUTING.md) first.
 
@@ -439,3 +456,7 @@ Contributions are always welcome! Please read the [contribution guidelines](http
 
 ### What We Are Using
 Under the hood we are using <a href="http://zeromq.org" target="_blank">zeromq</a>-s Dealer and Router sockets.
+
+<a name="license"></a>
+### License
+[MIT](https://github.com/sfast/zeronode/blob/master/LICENSE)
