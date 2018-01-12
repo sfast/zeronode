@@ -11,12 +11,12 @@
 ![Zeronode](https://i.imgur.com/NZVXZPo.png)
 
 ### Why you need ZeroNode ? 
-Application backends are becaming complex these days and there are lots of moving parts talking to each other through network.
-There is a great difference between sending a few bytes from A to B, and doing messaging in reliable way. :heavy_exclamation_mark::heavy_exclamation_mark::heavy_exclamation_mark:
-- :pray: How to handle dynamic components ? (i.e., pieces that come and/or go away temporarily, scaling a microservice instances )
-- :pray: How to handle messages that we can't deliver immediately ? (e.g waiting for a component to come back online)
-- :pray: How to route messages in complex microservice architechture ? (i.e. one to one, one to many, custom grouping messaging)
-- :pray: How we handle network errors ? (i.e., reconnecting of various pieces)
+Application backends are becoming complex these days and there are lots of moving parts talking to each other through network.
+There is a great difference between sending a few bytes from A to B, and doing messaging in reliable way.
+- How to handle dynamic components ? (i.e., pieces that come and/or go away temporarily, scaling a microservice instances )
+- How to handle messages that we can't deliver immediately ? (e.g waiting for a component to come back online)
+- How to route messages in complex microservice architecture ? (i.e. one to one, one to many, custom grouping)
+- How we handle network errors ? (i.e., reconnecting of various pieces)
 
 We created Zeronode on top of <a href="http://zeromq.org" target="_blank">zeromq</a> as to address <a href="http://zguide.zeromq.org/page:all#Why-We-Needed-ZeroMQ" target="_blank">these</a>
 and some more common problems that developers will face once building solid systems.
@@ -29,107 +29,259 @@ But lets start from the basics.
 You want to send a message from __A__  to __B__ (:computer: --> :computer:) and that means you'll need to create 2 __nodes__.
 Think of every __node__ as an actor (i.e. _participant, minimal building block_) in your networking system.
 
-- :point_right: __node__ can connect to multiple nodes (i.e  _node.connect(addressOfNodeB)_, _node.connect(addressOfnodeC)_)
-- :point_right: nodes can connect to particular __node__ if the latest is binded to some interface (i.e  _node.bind(interfaceAddress)_)
-- :point_right: if node __A__ is connected to node __B__ then we have a channel between them and both nodes can talk to each other
-- :point_right: __node__-s are __resilent__ to _restarts_, _network failures_, _connect/bind order_ :muscle::metal::thumbsup:
-- :point_right: __node__-s can run on same or different machines, processes, containers etc ...
-- :point_right: data transfers between __node__-s via both _request/reply_ and _tick_ (fire forget) patterns
+- __node__ can connect to multiple nodes (i.e  _node.connect(addressOfNodeB)_, _node.connect(addressOfnodeC)_)
+- __node__-s can connect to particular __node__ if the latest is binded to some interface (i.e  _node.bind(interfaceAddress)_)
+- if node __A__ is connected to node __B__ then we have a channel between them and both nodes can talk to each other
+- __node__-s are __resilent__ to _restarts_, _network failures_, _connect/bind order_
+- __node__-s can run on same or different machines, processes, containers etc ...
+- data transfers between __node__-s via both _request/reply_ and _tick_ (fire forget) patterns
 
-:mortar_board::mortar_board::mortar_board: <br/>
 Much more interesting patterns and features you can discover by reading the document or try to reach us via Drift Chat under 
 <a href="http://steadfast.tech" target="_blank">Steadfast.tech</a>
 
 ### Installation & Important notes 
 Zeronode depends on <a href="http://zeromq.org" target="_blank">zeromq</a>
-<br/>:loudspeaker::loudspeaker: For Debian, Ubuntu, MacOS, Fedora, Redhat, Centos you can just run
+<br/> For Debian, Ubuntu, MacOS you can just run
 ```bash
 $ npm install zeronode
 ```
 and it'll also install [zeromq](http://zeromq.org) for you. 
-<br/>Kudos :raised_hands: to <a href="https://github.com/davidharutyunyan" target="_blank">Dave</a> for adding install scripts.
-For other platforms please open an issue or feel free to contrubute.
+<br/>Kudos to <a href="https://github.com/davidharutyunyan" target="_blank">Dave</a> for adding install scripts.
+For other platforms please open an issue or feel free to contribute.
 
-### How To Use
 
-Creating new Node.
+### API
+#### Basic methods
+* [**`Node()`**](#node)
+* [`node.`**`bind()`**](#bind)
+* [`node.`**`connect()`**](#connect)
+* [`node.`**`unbind()`**](#unbind)
+* [`node.`**`disconnect()`**](#disconnect)
+* [`node.`**`stop()`**](#stop)
+
+#### Simple messaging methods
+* [`node.`**`request()`**](#request)
+* [`node.`**`tick()`**](#tick)
+
+#### Attaching/Detaching handlers to tick and request 
+
+* [`node.`**`onRequest()`**](#onRequest)
+* [`node.`**`onTick()`**](#onTick)
+* [`node.`**`offRequest()`**](#offRequest)
+* [`node.`**`offTick()`**](#offTick)
+
+#### Load balancing methods
+
+* [`node.`**`requestAny()`**](#requestAny)
+* [`node.`**`requestDownAny()`**](#requestDownAny)
+* [`node.`**`requestUpAny()`**](#requestUpAny)
+* [`node.`**`tickAny()`**](#tickAny)
+* [`node.`**`tickDownAny()`**](#tickDownAny)
+* [`node.`**`tickUpAny()`**](#tickUpAny)
+* [`node.`**`tickAll()`**](#tickAll)
+* [`node.`**`tickDownAll()`**](#tickDownAll)
+* [`node.`**`tickUpAll()`**](#tickUpAll)
+
+#### Debugging and troubleshooting
+
+* [`node.`**`enableMetrics()`**](#enableMetrics)
+* [`node.`**`enableMetrics()`**](#disableMetrics)
+
+<a name="node"></a>
+##### new Node({ id: String, bind: Url, options: Object, config: Object })
+Node class wraps many client instances and one server instance.
+Node automatically handles:
+* Client/Server ping/pong
+* Reconnections
+
 ```javascript
-import Node from 'zeronode';
+import { Node } from 'zeronode';
 
 let node = new Node({
     id: 'node',
     bind: 'tcp://127.0.0.1:6000',
     options: {}
+    config: {}
 });
 ```
 
-All three parameters are optional.
+All four arguments are optional.
+* `id` is unique string which identifies Node.
+* `options` is information about Node, witch this information Nodes can be filtered.
+* `config` is object for configuring Node.
+    * `logger` logger instance, default is Winston.
+    * `REQUEST_TIMEOUT` duration after request Promise rejected.
+    * `RECONNECT_TIMEOUT` duration of reconnecting failed server.
+    * `CONNECT_TIMEOUT` duration for trying connect to server.
 
-#### Basic methods
-1. `bind(address)` - Binds the node/actor to the specified interface and port. You can bind only in one address.
-2. `connect(address, timeoutMiliseconds)` - Connects the node/actor to other nodes/actors the specified address. You can connect to many nodes.
-If timeout is provided then the _connect promise_ will be rejected if connection is taking longer .<br/>
+There are some events that triggered on Node instance:
+* `NodeEvents.`**`CLIENT_FAILURE`** - triggered when connected client to this node fails.
+* `NodeEvents.`**`CLIENT_CONNECTED`** - triggered when new client connects to this node.
+* `NodeEvents.`**`CLIENT_STOP`** - triggered when client successfully disconnects from this node.
+* `NodeEvents.`**`SERVER_FAILURE`** - triggered when server fails whom this node connected.
+* `NodeEvents.`**`SERVER_STOP`** - triggered when server stops whom this node connected.
+* `NodeEvents.`**`SERVER_RECONNECT`** - triggered when server comes back and node successfuly reconnects.
+* `NodeEvents.`**`SERVER_RECONNECT_FAILURE`** - triggered when server doesn't come back in recnnectTimeout time.
+* `NodeEvents.`**`CONNECT_TO_SERVER`** - triggered when Node successfully connects to new server.
+* `NodeEvents.`**`METRICS`** - triggered when [metrics enabled](#enableMetrics).
+
+
+<a name="bind"></a>
+##### node.bind(address: Url)
+Binds the node/actor to the specified interface and port and returns Promise. 
+You can bind only in one address.
+Address can be on following protocols: tcp, inproc(in-process/inter-thread), ipc(inter-process).
+
+<a name="connect"></a>
+##### node.connect({ address: Url, timeout: Number, reconnectionTimeout: Number })
+Connects the node/actor to other node/actor with specified address and returns Promise. 
+Node can connect to many other nodes.
+If timeout is provided (in milliseconds) then the _connect promise_ will be rejected if connection is taking longer.<br/>
 If timeout is not provided we'll wait for ages till it connects.
-3. `unbind()` - Unbinds the node (it can still be connected to other nodes)
-4. `disconnect(address)` - Disconnects the node from specified address.
-5. `stop()` - Unbinds the node, and disconnects from all addresses.
+if Server fails then Node will try to reconnect in given reconnectionTimeout.
 
-#### Simple messaging methods
-6. `request({ to, event, data, timeout })` - makes request to node with id (__to__). <br/>
-If timeout is not provided it'll be 10000 milliseconds. <br/>
-You can change it by calling _setOptions(options)_  and setting 'REQUEST_TIMEOUT' value 
+<a name="unbind"></a>
+##### node.unbind()
+Unbinds the node and returns Promise.
+Unbinding doesn't stop node, it can still be connected to other nodes.
 
-7. `tick({ to, event, data })` - emits event to given node(__to__)
+<a name="disconnect"></a>
+##### node.disconnect(address: Url)
+Disconnects Node from specified address and returns Promise.
 
-#### Attaching/Detaching handlers to tick and request 
+<a name="stop"></a>
+##### node.stop()
+Unbinds Node, disconnects from all connected addresses and returns Promise.
 
-8. `onRequest(event: String, handler: Function)` - adds request handler for given event.
+<a name="request"></a>
+##### node.request({ to: Id, event: String, data: Object, timeout: Number })
+Makes request to Node with id(__to__) and returns Promise. <br/>
+Promise resolves with data that requested Node replies. <br/>
+If timeout is not provided it'll be config.REQUEST_TIMEOUT or default value: 10000 ms. <br/>
+If there isn't node with given id, than Promise rejected with error code ErrorCodes.NODE_NOT_FOUND.
 
-9. `onTick(event: String, handler: Function)` - adds event handler to given event.
+<a name="tick"></a>
+##### node.tick({ to: Id, event: String, data: Object })
+Ticks(emits) event to given node(__to__).</br>
+If there isn't node with given id, than throws error with code ErrorCodes.NODE_NOT_FOUND.
 
-10. `offRequest(event: String, handler: Function)` - removes request handler for given event.<br/>
-_If handler is not provided then removes all the listeners._
+<a name="onRequest"></a>
+##### node.onRequest(requestEvent: String/Regex, handler: Function)
+Adds request handler for given event.
+```javascript
+/**
+* @param head: { id: String, event: String }
+* @param body: {} - requestedData
+* @param reply(replyData): Function
+* @param next(error): Function 
+*/
+node.onRequest('foo', ({ head, body, reply, next}) => {
+  // handle request
+  next() // call next handler
+})
 
-11. `offTick(event: String, handler: Function)` - removes given event handler from event listeners list. <br/>
-_If handler is not provided then removes all the listeners._
+node.onRequest(/^fo/, ({ head, body, reply, next}) => {
+  // handle request
+  reply(/*some data*/) // send back reply
+})
+```
 
-#### Load balancing methods
+<a name="onTick"></a>
+##### node.onTick(event: String/Regex, handler: Function)
+Adds tick(event) handler for given event.
+```javascript
+node.onTick('foo', (data) => {
+// handle event
+})
+```
 
+<a name="offRequest"></a>
+##### node.offRequest(requestEvent: String/Regex, handler: Function)
+Removes request handler for given event.<br/>
+If handler is not provided then removes all the listeners.
+
+<a name="offTick"></a>
+##### node.offTick(event: String/Regex, handler: Function)
+Removes given tick(event) handler from event listeners list. <br/>
+If handler is not provided then removes all the listeners.
+
+<a name="requestAny"></a>
+##### node.requestAny({ event: String, data: Object, timeout: Number, filter: Object/Function, down: Bool, up: Bool })
 General method to send request to __only one__ node satisfying the filter.<br/>
 Filter can be an object or a predicate function.
+```javascript
+    //send request to one of nodes that have version 1.*.*
+    node.requestAny({
+        event: 'foo',
+        data: { foo: 'bar' }),
+        filter: { version: /^1.(\d+\.)?(\d+)$/ }
+    })
 
-12. `requestAny({ event, data, timeout, filter, down = true, up = true })`<br/>
+    //send request to one of nodes that have even length name.
+    node.requestAny({
+        event: 'foo',
+        data: { foo: 'bar' }),
+        filter: (options) => !(options.name.length % 2)
+    })
 
-Send request to one of downstream nodes (nodes which has been connected to your node via _connect()_ )<br/>
-13. `requestDownAny ({ event, data, timeout, filter } = {})` <br/>
+    //send request to one of node that connected to you
+    node.requestAny({
+        event: 'foo',
+        data: { foo: 'bar' }),
+        up: false
+    })
 
-Send request to one of upstream nodes (nodes to which ones your node has been connected via _connect()_ )<br/>
-14. `requestUpAny ({ event, data, timeout, filter } = {})` <br/>
+    //send request to one of nodes that you are connected.
+    node.requestAny({
+        event: 'foo',
+        data: { foo: 'bar' }),
+        down: false
+    })
 
+```
+
+<a name="requestDownAny"></a>
+##### node.requestDownAny({ event: String, data: Object, timeout: Number, filter: Object/Function })
+Send request to one of downstream nodes (nodes which has been connected to your node via _connect()_ ).
+
+
+<a name="requestUpAny"></a>
+##### node.requestUpAny({ event: String, data: Object, timeout: Number, filter: Object/Function })
+Send request to one of upstream nodes (nodes to which ones your node has been connected via _connect()_ ).
+
+<a name="tickAny"></a>
+##### node.tickAny({ event: String, data: Object, filter: Object/Function, down: Bool, up: Bool })
 General method to send tick-s to __only one__ node satisfying the filter.<br/>
-Filter can be an object or a predicate function.<br/>
-15. `tickAny({ event, data, filter, down = true, up = true })`<br/>
+Filter can be an object or a predicate function.
+Usage is same as [`node.requestAny`](#requestAny)
 
-Send tick-s to one of downstream nodes (nodes which has been connected to your node via _connect()_ )<br/>
-16. `tickDownAny({ event, data, filter }`<br/>
+<a name="tickDownAny"></a>
+##### node.tickDownAny({ event: String, data: Object, filter: Object/Function })
+Send tick-s to one of downstream nodes (nodes which has been connected to your node via _connect()_ ).
 
-Send tick-s to one of upstream nodes (nodes which has been connected to your node via _connect())_ )<br/>
-17. `tickUpAny({ event, data, filter }`<br/>
+<a name="tickUpAny"></a>
+##### node.tickUpAny({ event: String, data: Object, filter: Object/Function })
+Send tick-s to one of upstream nodes (nodes which has been connected to your node via _connect())_ ).
 
-Tick to all nodes satisfying the filter, up ( _upstream_ ) and down ( _downstream_ )<br/>
-18. `tickAll({ event, data, filter, down = true, up = true }` <br/>
+<a name="tickAll"></a>
+##### node.tickAll({ event: String, data: Object, filter: Object/Function, down: Bool, up: Bool })
+Tick to **ALL** nodes satisfying the filter, up ( _upstream_ ) and down ( _downstream_ ).
 
-Tick to all downstream nodes <br/>
-19. `tickDownAll({ event, data, filter })` <br/>
+<a name="tickDownAll"></a>
+##### node.tickDownAll({ event: String, data: Object, filter: Object/Function })
+Tick to **ALL** downstream nodes.
 
-Tick to all upstream nodes <br/>
-20. `tickUpAll({ event, data, filter })` <br/>
+<a name="tickUpAll"></a>
+##### node.tickUpAll({ event: String, data: Object, filter: Object/Function })
+Tick to **ALL** upstream nodes.
 
-#### Debugging and troubleshooting
+<a name="enableMetrics"></a>
+##### node.enableMetrics(interval)
+Enables metrics, events will be triggered by given interval. Default interval is 1000 ms. <br/>
 
-21. `enableMetrics(interval)` - enables metrics, events will be triggered by given interval. Default interval is 1000 ms. <br/>
-
-22. `disableMetrics()` - disables metrics. <br/>
+<a name="disableMetrics"></a>
+##### node.disableMetrics()
+Stops triggering events, and removes all collected data.
 
 
 ### Simple client server example
@@ -171,7 +323,7 @@ import Node from 'zeronode'
    let myServiceClient = new Node({ options: { layer: 'LayerA' } });
    
    //** connect one node to another node with address
-   await myServiceClient.connect('tcp://127.0.0.1:6000');
+   await myServiceClient.connect({ address: 'tcp://127.0.0.1:6000' });
    
    let serverNodeId = 'myServiceServer';
    
@@ -191,7 +343,7 @@ import Node from 'zeronode'
 ### More of layering and grouping of Nodes. 
 - __node__-s can be grouped in layers (and other options) and then send messages to only filtered nodes by layers or other options.
 - the filtering is done on senders side which keeps all the information about the nodes (both connected to sender node and the ones that
-sender node is conencted to)
+sender node is connected to)
 
 In this example, we will create one node that will bind in some address, and three nodes will connect to that node.
 2 connected nodes will be in same group, 1 in another.
@@ -221,7 +373,7 @@ import Node from 'zeronode'
     });
     
     // ** connect to server address and set connection timeout to 20 seconds
-    await clientA1.connect('tcp:://127.0.0.1:6000', 20000);
+    await clientA1.connect({ address: 'tcp:://127.0.0.1:6000', 20000 });
 }());
 ```
 
@@ -237,7 +389,7 @@ import Node from 'zeronode'
         console.log(`go message in clientA2 ${msg}`);
     });
     // ** connect to server address and set connection timeout infinite
-    await clientA2.connect('tcp:://127.0.0.1:6000');
+    await clientA2.connect({ address: 'tcp:://127.0.0.1:6000') };
 }());
 ```
 
@@ -253,7 +405,7 @@ import Node from 'zeronode'
     });
     
     // ** connect to server address and set connection timeout infinite
-    await clientB1.connect('tcp:://127.0.0.1:6000');
+    await clientB1.connect({ address: 'tcp:://127.0.0.1:6000' });
 }());
 ```
 
@@ -277,6 +429,13 @@ server.tickAll({ event: 'foobar', data: { foo: 'bar' }, filter: {layer: /[A-Z]/}
 ### You still have questions ?
 Try to reach us via Drift Chat under <a href="http://steadfast.tech" target="_blank">Steadfast.tech</a> <br/>
 or ask a question under zeronode gitter <br/> [<img src="https://img.shields.io/gitter/room/nwjs/nw.js.svg">](https://gitter.im/npm-zeronode/Lobby) <br/>
+
+### Contributing
+Contributions are always welcome! Please read the [contribution guidelines](https://github.com/sfast/zeronode/blob/master/CONTRIBUTING.md) first.
+
+### Contributors
+* [Artak Vardanyan](https://github.com/artakvg)
+* [David Harutyunyan](https://github.com/davidharutyunyan)
 
 ### What We Are Using
 Under the hood we are using <a href="http://zeromq.org" target="_blank">zeromq</a>-s Dealer and Router sockets.
