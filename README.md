@@ -12,6 +12,7 @@
 * [Why Zeronode?](#whyZeronode)
 * [Basics](#basics)
 * [Installation](#installation)
+* [Benchmark](#benchmark)
 * [API](#api)
 * [Examples](#examples)
     * [Basic Examples](#basicExamples)
@@ -61,8 +62,8 @@ and it'll also install [zeromq](http://zeromq.org) for you.
 <br/>Kudos to <a href="https://github.com/davidharutyunyan" target="_blank">Dave</a> for adding install scripts.
 For other platforms please open an issue or feel free to contribute.
 
-
-### Benchmarks
+<a name="benchmark"></a>
+### Benchmark
 All Benchmark tests are completed on Azure D4v2 vm (Intel Xeon® E5-2673 v3).
 
 <table><tbody>
