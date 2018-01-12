@@ -88,7 +88,7 @@ For other platforms please open an issue or feel free to contribute.
 * [<code>**node.disableMetrics()**</code>](#disableMetrics)
 
 <a name="node"></a>
-##### new Node({ id: String, bind: Url, options: Object, config: Object })
+#### new Node({ id: String, bind: Url, options: Object, config: Object })
 Node class wraps many client instances and one server instance.
 Node automatically handles:
 * Client/Server ping/pong
@@ -127,13 +127,13 @@ There are some events that triggered on Node instance:
 
 
 <a name="bind"></a>
-##### node.bind(address: Url)
+#### node.bind(address: Url)
 Binds the node/actor to the specified interface and port and returns Promise. 
 You can bind only in one address.
 Address can be on following protocols: tcp, inproc(in-process/inter-thread), ipc(inter-process).
 
 <a name="connect"></a>
-##### node.connect({ address: Url, timeout: Number, reconnectionTimeout: Number })
+#### node.connect({ address: Url, timeout: Number, reconnectionTimeout: Number })
 Connects the node/actor to other node/actor with specified address and returns Promise. 
 Node can connect to many other nodes.
 If timeout is provided (in milliseconds) then the _connect promise_ will be rejected if connection is taking longer.<br/>
@@ -141,32 +141,32 @@ If timeout is not provided we'll wait for ages till it connects.
 if Server fails then Node will try to reconnect in given reconnectionTimeout.
 
 <a name="unbind"></a>
-##### node.unbind()
+#### node.unbind()
 Unbinds the node and returns Promise.
 Unbinding doesn't stop node, it can still be connected to other nodes.
 
 <a name="disconnect"></a>
-##### node.disconnect(address: Url)
+#### node.disconnect(address: Url)
 Disconnects Node from specified address and returns Promise.
 
 <a name="stop"></a>
-##### node.stop()
+#### node.stop()
 Unbinds Node, disconnects from all connected addresses and returns Promise.
 
 <a name="request"></a>
-##### node.request({ to: Id, event: String, data: Object, timeout: Number })
+#### node.request({ to: Id, event: String, data: Object, timeout: Number })
 Makes request to Node with id(__to__) and returns Promise. <br/>
 Promise resolves with data that requested Node replies. <br/>
 If timeout is not provided it'll be config.REQUEST_TIMEOUT or default value: 10000 ms. <br/>
 If there isn't node with given id, than Promise rejected with error code ErrorCodes.NODE_NOT_FOUND.
 
 <a name="tick"></a>
-##### node.tick({ to: Id, event: String, data: Object })
+#### node.tick({ to: Id, event: String, data: Object })
 Ticks(emits) event to given node(__to__).</br>
 If there isn't node with given id, than throws error with code ErrorCodes.NODE_NOT_FOUND.
 
 <a name="onRequest"></a>
-##### node.onRequest(requestEvent: String/Regex, handler: Function)
+#### node.onRequest(requestEvent: String/Regex, handler: Function)
 Adds request handler for given event.
 ```javascript
 /**
@@ -187,7 +187,7 @@ node.onRequest(/^fo/, ({ head, body, reply, next}) => {
 ```
 
 <a name="onTick"></a>
-##### node.onTick(event: String/Regex, handler: Function)
+#### node.onTick(event: String/Regex, handler: Function)
 Adds tick(event) handler for given event.
 ```javascript
 node.onTick('foo', (data) => {
@@ -196,17 +196,17 @@ node.onTick('foo', (data) => {
 ```
 
 <a name="offRequest"></a>
-##### node.offRequest(requestEvent: String/Regex, handler: Function)
+#### node.offRequest(requestEvent: String/Regex, handler: Function)
 Removes request handler for given event.<br/>
 If handler is not provided then removes all the listeners.
 
 <a name="offTick"></a>
-##### node.offTick(event: String/Regex, handler: Function)
+#### node.offTick(event: String/Regex, handler: Function)
 Removes given tick(event) handler from event listeners list. <br/>
 If handler is not provided then removes all the listeners.
 
 <a name="requestAny"></a>
-##### node.requestAny({ event: String, data: Object, timeout: Number, filter: Object/Function, down: Bool, up: Bool })
+#### node.requestAny({ event: String, data: Object, timeout: Number, filter: Object/Function, down: Bool, up: Bool })
 General method to send request to __only one__ node satisfying the filter.<br/>
 Filter can be an object or a predicate function.
 ```javascript
@@ -241,46 +241,46 @@ Filter can be an object or a predicate function.
 ```
 
 <a name="requestDownAny"></a>
-##### node.requestDownAny({ event: String, data: Object, timeout: Number, filter: Object/Function })
+#### node.requestDownAny({ event: String, data: Object, timeout: Number, filter: Object/Function })
 Send request to one of downstream nodes (nodes which has been connected to your node via _connect()_ ).
 
 
 <a name="requestUpAny"></a>
-##### node.requestUpAny({ event: String, data: Object, timeout: Number, filter: Object/Function })
+#### node.requestUpAny({ event: String, data: Object, timeout: Number, filter: Object/Function })
 Send request to one of upstream nodes (nodes to which ones your node has been connected via _connect()_ ).
 
 <a name="tickAny"></a>
-##### node.tickAny({ event: String, data: Object, filter: Object/Function, down: Bool, up: Bool })
+#### node.tickAny({ event: String, data: Object, filter: Object/Function, down: Bool, up: Bool })
 General method to send tick-s to __only one__ node satisfying the filter.<br/>
 Filter can be an object or a predicate function.
 Usage is same as [`node.requestAny`](#requestAny)
 
 <a name="tickDownAny"></a>
-##### node.tickDownAny({ event: String, data: Object, filter: Object/Function })
+#### node.tickDownAny({ event: String, data: Object, filter: Object/Function })
 Send tick-s to one of downstream nodes (nodes which has been connected to your node via _connect()_ ).
 
 <a name="tickUpAny"></a>
-##### node.tickUpAny({ event: String, data: Object, filter: Object/Function })
+#### node.tickUpAny({ event: String, data: Object, filter: Object/Function })
 Send tick-s to one of upstream nodes (nodes which has been connected to your node via _connect())_ ).
 
 <a name="tickAll"></a>
-##### node.tickAll({ event: String, data: Object, filter: Object/Function, down: Bool, up: Bool })
+#### node.tickAll({ event: String, data: Object, filter: Object/Function, down: Bool, up: Bool })
 Tick to **ALL** nodes satisfying the filter, up ( _upstream_ ) and down ( _downstream_ ).
 
 <a name="tickDownAll"></a>
-##### node.tickDownAll({ event: String, data: Object, filter: Object/Function })
+#### node.tickDownAll({ event: String, data: Object, filter: Object/Function })
 Tick to **ALL** downstream nodes.
 
 <a name="tickUpAll"></a>
-##### node.tickUpAll({ event: String, data: Object, filter: Object/Function })
+#### node.tickUpAll({ event: String, data: Object, filter: Object/Function })
 Tick to **ALL** upstream nodes.
 
 <a name="enableMetrics"></a>
-##### node.enableMetrics(interval)
+#### node.enableMetrics(interval)
 Enables metrics, events will be triggered by given interval. Default interval is 1000 ms. <br/>
 
 <a name="disableMetrics"></a>
-##### node.disableMetrics()
+#### node.disableMetrics()
 Stops triggering events, and removes all collected data.
 
 
