@@ -60,8 +60,8 @@ For other platforms please open an issue or feel free to contribute.
 * [<code>node.**stop()**</code>](#stop)
 
 #### Simple messaging methods
-* [<code>node.**request()<code>**](#request)
-* [<code>node.**tick()<code>**](#tick)
+* [<code>node.**request()</code>**](#request)
+* [<code>node.**tick()</code>**](#tick)
 
 #### Attaching/Detaching handlers to tick and request 
 
