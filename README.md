@@ -10,14 +10,15 @@
 
 ## Zeronode - minimal building block for NodeJS microservices
 * [Why Zeronode?](#whyZeronode)
-* [Basics](#basics)
 * [Installation](#installation)
+* [Basics](#basics)
 * [Benchmark](#benchmark)
 * [API](#api)
 * [Examples](#examples)
     * [Basic Examples](#basicExamples)
     * [Advanced Examples](#advancedExamples)
 * [Contributing](#contributing)
+* [Have a question ?](#askzeronode)
 * [License](#license)
 
 <a name="whyZeronode"></a>
@@ -25,7 +26,7 @@
 Application backends are becoming complex these days and there are lots of moving parts talking to each other through network.
 There is a great difference between sending a few bytes from A to B, and doing messaging in reliable way.
 - How to handle dynamic components ? (i.e., pieces that come and/or go away temporarily, scaling a microservice instances )
-- How to handle messages that we can't deliver immediately ? (e.g waiting for a component to come back online)
+- How to handle messages that we can't deliver immediately ? (i.e waiting for a component to come back online)
 - How to route messages in complex microservice architecture ? (i.e. one to one, one to many, custom grouping)
 - How we handle network errors ? (i.e., reconnecting of various pieces)
 
@@ -33,23 +34,6 @@ We created Zeronode on top of <a href="http://zeromq.org" target="_blank">zeromq
 and some more common problems that developers will face once building solid systems.
 <br/>
 With zeronode its just super simple to create complex server-to-server communications (i.e. build network topologies).
-
-<a name="basics"></a>
-### Basics 
-Zeronode allows to create complex network topologies (i.e. line, ring, partial or full mesh, star, three, hybrid ...) 
-But lets start from the basics.
-You want to send a message from __A__  to __B__ (:computer: --> :computer:) and that means you'll need to create 2 __nodes__.
-Think of every __node__ as an actor (i.e. _participant, minimal building block_) in your networking system.
-
-- __node__ can connect to multiple nodes (i.e  _node.connect(addressOfNodeB)_, _node.connect(addressOfnodeC)_)
-- __node__-s can connect to particular __node__ if the latest is binded to some interface (i.e  _node.bind(interfaceAddress)_)
-- if node __A__ is connected to node __B__ then we have a channel between them and both nodes can talk to each other
-- __node__-s are __resilent__ to _restarts_, _network failures_, _connect/bind order_
-- __node__-s can run on same or different machines, processes, containers etc ...
-- data transfers between __node__-s via both _request/reply_ and _tick_ (fire forget) patterns
-
-Much more interesting patterns and features you can discover by reading the document or try to reach us via Drift Chat under 
-<a href="http://steadfast.tech" target="_blank">Steadfast.tech</a>
 
 <a name="installation"></a>
 ### Installation & Important notes 
@@ -61,6 +45,38 @@ $ npm install zeronode --save
 and it'll also install [zeromq](http://zeromq.org) for you. 
 <br/>Kudos to <a href="https://github.com/davidharutyunyan" target="_blank">Dave</a> for adding install scripts.
 For other platforms please open an issue or feel free to contribute.
+
+<a name="basics"></a>
+### Basics 
+Zeronode allows to create complex network topologies (i.e. line, ring, partial or full mesh, star, three, hybrid ...) 
+Each participant/actor in your network topology we call __znode__, which can act as a sever, as a client or hybrid.
+
+```javascript
+import { Node } from 'zeronode';
+
+let znode = new Node({
+    id: 'steadfast',
+    options: {}, 
+    config: {}
+});
+
+// ** If znode is binded to some interface then other znodes can connect to it
+// ** In this case znode acts as a server, but it's not limiting znode to connect also to other znodes (hybrid)
+await znode.bind('tcp://127.0.0.1:6000');
+
+// ** znode can connect to multiple znodes
+znode.connect({address: tcp://127.0.0.1:6001})
+znode.connect({address: tcp://127.0.0.1:6002})
+
+// ** If 2 znodes are connected together then we have a channel between them 
+// ** and both znodes can talk to each other via various messeging patterns - i.e. request/reply, tick (fire and forgot) etc ...
+
+```
+
+Much more interesting patterns and features you can discover by reading the [API](#api) document.
+In case you have a question or suggestion you can talk to authors on [Zeronode Gitter chat](#askzeronode)
+
+
 
 <a name="benchmark"></a>
 ### Benchmark
@@ -86,7 +102,7 @@ All Benchmark tests are completed on Azure D4v2 vm (Intel Xeon® E5-2673 v3).
 <a name="api"></a>
 ### API
 #### Basic methods
-* [<code>**Node()**</code>](#node)
+* [<code>**new Node()**</code>](#node)
 * [<code>node.**bind()**</code>](#bind)
 * [<code>node.**connect()**</code>](#connect)
 * [<code>node.**unbind()**</code>](#unbind)
@@ -122,7 +138,7 @@ All Benchmark tests are completed on Azure D4v2 vm (Intel Xeon® E5-2673 v3).
 * [<code>**node.disableMetrics()**</code>](#disableMetrics)
 
 <a name="node"></a>
-#### new Node({ id: String, bind: Url, options: Object, config: Object })
+#### let znode = new Node({ id: String, bind: Url, options: Object, config: Object })
 Node class wraps many client instances and one server instance.
 Node automatically handles:
 * Client/Server ping/pong
@@ -131,7 +147,7 @@ Node automatically handles:
 ```javascript
 import { Node } from 'zeronode';
 
-let node = new Node({
+let znode = new Node({
     id: 'node',
     bind: 'tcp://127.0.0.1:6000',
     options: {}
@@ -140,181 +156,186 @@ let node = new Node({
 ```
 
 All four arguments are optional.
-* `id` is unique string which identifies Node.
-* `options` is information about Node, witch this information Nodes can be filtered.
-* `config` is object for configuring Node.
-    * `logger` logger instance, default is Winston.
-    * `REQUEST_TIMEOUT` duration after request Promise rejected.
-    * `RECONNECT_TIMEOUT` duration of reconnecting failed server.
-    * `CONNECT_TIMEOUT` duration for trying connect to server.
+* `id` is unique string which identifies znode.
+* `options` is information about znode which is shared with other connected znoded. It could be used for advanced use cases of load balancing and messege routing.
+* `config` is an object for configuring znode
+    * `logger` - logger instance, default is Winston.
+    * `REQUEST_TIMEOUT` - duration after which request()-s promise will be rejected, default is 10,000 ms.
+    * `RECONNECTION_TIMEOUT` (for client znodes) - zeronode's default is -1 , which means zeronode is always trying to reconnect to failed znode server. Once `RECONNECTION_TIMEOUT` is passed and recconenction doesn't happen zeronode will fire `SERVER_RECONNECT_FAILURE`. 
+    * `CONNECTION_TIMEOUT` (for client znodes) - duration for trying to connect to server after which connect()-s promise will be rejected.
 
-There are some events that triggered on Node instance:
-* `NodeEvents.`**`CLIENT_FAILURE`** - triggered when connected client to this node fails.
-* `NodeEvents.`**`CLIENT_CONNECTED`** - triggered when new client connects to this node.
-* `NodeEvents.`**`CLIENT_STOP`** - triggered when client successfully disconnects from this node.
-* `NodeEvents.`**`SERVER_FAILURE`** - triggered when server fails whom this node connected.
-* `NodeEvents.`**`SERVER_STOP`** - triggered when server stops whom this node connected.
-* `NodeEvents.`**`SERVER_RECONNECT`** - triggered when server comes back and node successfuly reconnects.
-* `NodeEvents.`**`SERVER_RECONNECT_FAILURE`** - triggered when server doesn't come back in recnnectTimeout time.
-* `NodeEvents.`**`CONNECT_TO_SERVER`** - triggered when Node successfully connects to new server.
+There are some events that triggered on znode instances:
+* `NodeEvents.`**`CLIENT_FAILURE`** - triggered on server znode when client connected to it fails.
+* `NodeEvents.`**`CLIENT_CONNECTED`** - triggered on server znode when new client connects to it.
+* `NodeEvents.`**`CLIENT_STOP`** - triggered on server znode when client successfully disconnects from it.
+
+* `NodeEvents.`**`SERVER_FAILURE`** - triggered on client znode when server znode fails.
+* `NodeEvents.`**`SERVER_STOP`** - triggered on client znode when server successfully stops.
+* `NodeEvents.`**`SERVER_RECONNECT`** - triggered on client znode when server comes back and client znode successfuly reconnects.
+* `NodeEvents.`**`SERVER_RECONNECT_FAILURE`** - triggered on client znode when server doesn't come back in recnnectTimeout (defaults to RECONNECTION_TIMEOUT) time.
+* `NodeEvents.`**`CONNECT_TO_SERVER`** - triggered on client znode when it successfully connects to new server.
 * `NodeEvents.`**`METRICS`** - triggered when [metrics enabled](#enableMetrics).
 
 
 <a name="bind"></a>
-#### node.bind(address: Url)
-Binds the node/actor to the specified interface and port and returns Promise. 
-You can bind only in one address.
-Address can be on following protocols: tcp, inproc(in-process/inter-thread), ipc(inter-process).
+#### znode.bind(address: Url)
+Binds the znode to the specified interface and port and returns promise. 
+You can bind only to one address.
+Address can be of the following protocols: `tcp`, `inproc`(in-process/inter-thread), `ipc`(inter-process).
 
 <a name="connect"></a>
-#### node.connect({ address: Url, timeout: Number, reconnectionTimeout: Number })
-Connects the node/actor to other node/actor with specified address and returns Promise. 
-Node can connect to many other nodes.
-If timeout is provided (in milliseconds) then the _connect promise_ will be rejected if connection is taking longer.<br/>
-If timeout is not provided we'll wait for ages till it connects.
-if Server fails then Node will try to reconnect in given reconnectionTimeout.
+#### znode.connect({ address: Url, timeout: Number, reconnectionTimeout: Number })
+Connects the znode to server znode with specified address and returns promise. 
+znode can connect to multiple znodes.
+If timeout is provided (in milliseconds) then the _connect()-s_ promise will be rejected if connection is taking longer.<br/>
+If timeout is not provided it will wait for ages till it connects.
+If server znode fails then client znode will try to reconnect in given `reconnectionTimeout` (defaults to `RECONNECTION_TIMEOUT`) after which the `SERVER_RECONNECT_FAILURE` event will be triggered.
 
 <a name="unbind"></a>
-#### node.unbind()
-Unbinds the node and returns Promise.
-Unbinding doesn't stop node, it can still be connected to other nodes.
+#### znode.unbind()
+Unbinds the server znode and returns promise.
+Unbinding doesn't stop znode, it can still be connected to other nodes if there are any, it just stops the server behaviour of znode, and on all the client znodes (connected to this server znode) `SERVER_STOP` event will be triggered.
 
 <a name="disconnect"></a>
-#### node.disconnect(address: Url)
-Disconnects Node from specified address and returns Promise.
+#### znode.disconnect(address: Url)
+Disconnects znode from specified address and returns promise.
 
 <a name="stop"></a>
-#### node.stop()
-Unbinds Node, disconnects from all connected addresses and returns Promise.
+#### znode.stop()
+Unbinds znode, disconnects from all connected addresses (znodes) and returns promise.
 
 <a name="request"></a>
-#### node.request({ to: Id, event: String, data: Object, timeout: Number })
-Makes request to Node with id(__to__) and returns Promise. <br/>
-Promise resolves with data that requested Node replies. <br/>
-If timeout is not provided it'll be config.REQUEST_TIMEOUT or default value: 10000 ms. <br/>
-If there isn't node with given id, than Promise rejected with error code ErrorCodes.NODE_NOT_FOUND.
+#### znode.request({ to: Id, event: String, data: Object, timeout: Number })
+Makes request to znode with id(__to__) and returns promise. <br/>
+Promise resolves with data that the requested znode replies. <br/>
+If timeout is not provided it'll be `config.REQUEST_TIMEOUT` (defaults to 10000 ms). <br/>
+If there is no znode with given id, than promise will be rejected with error code `ErrorCodes.NODE_NOT_FOUND`.
 
 <a name="tick"></a>
-#### node.tick({ to: Id, event: String, data: Object })
-Ticks(emits) event to given node(__to__).</br>
-If there isn't node with given id, than throws error with code ErrorCodes.NODE_NOT_FOUND.
+#### znode.tick({ to: Id, event: String, data: Object })
+Ticks(emits) event to given znode(__to__).</br>
+If there is no znode with given id, than throws error with code `ErrorCodes.NODE_NOT_FOUND`.
 
 <a name="onRequest"></a>
-#### node.onRequest(requestEvent: String/Regex, handler: Function)
-Adds request handler for given event.
+#### znode.onRequest(requestEvent: String/Regex, handler: Function)
+Adds request handler for given event on znode.
 ```javascript
 /**
 * @param head: { id: String, event: String }
 * @param body: {} - requestedData
-* @param reply(replyData): Function
+* @param reply(replyData: Object): Function
 * @param next(error): Function 
 */
-node.onRequest('foo', ({ head, body, reply, next}) => {
-  // handle request
-  next() // call next handler
+// ** listening for 'foo' event
+znode.onRequest('foo', ({ head, body, reply, next }) => {
+  // ** request handling logic 
+  // ** move forward to next handler or stop the handlers chain with 'next(err)'
+  next() 
 })
 
-node.onRequest(/^fo/, ({ head, body, reply, next}) => {
-  // handle request
-  reply(/*some data*/) // send back reply
+// ** listening for any events matching Regexp
+znode.onRequest(/^fo/, ({ head, body, reply, next }) => {
+  // ** request handling logic 
+  // ** send back reply to the requester znode
+  reply(/* Object data */) 
 })
 ```
 
 <a name="onTick"></a>
-#### node.onTick(event: String/Regex, handler: Function)
+#### znode.onTick(event: String/Regex, handler: Function)
 Adds tick(event) handler for given event.
 ```javascript
-node.onTick('foo', (data) => {
-// handle event
+znode.onTick('foo', (data) => {
+   // ** tick handling logic 
 })
 ```
 
 <a name="offRequest"></a>
-#### node.offRequest(requestEvent: String/Regex, handler: Function)
+#### znode.offRequest(requestEvent: String/Regex, handler: Function)
 Removes request handler for given event.<br/>
-If handler is not provided then removes all the listeners.
+If handler is not provided then removes all of the listeners.
 
 <a name="offTick"></a>
-#### node.offTick(event: String/Regex, handler: Function)
-Removes given tick(event) handler from event listeners list. <br/>
-If handler is not provided then removes all the listeners.
+#### znode.offTick(event: String/Regex, handler: Function)
+Removes given tick(event) handler from event listeners' list. <br/>
+If handler is not provided then removes all of the listeners.
 
 <a name="requestAny"></a>
-#### node.requestAny({ event: String, data: Object, timeout: Number, filter: Object/Function, down: Bool, up: Bool })
-General method to send request to __only one__ node satisfying the filter.<br/>
+#### znode.requestAny({ event: String, data: Object, timeout: Number, filter: Object/Function, down: Bool, up: Bool })
+General method to send request to __only one__ znode satisfying the filter.<br/>
 Filter can be an object or a predicate function.
+
 ```javascript
-    //send request to one of nodes that have version 1.*.*
-    node.requestAny({
+    // ** send request to one of znodes that have version 1.*.*
+    znode.requestAny({
         event: 'foo',
         data: { foo: 'bar' }),
         filter: { version: /^1.(\d+\.)?(\d+)$/ }
     })
 
-    //send request to one of nodes that have even length name.
-    node.requestAny({
+    // ** send request to one of znodes that have even length of name.
+    znode.requestAny({
         event: 'foo',
         data: { foo: 'bar' }),
         filter: (options) => !(options.name.length % 2)
     })
 
-    //send request to one of node that connected to you
-    node.requestAny({
+    // ** send request to one of znodes that connected to your znode (downstream client znodes)
+    znode.requestAny({
         event: 'foo',
         data: { foo: 'bar' }),
         up: false
     })
 
-    //send request to one of nodes that you are connected.
-    node.requestAny({
+    // ** send request to one of znodes that your znode is connected to (upstream znodes).
+    znode.requestAny({
         event: 'foo',
         data: { foo: 'bar' }),
         down: false
     })
-
 ```
 
 <a name="requestDownAny"></a>
-#### node.requestDownAny({ event: String, data: Object, timeout: Number, filter: Object/Function })
-Send request to one of downstream nodes (nodes which has been connected to your node via _connect()_ ).
+#### znode.requestDownAny({ event: String, data: Object, timeout: Number, filter: Object/Function })
+Send request to one of downstream znodes (znodes which has been connected to your znode via _connect()_ ).
 
 
 <a name="requestUpAny"></a>
-#### node.requestUpAny({ event: String, data: Object, timeout: Number, filter: Object/Function })
-Send request to one of upstream nodes (nodes to which ones your node has been connected via _connect()_ ).
+#### znode.requestUpAny({ event: String, data: Object, timeout: Number, filter: Object/Function })
+Send request to one of upstream znodes (znodes to which your znode has been connected via _connect()_ ).
 
 <a name="tickAny"></a>
-#### node.tickAny({ event: String, data: Object, filter: Object/Function, down: Bool, up: Bool })
-General method to send tick-s to __only one__ node satisfying the filter.<br/>
+#### znode.tickAny({ event: String, data: Object, filter: Object/Function, down: Bool, up: Bool })
+General method to send tick-s to __only one__ znode satisfying the filter.<br/>
 Filter can be an object or a predicate function.
 Usage is same as [`node.requestAny`](#requestAny)
 
 <a name="tickDownAny"></a>
-#### node.tickDownAny({ event: String, data: Object, filter: Object/Function })
-Send tick-s to one of downstream nodes (nodes which has been connected to your node via _connect()_ ).
+#### znode.tickDownAny({ event: String, data: Object, filter: Object/Function })
+Send tick-s to one of downstream znodes (znodes which has been connected to your znode via _connect()_ ).
 
 <a name="tickUpAny"></a>
-#### node.tickUpAny({ event: String, data: Object, filter: Object/Function })
-Send tick-s to one of upstream nodes (nodes which has been connected to your node via _connect())_ ).
+#### znode.tickUpAny({ event: String, data: Object, filter: Object/Function })
+Send tick-s to one of upstream znodes (znodes to which your znode has been connected via _connect()_ ).
 
 <a name="tickAll"></a>
-#### node.tickAll({ event: String, data: Object, filter: Object/Function, down: Bool, up: Bool })
-Tick to **ALL** nodes satisfying the filter, up ( _upstream_ ) and down ( _downstream_ ).
+#### znode.tickAll({ event: String, data: Object, filter: Object/Function, down: Bool, up: Bool })
+Tick to **ALL** znodes satisfying the filter (object or predicate function), up ( _upstream_ ) and down ( _downstream_ ).
 
 <a name="tickDownAll"></a>
-#### node.tickDownAll({ event: String, data: Object, filter: Object/Function })
-Tick to **ALL** downstream nodes.
+#### znode.tickDownAll({ event: String, data: Object, filter: Object/Function })
+Tick to **ALL** downstream znodes.
 
 <a name="tickUpAll"></a>
-#### node.tickUpAll({ event: String, data: Object, filter: Object/Function })
-Tick to **ALL** upstream nodes.
+#### znode.tickUpAll({ event: String, data: Object, filter: Object/Function })
+Tick to **ALL** upstream znodes.
 
 <a name="enableMetrics"></a>
-#### node.enableMetrics(interval)
-Enables metrics, events will be triggered by given interval. Default interval is 1000 ms. <br/>
+#### znode.enableMetrics(interval)
+Enables metrics, events will be triggered by the given interval. Default interval is 1000 ms. <br/>
 
 <a name="disableMetrics"></a>
-#### node.disableMetrics()
+#### znode.disableMetrics()
 Stops triggering events, and removes all collected data.
 
 <a name="examples"></a>
@@ -339,12 +360,13 @@ import Node from 'zeronode';
    });
 
    // ** attach request listener to myServiceServer
-   myServiceServer.onRequest('welcome', ({ body, reply }) => {
+   myServiceServer.onRequest('welcome', ({ head, body, reply, next }) => {
        console.log('onRequest - welcome', body);
        reply("Hello client");
+       next();
    });
    
-   // ** bind node to given address
+   // ** bind znode to given address provided during construction
    await myServiceServer.bind();
 }());
 
@@ -371,19 +393,21 @@ import Node from 'zeronode'
    let responseFromServer = await myServiceClient.request({ to: serverNodeId, event: 'welcome', data: 'Hi server, I am client !!!' });
    
    console.log(`response from server is "${responseFromServer}"`);
-   // response from server is "Hello client."
+   // ** response from server is "Hello client."
 }());
 
 ```
 
 <a name="advancedExamples"></a>
-#### More of layering and grouping of Nodes.
-- __node__-s can be grouped in layers (and other options) and then send messages to only filtered nodes by layers or other options.
+#### Example of filtering the znodes via options.
+
+Let's say we want to group our znodes logicaly in some layers and send messages considering that layering.
+- __znode__-s can be grouped in layers (and other options) and then send messages to only filtered nodes by layers or other options.
 - the filtering is done on senders side which keeps all the information about the nodes (both connected to sender node and the ones that
 sender node is connected to)
 
-In this example, we will create one node that will bind in some address, and three nodes will connect to that node.
-2 connected nodes will be in same group, 1 in another.
+In this example, we will create one server znode that will bind in some address, and three client znodes will connect to our server znode.
+2 of client znodes will be in layer `A`, 1 in `B`.
 
 serverNode.js
 ```javascript
@@ -393,10 +417,7 @@ import Node from 'zeronode'
     let server = new Node({ bind: 'tcp://127.0.0.1:6000' });
     await server.bind();
 }());
-
-
 ```
-
 
 clientA1.js
 ```javascript
@@ -413,7 +434,6 @@ import Node from 'zeronode'
     await clientA1.connect({ address: 'tcp:://127.0.0.1:6000', 20000 });
 }());
 ```
-
 
 clientA2.js
 ```javascript
@@ -448,34 +468,35 @@ import Node from 'zeronode'
 
 Now that all connections are set, we can send events.
 ```javascript
-//this will tick only one node of the layer A nodes;
+// ** this will tick only one node of the layer A nodes;
 server.tickAny({ event: 'foobar', data: { foo: 'bar' }, filter: { layer: 'A' } });
 
-//this will tick to all layer A nodes;
+// ** this will tick to all layer A nodes;
 server.tickAll({ event: 'foobar', data: { foo: 'bar' }, filter: { layer: 'A' } });
 
-//this will tick to all nodes that server connected to, or connected to server.
+// ** this will tick to all nodes that server connected to, or connected to server.
 server.tickAll({ event: 'foobar', data: { foo: 'bar' } });
 
 
-// you even can use regexp to filer nodes
-// also you can pass a predicate function as a filter which will get node options as an argument
+// ** you even can use regexp to filer znodes to which the tick will be sent
+// ** also you can pass a predicate function as a filter which will get znode-s options as an argument
 server.tickAll({ event: 'foobar', data: { foo: 'bar' }, filter: {layer: /[A-Z]/} })
 ```
 
-### You still have questions ?
-Try to reach us via Drift Chat under <a href="http://steadfast.tech" target="_blank">Steadfast.tech</a> <br/>
-or ask a question under zeronode gitter <br/> [<img src="https://img.shields.io/gitter/room/nwjs/nw.js.svg">](https://gitter.im/npm-zeronode/Lobby) <br/>
+<a name="askzeronode"></a>
+### Still have a question ?
+We'll be happy to answer your questions. Try to reach out us on zeronode gitter chat [<img src="https://img.shields.io/gitter/room/nwjs/nw.js.svg">](https://gitter.im/npm-zeronode/Lobby) <br/>
 
 <a name="contributing"></a>
 ### Contributing
-Contributions are always welcome! Please read the [contribution guidelines](https://github.com/sfast/zeronode/blob/master/CONTRIBUTING.md) first.
+Contributions are always welcome! <br/>
+Please read the [contribution guidelines](https://github.com/sfast/zeronode/blob/master/CONTRIBUTING.md) first.
 
 ### Contributors
 * [Artak Vardanyan](https://github.com/artakvg)
 * [David Harutyunyan](https://github.com/davidharutyunyan)
 
-### What We Are Using
+### More about zeronode internals
 Under the hood we are using <a href="http://zeromq.org" target="_blank">zeromq</a>-s Dealer and Router sockets.
 
 <a name="license"></a>
