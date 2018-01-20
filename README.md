@@ -103,39 +103,39 @@ All Benchmark tests are completed on Azure D4v2 vm (Intel Xeon® E5-2673 v3).
 ### API
 #### Basic methods
 * [<code>**new Node()**</code>](#node)
-* [<code>node.**bind()**</code>](#bind)
-* [<code>node.**connect()**</code>](#connect)
-* [<code>node.**unbind()**</code>](#unbind)
-* [<code>node.**disconnect()**</code>](#disconnect)
-* [<code>node.**stop()**</code>](#stop)
+* [<code>znode.**bind()**</code>](#bind)
+* [<code>znode.**connect()**</code>](#connect)
+* [<code>znode.**unbind()**</code>](#unbind)
+* [<code>znode.**disconnect()**</code>](#disconnect)
+* [<code>znode.**stop()**</code>](#stop)
 
 #### Simple messaging methods
-* [<code>node.**request()</code>**](#request)
-* [<code>node.**tick()</code>**](#tick)
+* [<code>znode.**request()</code>**](#request)
+* [<code>znode.**tick()</code>**](#tick)
 
 #### Attaching/Detaching handlers to tick and request 
 
-* [<code>node.**onRequest()**</code>](#onRequest)
-* [<code>node.**onTick()**</code>](#onTick)
-* [<code>node.**offRequest()**</code>](#offRequest)
-* [<code>node.**offTick()**</code>](#offTick)
+* [<code>znode.**onRequest()**</code>](#onRequest)
+* [<code>znode.**onTick()**</code>](#onTick)
+* [<code>znode.**offRequest()**</code>](#offRequest)
+* [<code>znode.**offTick()**</code>](#offTick)
 
 #### Load balancing methods
 
-* [<code>node.**requestAny()**</code>](#requestAny)
-* [<code>node.**requestDownAny()**</code>](#requestDownAny)
-* [<code>node.**requestUpAny()**</code>](#requestUpAny)
-* [<code>node.**tickAny()**</code>](#tickAny)
-* [<code>node.**tickDownAny()**</code>](#tickDownAny)
-* [<code>node.**tickUpAny()**</code>](#tickUpAny)
-* [<code>node.**tickAll()**</code>](#tickAll)
-* [<code>node.**tickDownAll()**</code>](#tickDownAll)
-* [<code>node.**tickUpAll()**</code>](#tickUpAll)
+* [<code>znode.**requestAny()**</code>](#requestAny)
+* [<code>znode.**requestDownAny()**</code>](#requestDownAny)
+* [<code>znode.**requestUpAny()**</code>](#requestUpAny)
+* [<code>znode.**tickAny()**</code>](#tickAny)
+* [<code>znode.**tickDownAny()**</code>](#tickDownAny)
+* [<code>znode.**tickUpAny()**</code>](#tickUpAny)
+* [<code>znode.**tickAll()**</code>](#tickAll)
+* [<code>znode.**tickDownAll()**</code>](#tickDownAll)
+* [<code>znode.**tickUpAll()**</code>](#tickUpAll)
 
 #### Debugging and troubleshooting
 
-* [<code>**node.enableMetrics()**</code>](#enableMetrics)
-* [<code>**node.disableMetrics()**</code>](#disableMetrics)
+* [<code>**znode.enableMetrics()**</code>](#enableMetrics)
+* [<code>**znode.disableMetrics()**</code>](#disableMetrics)
 
 <a name="node"></a>
 #### let znode = new Node({ id: String, bind: Url, options: Object, config: Object })
@@ -172,7 +172,7 @@ There are some events that triggered on znode instances:
 * `NodeEvents.`**`SERVER_FAILURE`** - triggered on client znode when server znode fails.
 * `NodeEvents.`**`SERVER_STOP`** - triggered on client znode when server successfully stops.
 * `NodeEvents.`**`SERVER_RECONNECT`** - triggered on client znode when server comes back and client znode successfuly reconnects.
-* `NodeEvents.`**`SERVER_RECONNECT_FAILURE`** - triggered on client znode when server doesn't come back in recnnectTimeout (defaults to RECONNECTION_TIMEOUT) time.
+* `NodeEvents.`**`SERVER_RECONNECT_FAILURE`** - triggered on client znode when server doesn't come back in `reconnectionTimeout` time provided during connect(). If `reconnectionTimeout` is not provided it uses `config.RECONNECTION_TIMEOUT` which defaults to -1 (means client znode will try to reconnect to server znode for ages).
 * `NodeEvents.`**`CONNECT_TO_SERVER`** - triggered on client znode when it successfully connects to new server.
 * `NodeEvents.`**`METRICS`** - triggered when [metrics enabled](#enableMetrics).
 
