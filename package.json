@@ -82,7 +82,9 @@
     "eslint-plugin-promise": "^3.6.0",
     "mocha": "^3.4.2",
     "nyc": "^11.3.0",
+    "pigato": "0.0.46",
     "rimraf": "^2.6.2",
+    "seneca": "^3.4.3",
     "snazzy": "^7.0.0",
     "standard": "^10.0.3"
   },
