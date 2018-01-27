@@ -133,9 +133,9 @@ export default class Node extends EventEmitter {
   }
 
   // ** returns promise
-  bind (routerAddress) {
+  bind (address) {
     let {nodeServer} = _private.get(this)
-    return nodeServer.bind(routerAddress)
+    return nodeServer.bind(address)
   }
 
   // ** returns promise
@@ -315,8 +315,8 @@ export default class Node extends EventEmitter {
 
     // ** if no timeout provided then we try to get from options and then from our internal global
     if (!timeout) {
-      let {options} = _scope
-      timeout = options.REQUEST_TIMEOUT || Globals.REQUEST_TIMEOUT
+      let {config} = _scope
+      timeout = config.REQUEST_TIMEOUT || Globals.REQUEST_TIMEOUT
     }
 
     let {nodeServer, nodeClients} = _scope
