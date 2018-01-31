@@ -1,5 +1,6 @@
 import { Node } from '../src'
 
+
 //    znode1
 //      /\
 //     /  \
@@ -15,20 +16,16 @@ import { Node } from '../src'
   await znode2.connect({ address: znode1.getAddress() })
   await znode3.connect({ address: znode1.getAddress() })
 
-  znode2.onRequest('foo', ({ body, reply }) => {
-    console.log(body)
-    reply('reply from znode2.')
+  znode2.onTick('foo', (msg) => {
+    console.log('handling tick on znode2:', msg)
   })
 
-  znode3.onRequest('foo', ({ body, reply }) => {
-    console.log(body)
-    reply('reply from znode3.')
+  znode3.onTick('foo', (msg) => {
+    console.log('handling tick on znode3:', msg)
   })
 
-  let rep = await znode1.requestAny({
+  znode1.tickAny({
     event: 'foo',
-    data: 'request from znode1.'
+    data: 'tick from znode1.'
   })
-
-  console.log(rep)
 }())

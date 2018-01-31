@@ -1,7 +1,6 @@
 /**
  * Created by root on 7/12/17.
  */
-import Promise from 'bluebird'
 
 class RequestsInfo {
   constructor () {
@@ -50,7 +49,7 @@ export default class Metric {
 
   getCpu (interval = 100) {
     this.actualUsage = process.cpuUsage(this.actualUsag)
-    this.cpu = (this.actualUsage.user + this.actualUsage.system) / ( 100 * interval)
+    this.cpu = (this.actualUsage.user + this.actualUsage.system) / (100 * interval)
     return this.cpu
   }
 
