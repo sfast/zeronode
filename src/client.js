@@ -41,7 +41,7 @@ export default class Client extends DealerSocket {
   }
 
   // ** returns a promise which resolves with server model after server replies to events.CLIENT_CONNECTED
-  async connect (serverAddress, timeout = -1) {
+  async connect (serverAddress, timeout) {
     try {
       let _scope = _private.get(this)
 
@@ -54,7 +54,6 @@ export default class Client extends DealerSocket {
           actorId: this.getId(),
           options: this.getOptions()
         },
-        timeout: Globals.CONNECTION_REQUEST_TIMEOUT,
         mainEvent: true
       }
 
@@ -157,7 +156,6 @@ async function _serverReconnectHandler (/* { fd, serverAddress } */) {
         actorId: this.getId(),
         options: this.getOptions()
       },
-      timeout: Globals.CONNECTION_REQUEST_TIMEOUT,
       mainEvent: true
     }
 
@@ -224,8 +222,8 @@ function _startServerPinging () {
     clearInterval(pingInterval)
   }
 
-  let options = this.getOptions()
-  let interval = options.CLIENT_PING_INTERVAL || Globals.CLIENT_PING_INTERVAL
+  let config = this.getConfig()
+  let interval = config.CLIENT_PING_INTERVAL || Globals.CLIENT_PING_INTERVAL
 
   _scope.pingInterval = setInterval(() => {
     try {

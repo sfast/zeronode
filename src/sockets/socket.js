@@ -125,8 +125,9 @@ class Socket extends EventEmitter {
     }
   }
 
-  request (envelop, reqTimeout = 5000) {
+  request (envelop, reqTimeout) {
     let {id, requests, metric} = _private.get(this)
+    reqTimeout = reqTimeout || this.getConfig().REQUEST_TIMEOUT || Timeouts.REQUEST_TIMEOUT
 
     if (!this.isOnline()) {
       let err = new Error(`Sending failed as socket '${this.getId()}' is not online`)
