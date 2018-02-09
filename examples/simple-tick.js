@@ -1,35 +1,24 @@
-import Promise from 'bluebird'
-import { Node, NodeEvents } from '../src'
+import { Node } from '../src'
 
-// ** creating simple node which can serve as a 'server' node
-let nodeServer = new Node({ bind: 'tcp://127.0.0.1:6001'})
-nodeServer.onTick('foo-server', (data) => {
-  console.log(`Server (${nodeServer.getId()}): I got a tick from client`, data)
-  //* when server get a tick we tick back to client
-  nodeServer.tick({ to: nodeClient.getId(), event: 'foo-client', data: {stamp: Date.now()} })
-})
+//    znode1
+//      |
+//      |
+//    znode2
 
-nodeServer.on(NodeEvents.CLIENT_CONNECTED, (data) => {
-  console.log(`Client connected to server`, data)
-})
+(async function () {
+  let znode1 = new Node({bind: 'tcp://127.0.0.1:3000'})
+  let znode2 = new Node()
 
-// ** creating simple node which can serve as a 'client' node
-let nodeClient = new Node()
-nodeClient.onTick('foo-client', (data) => {
-  console.log(`Client (${nodeClient.getId()}): I got a tick from server`, data)
-})
+  await znode1.bind()
+  await znode2.connect({ address: znode1.getAddress() })
 
-const runSimpleTick = () => {
-  nodeServer.bind()
-    .then(() => {
-      return nodeClient.connect({address: nodeServer.getAddress() })
-    })
-    .then(() => {
-      nodeClient.tick({ to: nodeServer.getId(), event: 'foo-server', data: {stamp: Date.now()} })
-    })
-    .catch((err) => {
-      console.log(err)
-    })
-}
+  znode1.onTick('foo', (msg) => {
+    console.log(msg)
+  })
 
-runSimpleTick()
+  znode2.tick({
+    event: 'foo',
+    to: znode1.getId(),
+    data: 'msg from znode2'
+  })
+}())

@@ -444,7 +444,7 @@ export default class Node extends EventEmitter {
 
     nodeServer.setMetric(true)
 
-    metric.interval = setInterval( () => {
+    metric.interval = setInterval(() => {
       metric.info.getCpu()
       metric.info.getMemory()
       this.emit(events.METRICS, metric.info)
