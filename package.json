@@ -80,8 +80,10 @@
     "eslint-plugin-node": "^5.2.1",
     "eslint-plugin-promise": "^3.6.0",
     "mocha": "^3.4.2",
+    "pigato": "0.0.46",
     "nyc": "^11.4.1",
     "rimraf": "^2.6.2",
+    "seneca": "^3.4.3",
     "snazzy": "^7.0.0",
     "standard": "^10.0.3"
   },
