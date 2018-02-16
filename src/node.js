@@ -13,7 +13,6 @@ import NodeUtils from './utils'
 import Server from './server'
 import Client from './client'
 import Metric from './metric'
-import Globals from './globals'
 import { events } from './enum'
 import {Enum, Watchers} from './sockets'
 
@@ -342,7 +341,6 @@ export default class Node extends EventEmitter {
   }
 
   async requestAny ({ event, data, timeout, filter, down = true, up = true } = {}) {
-
     let nodesFilter = { down, up }
     if (_.isFunction(filter)) {
       nodesFilter.predicate = filter

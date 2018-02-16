@@ -42,6 +42,4 @@ dist/
 # Added for docdash documents genereted by npm run doc
 docs/
 
-
-
 tmp/

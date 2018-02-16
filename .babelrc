@@ -1,5 +1,5 @@
 {
-  "presets": [ "es2015", "es2016", "es2017", "env"],
+  "presets": [ "env"],
   "plugins" : ["transform-function-bind", "transform-runtime"],
   "env": {
     "test": {
