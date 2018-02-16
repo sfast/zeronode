@@ -22,6 +22,8 @@ let Timeouts = {
   MONITOR_TIMEOUT: 10,
   // ** when monitor fials restart it after milliseconds
   MONITOR_RESTART_TIMEOUT: 1000,
+  REQUEST_TIMEOUT: 10000,
+  CONNECTION_TIMEOUT: -1,
   RECONNECTION_TIMEOUT: -1,
   INFINITY: -1
 }

@@ -313,12 +313,6 @@ export default class Node extends EventEmitter {
   async request ({ to, event, data, timeout } = {}) {
     let _scope = _private.get(this)
 
-    // ** if no timeout provided then we try to get from options and then from our internal global
-    if (!timeout) {
-      let {config} = _scope
-      timeout = config.REQUEST_TIMEOUT || Globals.REQUEST_TIMEOUT
-    }
-
     let {nodeServer, nodeClients} = _scope
 
     let clientActor = this::_getClientByNode(to)
@@ -348,11 +342,6 @@ export default class Node extends EventEmitter {
   }
 
   async requestAny ({ event, data, timeout, filter, down = true, up = true } = {}) {
-    // ** if no timeout provided then we try to get from options and then from our internal global
-    if (!timeout) {
-      let {options} = _private.get(this)
-      timeout = options.REQUEST_TIMEOUT || Globals.REQUEST_TIMEOUT
-    }
 
     let nodesFilter = { down, up }
     if (_.isFunction(filter)) {
