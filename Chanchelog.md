@@ -1,3 +1,14 @@
+Version: 1.1.6 (Feb 9 2017, Artak Vardanyan, David Harutyunyan)
+- bug fix
+- test coverage ~ 90%
+- Readme updates
+- benchmark
+
+Version: 1.1.5 (Dec 22 2017, Artak Vardanyan, David Harutyunyan)
+- test coverage ~ 70%
+- bug fix
+- Readme updates
+
 Version: 1.1.4 (Dec 9 2017, Artak Vardanyan, David Harutyunyan)
 - fixed a monitor bug (changed zmq package to zeromq package )
 - added getClientInfo andgetServerInfo node functions which return the actor info

@@ -13,7 +13,6 @@ import NodeUtils from './utils'
 import Server from './server'
 import Client from './client'
 import Metric from './metric'
-import Globals from './globals'
 import { events } from './enum'
 import {Enum, Watchers} from './sockets'
 
@@ -133,9 +132,9 @@ export default class Node extends EventEmitter {
   }
 
   // ** returns promise
-  bind (routerAddress) {
+  bind (address) {
     let {nodeServer} = _private.get(this)
-    return nodeServer.bind(routerAddress)
+    return nodeServer.bind(address)
   }
 
   // ** returns promise
@@ -191,6 +190,8 @@ export default class Node extends EventEmitter {
     nodeClients.set(actorId, client)
 
     this::_addExistingListenersToClient(client)
+
+    this.emit(events.CONNECT_TO_SERVER, client.getServerActor().toJSON())
 
     return client.getServerActor().toJSON()
   }
@@ -264,7 +265,7 @@ export default class Node extends EventEmitter {
   offRequest (requestEvent, fn) {
     let _scope = _private.get(this)
 
-    _scope.nodeServer.offRequest(requestEvent)
+    _scope.nodeServer.offRequest(requestEvent, fn)
     _scope.nodeClients.forEach((client) => {
       client.offRequest(requestEvent, fn)
     })
@@ -311,12 +312,6 @@ export default class Node extends EventEmitter {
   async request ({ to, event, data, timeout } = {}) {
     let _scope = _private.get(this)
 
-    // ** if no timeout provided then we try to get from options and then from our internal global
-    if (!timeout) {
-      let {options} = _scope
-      timeout = options.REQUEST_TIMEOUT || Globals.REQUEST_TIMEOUT
-    }
-
     let {nodeServer, nodeClients} = _scope
 
     let clientActor = this::_getClientByNode(to)
@@ -346,12 +341,6 @@ export default class Node extends EventEmitter {
   }
 
   async requestAny ({ event, data, timeout, filter, down = true, up = true } = {}) {
-    // ** if no timeout provided then we try to get from options and then from our internal global
-    if (!timeout) {
-      let {options} = _private.get(this)
-      timeout = options.REQUEST_TIMEOUT || Globals.REQUEST_TIMEOUT
-    }
-
     let nodesFilter = { down, up }
     if (_.isFunction(filter)) {
       nodesFilter.predicate = filter
@@ -442,7 +431,7 @@ export default class Node extends EventEmitter {
 
     nodeServer.setMetric(true)
 
-    metric.interval = setInterval( () => {
+    metric.interval = setInterval(() => {
       metric.info.getCpu()
       metric.info.getMemory()
       this.emit(events.METRICS, metric.info)

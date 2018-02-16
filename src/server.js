@@ -132,8 +132,8 @@ function _clientConnectedRequest (request) {
   clientModels.set(actorId, actorModel)
 
   if (!clientCheckInterval) {
-    let options = this.getOptions()
-    let clientHeartbeatInterval = options.CLIENT_MUST_HEARTBEAT_INTERVAL || Globals.CLIENT_MUST_HEARTBEAT_INTERVAL
+    let config = this.getConfig()
+    let clientHeartbeatInterval = config.CLIENT_MUST_HEARTBEAT_INTERVAL || Globals.CLIENT_MUST_HEARTBEAT_INTERVAL
     _scope.clientCheckInterval = setInterval(this::_checkClientHeartBeat, clientHeartbeatInterval)
   }
 

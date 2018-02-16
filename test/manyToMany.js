@@ -13,7 +13,7 @@ describe('manyToMany', () => {
   beforeEach(async () => {
     clients = _.map(_.range(CLIENTS_COUNT), (i) => new Node({ options: {clientName: `client${i}`} }))
     servers = _.map(_.range(CLIENTS_COUNT), (i) => new Node({ bind: `tcp://127.0.0.1:301${i}`, options: {serverName: `server${i}`} }))
-    centreNode = new Node({ bind: 'tcp://127.0.0.1:3002' })
+    centreNode = new Node({ bind: 'tcp://127.0.0.1:3000' })
 
     await centreNode.bind()
     await Promise.all(_.map(servers, async (server) => {
@@ -24,8 +24,8 @@ describe('manyToMany', () => {
   })
 
   afterEach(async () => {
-    await centreNode.stop()
     await Promise.all(_.map(clients, (client) => client.stop()))
+    await centreNode.stop()
     await Promise.all(_.map(servers, (server) => server.stop()))
     clients = null
     centreNode = null

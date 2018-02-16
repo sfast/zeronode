@@ -1,77 +1,48 @@
-import Promise from 'bluebird'
-import Node from '../src/node'
+import { Node } from '../src'
+import _ from 'underscore'
 
-const MESSAGE_COUNT = 5000
 
-let runner = new Node({ bind: 'tcp://127.0.0.1:6000', layer: 'R' })
-
-let layerA = new Node({ bind: 'tcp://127.0.0.1:6001', layer: 'A' })
-let layerB = new Node({ bind: 'tcp://127.0.0.1:6002', layer: 'B' })
-let layerC = new Node({ bind: 'tcp://127.0.0.1:6003', layer: 'C' })
-
-const errPrint = (err) => { console.log('error', err) }
-
-let all = []
-
-all.push(runner.bind())
-all.push(layerA.bind())
-all.push(layerB.bind())
-all.push(layerC.bind())
-
-let start = null
-let runnerbomb = null
-
-let _clearIntervals = () => {
-  layerA.offTick()
-  layerB.offTick()
-  layerC.offTick()
-  runner.offTick()
-}
-
-let run = async () => {
+(async function () {
   try {
-    console.log('RUN')
+    const NODE_COUNT = 10
 
-    let i = 0
+    const MESSAGE_COUNT = 1000
 
-    await Promise.all(all)
-    console.log('All nodes are binded')
-    await layerA.connect({address: layerB.getAddress()})
-    console.log('Layer A connected to B')
-    await layerB.connect({address: layerC.getAddress()})
-    console.log('Layer B connected C')
-    await layerC.connect({address: layerA.getAddress()})
-    console.log('Layer C connected to A')
+    let count = 0
 
-    await runner.connect({address: layerA.getAddress()})
-    console.log('Runner connected to A')
+    let znodes = _.map(_.range(NODE_COUNT), (i) => {
+      let znode = new Node()
 
-    layerA.onTick('WELCOME', (data) => {
-      i++
-      console.log('A', data)
-      if (i > MESSAGE_COUNT) {
-        _clearIntervals()
-        console.log(`Time passed: `, Date.now() - start)
-      } else {
-        layerA.tick({ to: layerB.getId(), event: 'WELCOME', data: data + 1 })
-      }
+      znode.onTick('foo', (msg) => {
+        count++
+
+        if (count === MESSAGE_COUNT) {
+          console.log('finished', count)
+          return
+        }
+
+        znode.tickAny({
+          event: 'foo',
+          data: `msg from znode${i}`
+        })
+      })
+
+      return znode
     })
 
-    layerB.onTick('WELCOME', (data) => {
-      console.log('B', data)
-      layerB.tick({ to: layerC.getId(), event: 'WELCOME', data: data + 1 })
-    })
+    await Promise.all(_.map(znodes, async (znode, i) => {
+      await znode.bind(`tcp://127.0.0.1:${3000 + i}`)
+      if (i === 0) return
+      await znode.connect({address: znodes[i - 1].getAddress()})
+    }))
 
-    layerC.onTick('WELCOME', (data) => {
-      console.log('C', data)
-      layerC.tick({ to: layerA.getId(), event: 'WELCOME', data: data + 1 })
-    })
+    await znodes[0].connect({address: znodes[NODE_COUNT - 1].getAddress()})
 
-    start = Date.now()
-    runner.tick({ to: layerA.getId(), event: 'WELCOME', data: 1 })
+    znodes[0].tickAny({
+      event: 'foo',
+      data: `msg from znode0`
+    })
   } catch (err) {
-    console.log(err)
+    console.error(err)
   }
-}
-
-run()
+}())

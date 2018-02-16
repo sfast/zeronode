@@ -57,13 +57,14 @@ export default class DealerSocket extends Socket {
     return state
   }
 
-  connect (routerAddress, timeout = -1) {
+  connect (routerAddress, timeout) {
     if (this.isOnline() && routerAddress === this.getAddress()) {
       return Promise.resolve(true)
     }
 
     let _scope = _private.get(this)
     let connectionPromise = _scope.connectionPromise
+    timeout = timeout || this.getConfig().CONNECTION_TIMEOUT || Timeouts.CONNECTION_TIMEOUT
 
     if (connectionPromise && routerAddress !== this.getAddress()) {
       // ** if trying to connect to other address you need to disconnect first
@@ -123,7 +124,7 @@ export default class DealerSocket extends Socket {
         }
       }
 
-      if (timeout !== -1) {
+      if (timeout !== Timeouts.INFINITY) {
         rejectionTimeout = setTimeout(() => {
           this.removeListener(SocketEvent.CONNECT, onConnectionHandler)
           // ** reject the connection promise and then disconnect
