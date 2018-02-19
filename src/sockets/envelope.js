@@ -184,7 +184,7 @@ export default class Envelop {
     this.recipient = recipient
   }
 
-    // ** type of envelop
+  // ** type of envelop
 
   getType () {
     return this.type
@@ -194,7 +194,7 @@ export default class Envelop {
     this.type = type
   }
 
-    // ** data of envelop
+  // ** data of envelop
 
   getData (data) {
     return this.data

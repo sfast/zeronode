@@ -6,7 +6,7 @@ let EnvelopType = {
   ASYNC: 1,
   SYNC: 2,
   RESPONSE: 3,
-  PROXY: 4
+  ERROR: 4
 }
 
 let MetricType = {
