@@ -3,8 +3,8 @@
  */
 
 let EnvelopType = {
-  ASYNC: 1,
-  SYNC: 2,
+  TICK: 1,
+  REQUEST: 2,
   RESPONSE: 3,
   ERROR: 4
 }
@@ -14,7 +14,8 @@ let MetricType = {
   SEND_REQUEST: 'sendRequest',
   GOT_TICK: 'gotTick',
   GOT_REQUEST: 'gotRequest',
-  GOT_REPLY: 'gotReply',
+  GOT_REPLY_SUCCESS: 'gotReplySuccess',
+  GOT_REPLY_ERROR: 'gotReplyError',
   REQUEST_TIMEOUT: 'requestTimeout'
 }
 

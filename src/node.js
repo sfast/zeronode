@@ -550,18 +550,18 @@ function _removeClientAllListeners (client) {
 }
 
 function _attachMetricsHandlers (socket, metricsInfo) {
-  socket.on(MetricType.SEND_TICK, (toNode) => metricsInfo.sendTick(toNode))
+  socket.on(MetricType.SEND_TICK, (envelop) => metricsInfo.sendTick(envelop.recipient))
 
-  socket.on(MetricType.SEND_REQUEST, (toNode) => metricsInfo.sendRequest(toNode))
+  socket.on(MetricType.SEND_REQUEST, (envelop) => metricsInfo.sendRequest(envelop.recipient))
 
-  socket.on(MetricType.REQUEST_TIMEOUT, (fromNode) => metricsInfo.requestTimeout(fromNode))
+  socket.on(MetricType.REQUEST_TIMEOUT, (envelop) => metricsInfo.requestTimeout(envelop.recipient))
 
-  socket.on(MetricType.GOT_TICK, (fromNode) => metricsInfo.gotTick(fromNode))
+  socket.on(MetricType.GOT_TICK, (envelop) => metricsInfo.gotTick(envelop.owner))
 
-  socket.on(MetricType.GOT_REQUEST, (fromNode) => metricsInfo.gotRequest(fromNode))
+  socket.on(MetricType.GOT_REQUEST, (envelop) => metricsInfo.gotRequest(envelop.owner))
 
-  socket.on(MetricType.GOT_REPLY, (data) => {
-    let {id, sendTime, getTime, replyTime, replyGetTime} = data
-    metricsInfo.gotReply({id, sendTime, getTime, replyTime, replyGetTime})
+  socket.on(MetricType.GOT_REPLY_SUCCESS, (envelop) => {
+    let { sendTime, getTime, replyTime, replyGetTime  } = envelop.data
+    metricsInfo.gotReply({id: envelop.owner, sendTime, getTime, replyTime, replyGetTime})
   })
 }

@@ -44,6 +44,18 @@ export default class Envelop {
     this.recipient = recipient
   }
 
+  toJSON () {
+    return {
+      type: this.type,
+      id: this.id,
+      tag: this.tag,
+      data: this.data,
+      owner: this.owner,
+      recipient: this.recipient,
+      mainEvent: this.mainEvent
+    }
+  }
+
     /**
      *
      * @param buffer

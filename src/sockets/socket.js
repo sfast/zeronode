@@ -11,6 +11,40 @@ import Watchers from './watchers'
 
 let _private = new WeakMap()
 
+
+function nop () {}
+
+/**
+ *
+ * @param envelop: Object
+ * @param type: Enum(-1 = timeout, 0 = send, 1 = got)
+ */
+function emitMetric (envelop, type = 0) {
+  let event = ''
+
+  if (envelop.mainEvent) return
+
+  switch (envelop.type) {
+    case EnvelopType.TICK:
+      event = !type ? MetricType.SEND_TICK : MetricType.GOT_TICK
+      break
+    case EnvelopType.REQUEST:
+      if (type === -1) {
+        event = MetricType.REQUEST_TIMEOUT
+        break
+      }
+      event = !type ? MetricType.SEND_REQUEST : MetricType.GOT_REQUEST
+      break
+    case EnvelopType.RESPONSE:
+      event = !type ? MetricType.REPLY_SUCCESS : MetricType.GOT_REPLY_SUCCESS
+      break
+    case EnvelopType.ERROR:
+      event = !type ? MetricType.REPLY_ERROR : MetricType.GOT_REPLY_ERROR
+  }
+
+  this.emit(event, envelop)
+}
+
 function buildSocketEventHandler (eventName) {
   const handler = (fd, endpoint) => {
     if (this.debugMode()) {
@@ -44,7 +78,7 @@ class Socket extends EventEmitter {
       options,
       logger: null,
       online: false,
-      metric: false,
+      metric: nop,
       isDebugMode: false,
       monitorRestartInterval : null,
       requests: new Map(),
@@ -103,7 +137,7 @@ class Socket extends EventEmitter {
 
   setMetric (status) {
     let _scope = _private.get(this)
-    _scope.metric = status
+    _scope.metric = status ? this::emitMetric : nop
   }
 
   setLogger (logger) {
@@ -136,10 +170,7 @@ class Socket extends EventEmitter {
           let requestObj = requests.get(envelopId)
           requests.delete(envelopId)
 
-          if (metric) {
-            // TODO::avar maybe we need metrics by tags also
-            this.emit(MetricType.REQUEST_TIMEOUT, envelop.getRecipient())
-          }
+          metric(envelop.toJSON(), -1)
 
           let requestTimeoutedError = new Error(`Request envelop '${envelopId}' timeouted on socket '${this.getId()}'`)
           requestObj.reject(new ZeronodeError({socketId: this.getId(), envelopId: envelopId, error: requestTimeoutedError, code: ErrorCodes.REQUEST_TIMEOUTED}))
@@ -164,26 +195,7 @@ class Socket extends EventEmitter {
   sendEnvelop (envelop) {
     let {socket, metric} = _private.get(this)
 
-    let self = this
-
-    ///// ####
-    if (metric) {
-      switch (envelop.getType()) {
-        case EnvelopType.ASYNC:
-          self.emit(MetricType.SEND_TICK, envelop)
-          break
-        case EnvelopType.SYNC:
-          self.emit(MetricType.SEND_REQUEST, envelop)
-          break
-        case EnvelopType.RESPONSE:
-          self.emit(MetricType.REPLY_SUCCESS, envelop)
-          break
-        case EnvelopType.ERROR:
-          self.emit(MetricType.REPLY_ERROR, envelop)
-          break
-      }
-    }
-    ///// ####
+    metric(envelop.toJSON())
 
     socket.send(this.getSocketMsg(envelop))
   }
@@ -300,9 +312,12 @@ function onSocketMessage (empty, envelopBuffer) {
   let { type, id, owner, recipient, tag, mainEvent } = Envelop.readMetaFromBuffer(envelopBuffer)
   let envelop = new Envelop({type, id, owner, recipient, tag, mainEvent})
   let envelopData = Envelop.readDataFromBuffer(envelopBuffer)
+  envelop.setData(envelopData)
 
   switch (type) {
-    case EnvelopType.ASYNC:
+    case EnvelopType.TICK:
+      metric(envelop.toJSON(), 1)
+
       if (mainEvent) {
         tickEmitter.main.emit(tag, envelopData)
       } else {
@@ -310,20 +325,16 @@ function onSocketMessage (empty, envelopBuffer) {
           id: owner,
           event: tag
         })
-        // ** if metric is enabled then emit it
-        metric && this.emit(MetricType.GOT_TICK, envelop)
       }
       break
-    case EnvelopType.SYNC:
-      envelop.setData(envelopData)
+    case EnvelopType.REQUEST:
+      metric(envelop.toJSON(), 1)
       // ** if metric is enabled then emit it
-      if (metric && !mainEvent) this.emit(MetricType.GOT_REQUEST, envelop)
+      if (metric && !mainEvent) this.emit(MetricType.GOT_REQUEST, envelop.toJSON())
       this::syncEnvelopHandler(envelop)
       break
     case EnvelopType.RESPONSE:
     case EnvelopType.ERROR:
-      if (metric) this.emit(MetricType.GOT_REQUEST, envelop)
-      envelop.setData(envelopData)
       this::responseEnvelopHandler(envelop)
       break
   }
@@ -415,14 +426,16 @@ function responseEnvelopHandler (envelop) {
 
   // ** getTime is the time when message arrives to server
   // ** replyTime is the time when message is send from server
-  let {getTime, replyTime, data} = envelop.getData()
+  let gotReplyMetric = envelop.toJSON()
 
-  let gotReplyMetric = {id: envelop.getOwner(), sendTime, getTime, replyTime, replyGetTime: process.hrtime()}
-  if (metric) this.emit(MetricType.GOT_REPLY, gotReplyMetric)
+  Object.assign(gotReplyMetric.data, { sendTime, replyGetTime: process.hrtime() })
+
+  metric(gotReplyMetric, 1)
 
   clearTimeout(timeout)
   requests.delete(id)
 
+  let { data } = envelop.getData()
   //* * resolving request promise with response data
   envelop.getType() === EnvelopType.ERROR ? reject(data) : resolve(data)
 }
