@@ -131,6 +131,25 @@ describe('oneToOne, failures', () => {
     }
   })
 
+  it('request-error', async () => {
+    let expectedError = 'some error message'
+
+    try {
+      let expectedMessage = 'bar'
+
+      await serverNode.bind()
+      await clientNode.connect({ address: serverNode.getAddress() })
+      serverNode.onRequest('foo', ({ body, reply, next, error }) => {
+        assert.equal(body, expectedMessage)
+        error(expectedError)
+      })
+
+      await clientNode.request({ to: serverNode.getId(), event: 'foo', data: expectedMessage })
+    } catch (err) {
+      assert.equal(err, expectedError)
+    }
+  })
+
   it('tick after disconnect', async () => {
     try {
       await serverNode.bind()
