@@ -27,7 +27,7 @@ let defaultLogger = new (winston.Logger)({
 })
 
 export default class Node extends EventEmitter {
-  constructor ({ id, bind, options, config } = {}) {
+  constructor ({ id, bind, options, configchnayast } = {}) {
     super()
 
     id = id || _generateNodeId()
@@ -45,7 +45,6 @@ export default class Node extends EventEmitter {
       metric: {
         status: false,
         info: new Metric({id}),
-        interval: null
       },
       nodeServer: null,
       nodeClients: new Map(),
@@ -439,16 +438,13 @@ export default class Node extends EventEmitter {
   }
 
   disableMetrics () {
-    let _scope = _private.get(this)
-    let {metric, nodeClients, nodeServer} = _scope
-    clearInterval(metric.interval)
+    let {metric, nodeClients, nodeServer} = _private.get(this)
+
     metric.status = false
     nodeClients.forEach((client) => {
       client.setMetric(false)
     }, this)
     nodeServer.setMetric(false)
-    metric.interval = null
-    metric.info.flush()
   }
 
   async setOptions (options) {
@@ -550,18 +546,48 @@ function _removeClientAllListeners (client) {
 }
 
 function _attachMetricsHandlers (socket, metricsInfo) {
-  socket.on(MetricType.SEND_TICK, (envelop) => metricsInfo.sendTick(envelop.recipient))
+  socket.on(MetricType.SEND_TICK, (envelop) => {
+    this.emit(MetricType.SEND_TICK, envelop)
+    metricsInfo.sendTick(envelop.recipient)
+  })
 
-  socket.on(MetricType.SEND_REQUEST, (envelop) => metricsInfo.sendRequest(envelop.recipient))
+  socket.on(MetricType.SEND_REQUEST, (envelop) => {
+    this.emit(MetricType.SEND_REQUEST, envelop)
+    metricsInfo.sendRequest(envelop.recipient)
+  })
 
-  socket.on(MetricType.REQUEST_TIMEOUT, (envelop) => metricsInfo.requestTimeout(envelop.recipient))
+  socket.on(MetricType.SEND_REPLY_SUCCESS, (envelop) => {
+    this.emit(MetricType.SEND_REPLY_SUCCESS, envelop)
+    metricsInfo.sendReplySuccess(envelop)
+  })
 
-  socket.on(MetricType.GOT_TICK, (envelop) => metricsInfo.gotTick(envelop.owner))
+  socket.on(MetricType.SEND_REPLY_ERROR, (envelop) => {
+    this.emit(MetricType.SEND_REPLY_ERROR, envelop)
+    metricsInfo.sendReplyError(envelop)
+  })
 
-  socket.on(MetricType.GOT_REQUEST, (envelop) => metricsInfo.gotRequest(envelop.owner))
+  socket.on(MetricType.REQUEST_TIMEOUT, (envelop) => {
+    this.emit(MetricType.REQUEST_TIMEOUT, envelop)
+    metricsInfo.requestTimeout(envelop.recipient)
+  })
+
+  socket.on(MetricType.GOT_TICK, (envelop) => {
+    this.emit(MetricType.GOT_TICK, envelop)
+    metricsInfo.gotTick(envelop.owner)
+  })
+
+  socket.on(MetricType.GOT_REQUEST, (envelop) => {
+    this.emit(MetricType.GOT_REQUEST, envelop)
+    metricsInfo.gotRequest(envelop.owner)
+  })
 
   socket.on(MetricType.GOT_REPLY_SUCCESS, (envelop) => {
-    let { sendTime, getTime, replyTime, replyGetTime  } = envelop.data
-    metricsInfo.gotReply({id: envelop.owner, sendTime, getTime, replyTime, replyGetTime})
+    this.emit(MetricType.GOT_REPLY_SUCCESS, envelop)
+    metricsInfo.gotReplySuccess(envelop)
+  })
+
+  socket.on(MetricType.GOT_REPLY_ERROR, (envelop) => {
+    this.emit(MetricType.GOT_REPLY_ERROR, envelop)
+    metricsInfo.gotReplyError(envelop)
   })
 }

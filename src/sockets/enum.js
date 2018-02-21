@@ -12,6 +12,8 @@ let EnvelopType = {
 let MetricType = {
   SEND_TICK: 'sendTick',
   SEND_REQUEST: 'sendRequest',
+  SEND_REPLY_SUCCESS: 'sendReplySuccess',
+  SEND_REPLY_ERROR: 'sendReplyError',
   GOT_TICK: 'gotTick',
   GOT_REQUEST: 'gotRequest',
   GOT_REPLY_SUCCESS: 'gotReplySuccess',

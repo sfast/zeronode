@@ -12,6 +12,16 @@ import Watchers from './watchers'
 let _private = new WeakMap()
 
 
+function _calculateLatency({ sendTime, gotTime, replyTime, replyGetTime }) {
+  let processTime = (replyTime[0] * 10e9 + replyTime[1]) - (gotTime[0] * 10e9 + gotTime[1])
+  let requestTime = (replyGetTime[0] * 10e9 + replyGetTime[1]) - (sendTime[0] * 10e9 + sendTime[1])
+
+  return {
+    processTime,
+    latency: requestTime - processTime
+  }
+}
+
 function nop () {}
 
 /**
@@ -36,10 +46,10 @@ function emitMetric (envelop, type = 0) {
       event = !type ? MetricType.SEND_REQUEST : MetricType.GOT_REQUEST
       break
     case EnvelopType.RESPONSE:
-      event = !type ? MetricType.REPLY_SUCCESS : MetricType.GOT_REPLY_SUCCESS
+      event = !type ? MetricType.SEND_REPLY_SUCCESS : MetricType.GOT_REPLY_SUCCESS
       break
     case EnvelopType.ERROR:
-      event = !type ? MetricType.REPLY_ERROR : MetricType.GOT_REPLY_ERROR
+      event = !type ? MetricType.SEND_REPLY_ERROR : MetricType.GOT_REPLY_ERROR
   }
 
   this.emit(event, envelop)
@@ -427,8 +437,13 @@ function responseEnvelopHandler (envelop) {
   // ** getTime is the time when message arrives to server
   // ** replyTime is the time when message is send from server
   let gotReplyMetric = envelop.toJSON()
+  let { gotTime, replyTime } = gotReplyMetric.data
+  let duration = _calculateLatency({ sendTime, gotTime, replyTime, replyGetTime: process.hrtime() })
 
-  Object.assign(gotReplyMetric.data, { sendTime, replyGetTime: process.hrtime() })
+  gotReplyMetric.data = {
+    data: gotReplyMetric.data,
+    duration
+  }
 
   metric(gotReplyMetric, 1)
 
