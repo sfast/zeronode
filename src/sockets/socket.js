@@ -12,8 +12,8 @@ import Watchers from './watchers'
 let _private = new WeakMap()
 
 
-function _calculateLatency({ sendTime, gotTime, replyTime, replyGetTime }) {
-  let processTime = (replyTime[0] * 10e9 + replyTime[1]) - (gotTime[0] * 10e9 + gotTime[1])
+function _calculateLatency({ sendTime, getTime, replyTime, replyGetTime }) {
+  let processTime = (replyTime[0] * 10e9 + replyTime[1]) - (getTime[0] * 10e9 + getTime[1])
   let requestTime = (replyGetTime[0] * 10e9 + replyGetTime[1]) - (sendTime[0] * 10e9 + sendTime[1])
 
   return {
@@ -204,10 +204,18 @@ class Socket extends EventEmitter {
 
   sendEnvelop (envelop) {
     let {socket, metric} = _private.get(this)
+    let msg = this.getSocketMsg(envelop)
+    let envelopJSON = envelop.toJSON()
 
-    metric(envelop.toJSON())
+    if (msg instanceof Buffer) {
+      envelopJSON.size = msg.length
+    } else {
+      envelopJSON.size = msg[2].length
+    }
 
-    socket.send(this.getSocketMsg(envelop))
+    metric(envelopJSON)
+
+    socket.send(msg)
   }
 
   attachSocketMonitor () {
@@ -324,9 +332,12 @@ function onSocketMessage (empty, envelopBuffer) {
   let envelopData = Envelop.readDataFromBuffer(envelopBuffer)
   envelop.setData(envelopData)
 
+  let envelopJSON = envelop.toJSON()
+  envelopJSON.size = envelopBuffer.length
+
   switch (type) {
     case EnvelopType.TICK:
-      metric(envelop.toJSON(), 1)
+      metric(envelopJSON, 1)
 
       if (mainEvent) {
         tickEmitter.main.emit(tag, envelopData)
@@ -338,13 +349,14 @@ function onSocketMessage (empty, envelopBuffer) {
       }
       break
     case EnvelopType.REQUEST:
-      metric(envelop.toJSON(), 1)
+      metric(envelopJSON, 1)
       // ** if metric is enabled then emit it
       if (metric && !mainEvent) this.emit(MetricType.GOT_REQUEST, envelop.toJSON())
       this::syncEnvelopHandler(envelop)
       break
     case EnvelopType.RESPONSE:
     case EnvelopType.ERROR:
+      envelop.size = envelopBuffer.length
       this::responseEnvelopHandler(envelop)
       break
   }
@@ -437,13 +449,15 @@ function responseEnvelopHandler (envelop) {
   // ** getTime is the time when message arrives to server
   // ** replyTime is the time when message is send from server
   let gotReplyMetric = envelop.toJSON()
-  let { gotTime, replyTime } = gotReplyMetric.data
-  let duration = _calculateLatency({ sendTime, gotTime, replyTime, replyGetTime: process.hrtime() })
+  let { getTime, replyTime } = gotReplyMetric.data
+  let duration = _calculateLatency({ sendTime, getTime, replyTime, replyGetTime: process.hrtime() })
 
   gotReplyMetric.data = {
     data: gotReplyMetric.data,
     duration
   }
+
+  gotReplyMetric.size = envelop.size
 
   metric(gotReplyMetric, 1)
 

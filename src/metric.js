@@ -2,6 +2,7 @@
  * Created by root on 7/12/17.
  */
 import Loki from 'lokijs'
+import _ from 'underscore'
 
 let collections = {
   SEND_REQUEST: 'send_request',
@@ -46,19 +47,6 @@ export default class Metric {
     this.loki.addCollection(collections.SEND_TICK)
     this.loki.addCollection(collections.GOT_REQUEST)
     this.loki.addCollection(collections.GOT_TICK)
-    this.cpu = 0
-    this.memory = process.memoryUsage().heapTotal / 1000000
-    this.actualUsage = 0
-  }
-
-  getCpu (interval = 100) {
-    this.actualUsage = process.cpuUsage(this.actualUsage)
-    this.cpu = (this.actualUsage.user + this.actualUsage.system) / (100 * interval)
-    return this.cpu
-  }
-
-  getMemory () {
-    this.memory = process.memoryUsage().heapTotal / 1000000
   }
 
   sendRequest (envelop) {
@@ -140,5 +128,14 @@ export default class Metric {
 
     request.timeout = true
     collection.update(request)
+  }
+
+  flush () {
+    _.each(collections, (collectionName) => {
+      let collection = this.loki.getCollection(collectionName)
+      if (collection.count() > 1000) {
+        collection.removeWhere(() => true)
+      }
+    })
   }
 }

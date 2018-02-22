@@ -27,7 +27,7 @@ let defaultLogger = new (winston.Logger)({
 })
 
 export default class Node extends EventEmitter {
-  constructor ({ id, bind, options, configchnayast } = {}) {
+  constructor ({ id, bind, options, config } = {}) {
     super()
 
     id = id || _generateNodeId()
@@ -431,9 +431,8 @@ export default class Node extends EventEmitter {
     nodeServer.setMetric(true)
 
     metric.interval = setInterval(() => {
-      metric.info.getCpu()
-      metric.info.getMemory()
-      this.emit(events.METRICS, metric.info)
+      metric.info.flush()
+      this.emit(events.METRICS, metric.info.loki)
     }, interval)
   }
 
@@ -548,12 +547,12 @@ function _removeClientAllListeners (client) {
 function _attachMetricsHandlers (socket, metricsInfo) {
   socket.on(MetricType.SEND_TICK, (envelop) => {
     this.emit(MetricType.SEND_TICK, envelop)
-    metricsInfo.sendTick(envelop.recipient)
+    metricsInfo.sendTick(envelop)
   })
 
   socket.on(MetricType.SEND_REQUEST, (envelop) => {
     this.emit(MetricType.SEND_REQUEST, envelop)
-    metricsInfo.sendRequest(envelop.recipient)
+    metricsInfo.sendRequest(envelop)
   })
 
   socket.on(MetricType.SEND_REPLY_SUCCESS, (envelop) => {
@@ -568,7 +567,7 @@ function _attachMetricsHandlers (socket, metricsInfo) {
 
   socket.on(MetricType.REQUEST_TIMEOUT, (envelop) => {
     this.emit(MetricType.REQUEST_TIMEOUT, envelop)
-    metricsInfo.requestTimeout(envelop.recipient)
+    metricsInfo.requestTimeout(envelop)
   })
 
   socket.on(MetricType.GOT_TICK, (envelop) => {
