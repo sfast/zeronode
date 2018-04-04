@@ -1,7 +1,7 @@
 import Seneca from 'seneca'
 import _ from 'underscore'
 
-let seneca = Seneca()
+let seneca = Seneca({timeout: 1000000})
 seneca.client({port: 9000, type: 'tcp'})
 let start = Date.now()
 

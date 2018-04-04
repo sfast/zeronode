@@ -80,23 +80,14 @@ In case you have a question or suggestion you can talk to authors on [Zeronode G
 
 <a name="benchmark"></a>
 ### Benchmark
-All Benchmark tests are completed on Azure D4v2 vm (Intel Xeon® E5-2673 v3).
+All Benchmark tests are completed on Intel(R) Core(TM) i5-6200U CPU @ 2.30GHz.
 
 <table><tbody>
-<tr><td>Request Count</td><td>Data Size</td><td>Average Time</td></tr>
-<tr><td>1000</td><td>10 byte</td><td>212ms</td></tr>
-<tr><td>1000</td><td>1 kbyte</td><td>304ms</td></tr>
-<tr><td>50000</td><td>10 byte</td><td>7398ms</td></tr>
-<tr><td>50000</td><td>1 kbyte</td><td>12524ms</td></tr>
+<tr><td></td><td>Zeronode</td><td>Seneca (tcp)</td><td>Pigato</td></tr>
+<tr><td>1000 msg, 1kb data</td><td>394ms</td><td>2054ms</td><td>342ms</td></tr>
+<tr><td>50000 msg, 1kb data</td><td>11821ms<td>140934ms</td><td>FAIL(100s timeout)</td></tr>
 </tbody></table>
 <br/>
-<table><tbody>
-<tr><td>Tick Count</td><td>Data Size</td><td>Average Time</td></tr>
-<tr><td>1000</td><td>10 byte</td><td>108ms</td></tr>
-<tr><td>1000</td><td>1 kbyte</td><td>184ms</td></tr>
-<tr><td>50000</td><td>10 byte</td><td>3852ms</td></tr>
-<tr><td>50000</td><td>1 kbyte</td><td>6531ms</td></tr>
-</tbody></table>
 
 
 <a name="api"></a>
