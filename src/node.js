@@ -216,7 +216,11 @@ export default class Node extends EventEmitter {
     client.removeAllListeners(MetricType.GOT_TICK)
     client.removeAllListeners(MetricType.SEND_REQUEST)
     client.removeAllListeners(MetricType.GOT_REQUEST)
-    client.removeAllListeners(MetricType.GOT_REPLY)
+    client.removeAllListeners(MetricType.SEND_REPLY_SUCCESS)
+    client.removeAllListeners(MetricType.SEND_REPLY_ERROR)
+    client.removeAllListeners(MetricType.GOT_REPLY_SUCCESS)
+    client.removeAllListeners(MetricType.GOT_REPLY_ERROR)
+    client.removeAllListeners(MetricType.REQUEST_TIMEOUT)
 
     await client.disconnect()
     this::_removeClientAllListeners(client)
@@ -419,7 +423,7 @@ export default class Node extends EventEmitter {
     return this.tickAll({ event, data, filter, down: false, up: true })
   }
 
-  enableMetrics (interval = 1000) {
+  enableMetrics (flushInterval = 600000 /*default is 10 minutes*/) {
     let _scope = _private.get(this)
     let {metric, nodeClients, nodeServer} = _scope
     metric.status = true
@@ -432,14 +436,21 @@ export default class Node extends EventEmitter {
 
     metric.interval = setInterval(() => {
       metric.info.flush()
-      this.emit(events.METRICS, metric.info.loki)
-    }, interval)
+    }, flushInterval)
+  }
+
+  getMetric () {
+    let { metric } = _private.get(this)
+    return metric.info.loki
   }
 
   disableMetrics () {
     let {metric, nodeClients, nodeServer} = _private.get(this)
 
     metric.status = false
+
+    clearInterval(metric.interval)
+
     nodeClients.forEach((client) => {
       client.setMetric(false)
     }, this)
@@ -572,12 +583,12 @@ function _attachMetricsHandlers (socket, metricsInfo) {
 
   socket.on(MetricType.GOT_TICK, (envelop) => {
     this.emit(MetricType.GOT_TICK, envelop)
-    metricsInfo.gotTick(envelop.owner)
+    metricsInfo.gotTick(envelop)
   })
 
   socket.on(MetricType.GOT_REQUEST, (envelop) => {
     this.emit(MetricType.GOT_REQUEST, envelop)
-    metricsInfo.gotRequest(envelop.owner)
+    metricsInfo.gotRequest(envelop)
   })
 
   socket.on(MetricType.GOT_REPLY_SUCCESS, (envelop) => {

@@ -15,3 +15,10 @@ export let events = {
   SERVER_RECONNECT_FAILURE: 10,
   CONNECT_TO_SERVER: 11
 }
+
+export let MetricCollections = {
+  SEND_REQUEST: 'send_request',
+  SEND_TICK: 'send_tick',
+  GOT_REQUEST: 'got_request',
+  GOT_TICK: 'got_tick',
+}

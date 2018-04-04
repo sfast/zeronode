@@ -351,7 +351,6 @@ function onSocketMessage (empty, envelopBuffer) {
     case EnvelopType.REQUEST:
       metric(envelopJSON, 1)
       // ** if metric is enabled then emit it
-      if (metric && !mainEvent) this.emit(MetricType.GOT_REQUEST, envelop.toJSON())
       this::syncEnvelopHandler(envelop)
       break
     case EnvelopType.RESPONSE:

@@ -3,13 +3,7 @@
  */
 import Loki from 'lokijs'
 import _ from 'underscore'
-
-let collections = {
-  SEND_REQUEST: 'send_request',
-  SEND_TICK: 'send_tick',
-  GOT_REQUEST: 'got_request',
-  GOT_TICK: 'got_tick',
-}
+import {MetricCollections as collections} from './enum'
 
 
 function _createRequest (envelop) {
@@ -18,7 +12,7 @@ function _createRequest (envelop) {
     event: envelop.tag,
     from: envelop.owner,
     to: envelop.recipient,
-    size: envelop.size,
+    size: [envelop.size],
     timeout: false,
     duration: {
       latency: -1,
@@ -49,6 +43,7 @@ export default class Metric {
     this.loki.addCollection(collections.GOT_TICK)
   }
 
+  //actions
   sendRequest (envelop) {
     let collection = this.loki.getCollection(collections.SEND_REQUEST)
     let requestInstance = _createRequest(envelop)
@@ -93,7 +88,7 @@ export default class Metric {
 
     request.success = true
     request.duration = envelop.data.duration
-
+    request.size.push(envelop.size)
     collection.update(request)
   }
 
@@ -105,6 +100,7 @@ export default class Metric {
 
     request.error = true
     request.duration = envelop.data.duration
+    request.size.push(envelop.size)
     collection.update(request)
   }
 
@@ -133,9 +129,7 @@ export default class Metric {
   flush () {
     _.each(collections, (collectionName) => {
       let collection = this.loki.getCollection(collectionName)
-      if (collection.count() > 1000) {
-        collection.removeWhere(() => true)
-      }
+      collection.removeWhere(() => true)
     })
   }
 }
