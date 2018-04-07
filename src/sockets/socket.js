@@ -22,7 +22,7 @@ function _calculateLatency({ sendTime, getTime, replyTime, replyGetTime }) {
   }
 }
 
-function nop () {}
+const nop = () => {}
 
 /**
  *

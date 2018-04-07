@@ -1,135 +1,179 @@
 /**
- * Created by root on 7/12/17.
+ * Created by dhar on 7/12/17.
  */
+
 import Loki from 'lokijs'
-import _ from 'underscore'
-import {MetricCollections as collections} from './enum'
+import { MetricCollections } from './enum'
 
+const truePredicate = () => true
 
-function _createRequest (envelop) {
-  return {
-    id: envelop.id,
-    event: envelop.tag,
-    from: envelop.owner,
-    to: envelop.recipient,
-    size: [envelop.size],
-    timeout: false,
-    duration: {
-      latency: -1,
-      process: -1
-    },
-    success: false,
-    error: false,
+const MetricUtils = {
+  createRequest: (envelop) => {
+    return {
+      id: envelop.id,
+      event: envelop.tag,
+      from: envelop.owner,
+      to: envelop.recipient,
+      size: [envelop.size],
+      timeout: false,
+      duration: {
+        latency: -1,
+        process: -1
+      },
+      success: false,
+      error: false
+    }
+  },
+  createTick: (envelop) => {
+    return {
+      id: envelop.id,
+      event: envelop.tag,
+      from: envelop.owner,
+      to: envelop.recipient,
+      size: envelop.size
+    }
   }
 }
 
-function _createTick (envelop) {
-  return {
-    id: envelop.id,
-    event: envelop.tag,
-    from: envelop.owner,
-    to: envelop.recipient,
-    size: envelop.size
-  }
-}
+let _private = new WeakMap()
 
 export default class Metric {
-  constructor ({id}) {
-    this.id = id
-    this.loki = new Loki('metric.db')
-    this.loki.addCollection(collections.SEND_REQUEST)
-    this.loki.addCollection(collections.SEND_TICK)
-    this.loki.addCollection(collections.GOT_REQUEST)
-    this.loki.addCollection(collections.GOT_TICK)
+  constructor ({id} = {}) {
+    let ZeronodeMetricDB = new Loki('zeronode.db')
+
+    let _scope = {
+      id,
+      enabled: false,
+      // ** loki collections
+      sendRequestCollection: ZeronodeMetricDB.addCollection(MetricCollections.SEND_REQUEST, { indices: ['id'] }),
+      gotRequestCollection: ZeronodeMetricDB.addCollection(MetricCollections.GOT_REQUEST, { indices: ['id'] }),
+      sendTickCollection: ZeronodeMetricDB.addCollection(MetricCollections.SEND_TICK, { indices: ['id'] }),
+      gotTickCollection: ZeronodeMetricDB.addCollection(MetricCollections.GOT_TICK, { indices: ['id'] }),
+      flushInterval: null
+    }
+    _private.set(this, _scope)
+    this.db = ZeronodeMetricDB
   }
 
-  //actions
+  get status () {
+    let { enabled } = _private.get(this)
+    return enabled
+  }
+
+  enable (flushInterval) {
+    let _scope = _private.get(this)
+    _scope.enabled = true
+    _scope.flushInterval = setInterval(() => {
+      this.flush()
+    }, flushInterval)
+  }
+
+  disable () {
+    let _scope = _private.get(this)
+    _scope.enabled = false
+    if (_scope.flushInterval) {
+      clearInterval(_scope.flushInterval)
+      this.flush()
+    }
+  }
+
+  // ** actions
   sendRequest (envelop) {
-    let collection = this.loki.getCollection(collections.SEND_REQUEST)
-    let requestInstance = _createRequest(envelop)
-    collection.insert(requestInstance)
+    let { sendRequestCollection, enabled } = _private.get(this)
+    if (!enabled) return
+    let requestInstance = MetricUtils.createRequest(envelop)
+    sendRequestCollection.insert(requestInstance)
   }
 
   gotRequest (envelop) {
-    let collection = this.loki.getCollection(collections.GOT_REQUEST)
-    let requestInstance = _createRequest(envelop)
-    collection.insert(requestInstance)
+    let { gotRequestCollection, enabled } = _private.get(this)
+    if (!enabled) return
+    let requestInstance = MetricUtils.createRequest(envelop)
+    gotRequestCollection.insert(requestInstance)
   }
 
   sendReplySuccess (envelop) {
-    let collection = this.loki.getCollection(collections.GOT_REQUEST)
-    let request = collection.findOne({ id: envelop.id })
+    let { gotRequestCollection, enabled } = _private.get(this)
+    if (!enabled) return
+    let request = gotRequestCollection.findOne({ id: envelop.id })
 
     if (!request) return
 
     request.success = true
     request.duration = envelop.data.duration
 
-    collection.update(request)
+    gotRequestCollection.update(request)
   }
 
   sendReplyError (envelop) {
-    let collection = this.loki.getCollection(collections.GOT_REQUEST)
-    let request = collection.findOne({ id: envelop.id })
+    let { gotRequestCollection, enabled } = _private.get(this)
+    if (!enabled) return
+    let request = gotRequestCollection.findOne({ id: envelop.id })
 
     if (!request) return
 
     request.error = true
     request.duration = envelop.data.duration
 
-    collection.update(request)
+    gotRequestCollection.update(request)
   }
 
   gotReplySuccess (envelop) {
-    let collection = this.loki.getCollection(collections.SEND_REQUEST)
-    let request = collection.findOne({ id: envelop.id })
+    let { sendRequestCollection, enabled } = _private.get(this)
+    if (!enabled) return
+    let request = sendRequestCollection.findOne({ id: envelop.id })
 
     if (!request) return
 
     request.success = true
     request.duration = envelop.data.duration
     request.size.push(envelop.size)
-    collection.update(request)
+    sendRequestCollection.update(request)
   }
 
   gotReplyError (envelop) {
-    let collection = this.loki.getCollection(collections.SEND_REQUEST)
-    let request = collection.findOne({ id: envelop.id })
+    let { sendRequestCollection, enabled } = _private.get(this)
+    if (!enabled) return
+    let request = sendRequestCollection.findOne({ id: envelop.id })
 
     if (!request) return
 
     request.error = true
     request.duration = envelop.data.duration
     request.size.push(envelop.size)
-    collection.update(request)
-  }
-
-  sendTick (envelop) {
-    let collection = this.loki.getCollection(collections.SEND_TICK)
-    let tickInstance = _createTick(envelop)
-    collection.insert(tickInstance)
-  }
-
-  gotTick (envelop) {
-    let collection = this.loki.getCollection(collections.GOT_TICK)
-    let tickInstance = _createTick(envelop)
-    collection.insert(tickInstance)
+    sendRequestCollection.update(request)
   }
 
   requestTimeout (envelop) {
-    let collection = this.loki.getCollection(collections.SEND_REQUEST)
-    let request = collection.findOne({ id: envelop.id })
+    let { sendRequestCollection, enabled } = _private.get(this)
+    if (!enabled) return
+    let request = sendRequestCollection.findOne({ id: envelop.id })
 
     if (!request) return
 
     request.timeout = true
-    collection.update(request)
+    sendRequestCollection.update(request)
+  }
+
+  sendTick (envelop) {
+    let { sendTickCollection, enabled } = _private.get(this)
+    if (!enabled) return
+    let tickInstance = MetricUtils.createTick(envelop)
+    sendTickCollection.insert(tickInstance)
+  }
+
+  gotTick (envelop) {
+    let { gotTickCollection, enabled } = _private.get(this)
+    if (!enabled) return
+    let tickInstance = MetricUtils.createTick(envelop)
+    gotTickCollection.insert(tickInstance)
   }
 
   flush () {
-    _.each(collections, (collectionName) => {
-      let collection = this.loki.getCollection(collectionName)
-      collection.removeWhere(() => true)
-    })
+    let { sendRequestCollection, sendTickCollection, gotRequestCollection, gotTickCollection } = _private.get(this)
+    sendRequestCollection.removeWhere(truePredicate)
+    sendTickCollection.removeWhere(truePredicate)
+    gotRequestCollection.removeWhere(truePredicate)
+    gotTickCollection.removeWhere(truePredicate)
   }
 }

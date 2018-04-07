@@ -37,15 +37,15 @@ export default class Node extends EventEmitter {
 
     this.logger = config.logger || defaultLogger
 
+    // ** default metric is disabled
+    let metric = new Metric({id})
+
     let _scope = {
       id,
       bind,
       options,
       config,
-      metric: {
-        status: false,
-        info: new Metric({id}),
-      },
+      metric,
       nodeServer: null,
       nodeClients: new Map(),
       nodeClientsAddressIndex: new Map(),
@@ -152,8 +152,6 @@ export default class Node extends EventEmitter {
 
     let _scope = _private.get(this)
     let { id, metric, nodeClientsAddressIndex, nodeClients, config } = _scope
-    let metricEnabled = metric.status
-    let metricInfo = metric.info
     let clientConfig = config
 
     if (reconnectionTimeout) clientConfig = Object.assign({}, config, { RECONNECTION_TIMEOUT: reconnectionTimeout })
@@ -177,11 +175,11 @@ export default class Node extends EventEmitter {
     client.on(events.SERVER_RECONNECT_FAILURE, (serverActor) => this.emit(events.SERVER_RECONNECT_FAILURE, serverActor))
 
     // **
-    client.setMetric(metricEnabled)
+    client.setMetric(metric.status)
 
     let { actorId } = await client.connect(address, timeout)
 
-    this::_attachMetricsHandlers(client, metricInfo)
+    this::_attachMetricsHandlers(client, metric)
 
     this.logger.info(`Node connected: ${this.getId()} -> ${actorId}`)
 
@@ -426,30 +424,23 @@ export default class Node extends EventEmitter {
   enableMetrics (flushInterval = 600000 /*default is 10 minutes*/) {
     let _scope = _private.get(this)
     let {metric, nodeClients, nodeServer} = _scope
-    metric.status = true
+    metric.enable(flushInterval)
 
     nodeClients.forEach((client) => {
       client.setMetric(true)
     }, this)
 
     nodeServer.setMetric(true)
-
-    metric.interval = setInterval(() => {
-      metric.info.flush()
-    }, flushInterval)
   }
 
   getMetric () {
     let { metric } = _private.get(this)
-    return metric.info.loki
+    return metric.db
   }
 
   disableMetrics () {
     let {metric, nodeClients, nodeServer} = _private.get(this)
-
-    metric.status = false
-
-    clearInterval(metric.interval)
+    metric.disable()
 
     nodeClients.forEach((client) => {
       client.setMetric(false)
@@ -475,9 +466,6 @@ function _initNodeServer () {
   let _scope = _private.get(this)
   let {id, bind, options, metric, config} = _scope
 
-  let metricStatus = metric.status
-  let metricsInfo = metric.info
-
   let nodeServer = new Server({ id, bind, options, config })
   // ** handlers for nodeServer
   nodeServer.on('error', (err) => this.emit('error', err))
@@ -486,8 +474,8 @@ function _initNodeServer () {
   nodeServer.on(events.CLIENT_STOP, (clientActor) => this.emit(events.CLIENT_STOP, clientActor))
 
   // ** enabling metrics
-  nodeServer.setMetric(metricStatus)
-  this::_attachMetricsHandlers(nodeServer, metricsInfo)
+  nodeServer.setMetric(metric.status)
+  this::_attachMetricsHandlers(nodeServer, metric)
 
   _scope.nodeServer = nodeServer
 }
@@ -555,49 +543,49 @@ function _removeClientAllListeners (client) {
   }, this)
 }
 
-function _attachMetricsHandlers (socket, metricsInfo) {
+function _attachMetricsHandlers (socket, metric) {
   socket.on(MetricType.SEND_TICK, (envelop) => {
     this.emit(MetricType.SEND_TICK, envelop)
-    metricsInfo.sendTick(envelop)
+    metric.sendTick(envelop)
   })
 
   socket.on(MetricType.SEND_REQUEST, (envelop) => {
     this.emit(MetricType.SEND_REQUEST, envelop)
-    metricsInfo.sendRequest(envelop)
+    metric.sendRequest(envelop)
   })
 
   socket.on(MetricType.SEND_REPLY_SUCCESS, (envelop) => {
     this.emit(MetricType.SEND_REPLY_SUCCESS, envelop)
-    metricsInfo.sendReplySuccess(envelop)
+    metric.sendReplySuccess(envelop)
   })
 
   socket.on(MetricType.SEND_REPLY_ERROR, (envelop) => {
     this.emit(MetricType.SEND_REPLY_ERROR, envelop)
-    metricsInfo.sendReplyError(envelop)
+    metric.sendReplyError(envelop)
   })
 
   socket.on(MetricType.REQUEST_TIMEOUT, (envelop) => {
     this.emit(MetricType.REQUEST_TIMEOUT, envelop)
-    metricsInfo.requestTimeout(envelop)
+    metric.requestTimeout(envelop)
   })
 
   socket.on(MetricType.GOT_TICK, (envelop) => {
     this.emit(MetricType.GOT_TICK, envelop)
-    metricsInfo.gotTick(envelop)
+    metric.gotTick(envelop)
   })
 
   socket.on(MetricType.GOT_REQUEST, (envelop) => {
     this.emit(MetricType.GOT_REQUEST, envelop)
-    metricsInfo.gotRequest(envelop)
+    metric.gotRequest(envelop)
   })
 
   socket.on(MetricType.GOT_REPLY_SUCCESS, (envelop) => {
     this.emit(MetricType.GOT_REPLY_SUCCESS, envelop)
-    metricsInfo.gotReplySuccess(envelop)
+    metric.gotReplySuccess(envelop)
   })
 
   socket.on(MetricType.GOT_REPLY_ERROR, (envelop) => {
     this.emit(MetricType.GOT_REPLY_ERROR, envelop)
-    metricsInfo.gotReplyError(envelop)
+    metric.gotReplyError(envelop)
   })
 }

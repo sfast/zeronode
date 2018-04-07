@@ -1,5 +1,4 @@
 import { assert } from 'chai'
-import _ from 'underscore'
 
 import { Node, MetricEvents, ErrorCodes } from '../src'
 
