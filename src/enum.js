@@ -20,5 +20,6 @@ export const MetricCollections = {
   SEND_REQUEST: 'send_request',
   SEND_TICK: 'send_tick',
   GOT_REQUEST: 'got_request',
-  GOT_TICK: 'got_tick'
+  GOT_TICK: 'got_tick',
+  AGGREGATION: 'aggregation'
 }

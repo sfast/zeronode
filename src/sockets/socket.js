@@ -17,7 +17,7 @@ function _calculateLatency({ sendTime, getTime, replyTime, replyGetTime }) {
   let requestTime = (replyGetTime[0] * 10e9 + replyGetTime[1]) - (sendTime[0] * 10e9 + sendTime[1])
 
   return {
-    processTime,
+    process: processTime,
     latency: requestTime - processTime
   }
 }

@@ -421,7 +421,7 @@ export default class Node extends EventEmitter {
     return this.tickAll({ event, data, filter, down: false, up: true })
   }
 
-  enableMetrics (flushInterval = 600000 /*default is 10 minutes*/) {
+  enableMetrics (flushInterval) {
     let _scope = _private.get(this)
     let {metric, nodeClients, nodeServer} = _scope
     metric.enable(flushInterval)
@@ -433,9 +433,9 @@ export default class Node extends EventEmitter {
     nodeServer.setMetric(true)
   }
 
-  getMetric () {
+  get metric () {
     let { metric } = _private.get(this)
-    return metric.db
+    return metric
   }
 
   disableMetrics () {
