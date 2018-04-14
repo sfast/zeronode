@@ -11,8 +11,7 @@ import Watchers from './watchers'
 
 let _private = new WeakMap()
 
-
-function _calculateLatency({ sendTime, getTime, replyTime, replyGetTime }) {
+function _calculateLatency ({ sendTime, getTime, replyTime, replyGetTime }) {
   let processTime = (replyTime[0] * 10e9 + replyTime[1]) - (getTime[0] * 10e9 + getTime[1])
   let requestTime = (replyGetTime[0] * 10e9 + replyGetTime[1]) - (sendTime[0] * 10e9 + sendTime[1])
 
@@ -90,13 +89,13 @@ class Socket extends EventEmitter {
       online: false,
       metric: nop,
       isDebugMode: false,
-      monitorRestartInterval : null,
+      monitorRestartInterval: null,
       requests: new Map(),
-      requestWatcherMap:  {
+      requestWatcherMap: {
         main: new Map(),
         custom: new Map()
       },
-      tickEmitter : {
+      tickEmitter: {
         main: new EventEmitter(),
         custom: new EventEmitter()
       }

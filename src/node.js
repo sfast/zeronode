@@ -144,7 +144,7 @@ export default class Node extends EventEmitter {
     return nodeServer.unbind()
   }
 
-    // ** connect returns the id of the connected node
+  // ** connect returns the id of the connected node
   async connect ({ address, timeout, reconnectionTimeout } = {}) {
     if (typeof address !== 'string' || address.length === 0) {
       throw new Error(`Wrong type for argument address ${address}`)
@@ -193,7 +193,7 @@ export default class Node extends EventEmitter {
     return client.getServerActor().toJSON()
   }
 
-    // TODO::avar maybe disconnect from node ?
+  // TODO::avar maybe disconnect from node ?
   async disconnect (address = 'tcp://127.0.0.1:3000') {
     if (typeof address !== 'string' || address.length === 0) {
       throw new Error(`Wrong type for argument address ${address}`)
@@ -289,7 +289,7 @@ export default class Node extends EventEmitter {
 
     tickWatcher.addFn(fn)
 
-        // ** _scope.nodeServer is constructed in Node constructor
+    // ** _scope.nodeServer is constructed in Node constructor
     nodeServer.onTick(event, fn)
 
     nodeClients.forEach((client) => {
@@ -522,7 +522,7 @@ function _addExistingListenersToClient (client) {
 
   // ** adding previously added onRequests-s for this client to
   _scope.requestWatcherMap.forEach((requestWatcher, requestEvent) => {
-        // ** TODO what about order of functions ?
+    // ** TODO what about order of functions ?
     requestWatcher.getFnMap().forEach((index, fn) => {
       client.onRequest(requestEvent, this::fn)
     }, this)
@@ -532,7 +532,7 @@ function _addExistingListenersToClient (client) {
 function _removeClientAllListeners (client) {
   let _scope = _private.get(this)
 
-    // ** removing all handlers
+  // ** removing all handlers
   _scope.tickWatcherMap.forEach((tickWatcher, event) => {
     client.offTick(event)
   }, this)

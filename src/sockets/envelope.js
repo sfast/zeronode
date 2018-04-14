@@ -4,7 +4,7 @@ import BufferAlloc from 'buffer-alloc'
 import BufferFrom from 'buffer-from'
 
 class Parse {
-    // serialize
+  // serialize
   static dataToBuffer (data) {
     try {
       return BufferFrom(JSON.stringify({ data }))
@@ -13,7 +13,7 @@ class Parse {
     }
   }
 
-    // deserialize
+  // deserialize
   static bufferToData (data) {
     try {
       let ob = JSON.parse(data.toString())
@@ -56,7 +56,7 @@ export default class Envelop {
     }
   }
 
-    /**
+  /**
      *
      * @param buffer
      * @description {

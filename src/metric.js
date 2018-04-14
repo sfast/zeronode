@@ -44,7 +44,7 @@ const MetricUtils = {
 let _private = new WeakMap()
 
 const _updateAggregationTable = function () {
-  let _scope =_private.get(this)
+  let _scope = _private.get(this)
 
   let { aggregationTable, customColumns } = _scope
   // resetting timeout and count
@@ -52,7 +52,7 @@ const _updateAggregationTable = function () {
   clearTimeout(_scope.flushTimeoutInstance)
   _scope.flushTimeoutInstance = setTimeout(this::_updateAggregationTable, _scope.flushTimeout)
 
-  //getting requests and ticks
+  // getting requests and ticks
   let sendRequests = _scope.sendRequestCollection.where(finishedPredicate)
   let gotRequests = _scope.gotRequestCollection.where(finishedPredicate)
   let sendTicks = _scope.sendTickCollection.where(truePredicate)
@@ -66,7 +66,7 @@ const _updateAggregationTable = function () {
 
   // updating row in aggregation table
   const updateRequestRow = (node, event, groupedRequests, out = false) => {
-    let row = aggregationTable.findOne({ node, event, out, request: true})
+    let row = aggregationTable.findOne({ node, event, out, request: true })
 
     if (!row) {
       row = {
@@ -80,7 +80,7 @@ const _updateAggregationTable = function () {
         success: 0,
         error: 0,
         timeout: 0,
-        size: 0,
+        size: 0
       }
       _.each(customColumns, ({initialValue}, columnName) => {
         row[columnName] = initialValue
@@ -94,14 +94,14 @@ const _updateAggregationTable = function () {
     let allCount = row.count
     let initialCount = row.count - row.timeout
 
-    _.each (groupedRequests, (request) => {
-      row.count++;
+    _.each(groupedRequests, (request) => {
+      row.count++
       row.success += request.success
       row.error += request.error
       row.timeout += request.timeout
       latencySum += request.duration.latency
       processSum += request.duration.process
-      sizeSum += request.size[0] + request.size[1];
+      sizeSum += request.size[0] + request.size[1]
       _.each(customColumns, ({reducer}, columnName) => {
         row[columnName] = reducer(row, request)
       })
@@ -114,9 +114,9 @@ const _updateAggregationTable = function () {
     aggregationTable.update(row)
   }
 
-  //updating row in aggregation table
+  // updating row in aggregation table
   const updateTickRow = (node, event, groupedTicks, out = false) => {
-    let row = aggregationTable.find({ node, event, out, request: false})
+    let row = aggregationTable.find({ node, event, out, request: false })
     if (!row) {
       row = {
         node,
@@ -124,7 +124,7 @@ const _updateAggregationTable = function () {
         out,
         request: false,
         count: 0,
-        size: 0,
+        size: 0
       }
       _.each(customColumns, ({initialValue}, columnName) => {
         row[columnName] = initialValue
@@ -135,9 +135,9 @@ const _updateAggregationTable = function () {
     let sizeSum = 0
     let initialCount = row.count
 
-    _.each (groupedTicks, (request) => {
-      row.count++;
-      sizeSum += request.size;
+    _.each(groupedTicks, (request) => {
+      row.count++
+      sizeSum += request.size
       _.each(customColumns, ({reducer}, columnName) => {
         row[columnName] = reducer(row, request)
       })
@@ -147,7 +147,6 @@ const _updateAggregationTable = function () {
 
     aggregationTable.update(row)
   }
-
 
   _.each(sendRequests, (groupedRequests) => {
     updateRequestRow(groupedRequests[0].to, groupedRequests[0].event, groupedRequests, true)
@@ -162,9 +161,7 @@ const _updateAggregationTable = function () {
     updateTickRow(groupedTicks[0].from, groupedTicks[0].event, groupedTicks)
   })
 
-
   this.flush()
-
 }
 
 export default class Metric {
@@ -179,7 +176,7 @@ export default class Metric {
       gotRequestCollection: ZeronodeMetricDB.addCollection(MetricCollections.GOT_REQUEST, { indices: ['id'] }),
       sendTickCollection: ZeronodeMetricDB.addCollection(MetricCollections.SEND_TICK, { indices: ['id'] }),
       gotTickCollection: ZeronodeMetricDB.addCollection(MetricCollections.GOT_TICK, { indices: ['id'] }),
-      aggregationTable: ZeronodeMetricDB.addCollection(MetricCollections.AGGREGATION, { indices: ['node', 'event']}),
+      aggregationTable: ZeronodeMetricDB.addCollection(MetricCollections.AGGREGATION, { indices: ['node', 'event'] }),
       flushTimeoutInstance: null,
       flushTimeout: 30 * 1000,
       customColumns: {},
@@ -213,7 +210,7 @@ export default class Metric {
       size: 0
     }
 
-    //calculating total
+    // calculating total
     total = _.reduce(result, (memo, row) => {
       let initialCount = memo.count
       let initialOut = memo.out
@@ -221,15 +218,18 @@ export default class Metric {
       memo.count += row.count
       row.out ? memo.out += row.count : memo.in += row.count
       row.request ? memo.request += row.count : memo.tick += row.count
+
       if (row.request) {
         memo.error += row.error
         memo.success += row.success
         memo.timeout += row.timeout
+
         if (row.out) {
           memo.latency = averageCalc(memo.latency, initialOut - initialTimeout, row.latency, row.count - row.timeout)
           memo.process = averageCalc(memo.process, initialOut - initialTimeout, row.process, row.count - row.timeout)
         }
       }
+
       memo.size = averageCalc(memo.size, initialCount, row.size, row.count)
       return memo
     }, total)
@@ -239,7 +239,7 @@ export default class Metric {
 
   defineColumn (columnName, initialValue, reducer, isIndex = false) {
     let { aggregationTable, customColumns } = _private.get(this)
-    if (this.status) throw new Error('can\'t define column after metrics enabled')
+    if (this.status) throw new Error(`Can't define column after metrics enabled`)
     if (isIndex) {
       aggregationTable.ensureIndex(columnName)
     }
@@ -257,9 +257,9 @@ export default class Metric {
   disable () {
     let _scope = _private.get(this)
     _scope.enabled = false
+    clearTimeout(_scope.flushTimeoutInstance)
     this::_updateAggregationTable()
     _scope.count = 0
-    clearTimeout(_scope.flushTimeoutInstance)
   }
 
   // ** actions
@@ -326,7 +326,6 @@ export default class Metric {
     request.size.push(envelop.size)
     sendRequestCollection.update(request)
 
-
     if (++_scope.count === 1000) {
       this::_updateAggregationTable()
     }
@@ -369,7 +368,6 @@ export default class Metric {
     let tickInstance = MetricUtils.createTick(envelop)
     sendTickCollection.insert(tickInstance)
 
-
     if (++_scope.count === 1000) {
       this::_updateAggregationTable()
     }
@@ -388,11 +386,12 @@ export default class Metric {
   }
 
   flush () {
-    let { sendRequestCollection, sendTickCollection, gotRequestCollection, gotTickCollection } = _private.get(this)
+    let _scope = _private.get(this)
+    let { sendRequestCollection, sendTickCollection, gotRequestCollection, gotTickCollection } = _scope
     sendRequestCollection.removeWhere(finishedPredicate)
     sendTickCollection.removeWhere(finishedPredicate)
     gotRequestCollection.removeWhere(truePredicate)
     gotTickCollection.removeWhere(truePredicate)
-    this.count = 0
+    _scope.count = 0
   }
 }

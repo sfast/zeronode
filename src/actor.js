@@ -50,7 +50,7 @@ export default class ActorModel {
     this.setOffline()
   }
 
-    // ** marking ghost means that there was some ping delay but that doeas not actually mean that its not there
+  // ** marking ghost means that there was some ping delay but that doeas not actually mean that its not there
   markGhost () {
     this.ghost = Date.now()
   }
