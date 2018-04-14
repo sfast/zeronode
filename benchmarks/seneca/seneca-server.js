@@ -1,6 +1,6 @@
 import Seneca from 'seneca'
 
-let seneca = Seneca();
+let seneca = Seneca({timeout: 1000000});
 
 seneca.add('foo:*', (msg, reply) => {
   // console.log('received request:', msg)

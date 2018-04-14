@@ -1,4 +1,9 @@
-Version: 1.1.6 (Feb 9 2017, Artak Vardanyan, David Harutyunyan)
+Version: 1.1.7 (April 8 2018, Artak Vardanyan, David Harutyunyan)
+- added way to reject request with .error(err)
+- changelog date fixed
+- added metrics collection
+
+Version: 1.1.6 (Feb 9 2018, Artak Vardanyan, David Harutyunyan)
 - bug fix
 - test coverage ~ 90%
 - Readme updates

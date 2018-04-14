@@ -4,7 +4,7 @@ import BufferAlloc from 'buffer-alloc'
 import BufferFrom from 'buffer-from'
 
 class Parse {
-    // serialize
+  // serialize
   static dataToBuffer (data) {
     try {
       return BufferFrom(JSON.stringify({ data }))
@@ -13,7 +13,7 @@ class Parse {
     }
   }
 
-    // deserialize
+  // deserialize
   static bufferToData (data) {
     try {
       let ob = JSON.parse(data.toString())
@@ -44,7 +44,19 @@ export default class Envelop {
     this.recipient = recipient
   }
 
-    /**
+  toJSON () {
+    return {
+      type: this.type,
+      id: this.id,
+      tag: this.tag,
+      data: this.data,
+      owner: this.owner,
+      recipient: this.recipient,
+      mainEvent: this.mainEvent
+    }
+  }
+
+  /**
      *
      * @param buffer
      * @description {
@@ -184,7 +196,7 @@ export default class Envelop {
     this.recipient = recipient
   }
 
-    // ** type of envelop
+  // ** type of envelop
 
   getType () {
     return this.type
@@ -194,7 +206,7 @@ export default class Envelop {
     this.type = type
   }
 
-    // ** data of envelop
+  // ** data of envelop
 
   getData (data) {
     return this.data

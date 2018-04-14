@@ -113,12 +113,12 @@ export default class RouterSocket extends Socket {
 
   //* Polymorphic Functions
   request ({to, event, data, timeout, mainEvent = false} = {}) {
-    let envelop = new Envelop({type: EnvelopType.SYNC, tag: event, data, owner: this.getId(), recipient: to, mainEvent})
+    let envelop = new Envelop({type: EnvelopType.REQUEST, tag: event, data, owner: this.getId(), recipient: to, mainEvent})
     return super.request(envelop, timeout)
   }
 
   tick ({to, event, data, mainEvent = false} = {}) {
-    let envelop = new Envelop({type: EnvelopType.ASYNC, tag: event, data: data, owner: this.getId(), recipient: to, mainEvent})
+    let envelop = new Envelop({type: EnvelopType.TICK, tag: event, data: data, owner: this.getId(), recipient: to, mainEvent})
     return super.tick(envelop)
   }
 

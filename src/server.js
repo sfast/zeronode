@@ -25,16 +25,16 @@ export default class Server extends RouterSocket {
 
     this.setAddress(bind)
 
-      // ** ATTACHING client connected
+    // ** ATTACHING client connected
     this.onRequest(events.CLIENT_CONNECTED, this::_clientConnectedRequest, true)
 
-      // ** ATTACHING client stop
+    // ** ATTACHING client stop
     this.onRequest(events.CLIENT_STOP, this::_clientStopRequest, true)
 
-      // ** ATTACHING client ping
+    // ** ATTACHING client ping
     this.onTick(events.CLIENT_PING, this::_clientPingTick, true)
 
-      // ** ATTACHING CLIENT OPTIONS SYNCING
+    // ** ATTACHING CLIENT OPTIONS SYNCING
     this.onTick(events.OPTIONS_SYNC, this::_clientOptionsSync, true)
   }
 
@@ -98,7 +98,7 @@ export default class Server extends RouterSocket {
 // ** Request handlers
 function _clientPingTick ({actor, stamp}) {
   let {clientModels} = _private.get(this)
-    // ** PING DATA FROM CLIENT, actor is client id
+  // ** PING DATA FROM CLIENT, actor is client id
 
   let actorModel = clientModels.get(actor)
 
@@ -138,7 +138,7 @@ function _clientConnectedRequest (request) {
   }
 
   let replyData = {actorId: this.getId(), options: this.getOptions()}
-    // ** replyData {actorId, options}
+  // ** replyData {actorId, options}
   request.reply(replyData)
 
   this.emit(events.CLIENT_CONNECTED, actorModel.toJSON())
