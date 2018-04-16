@@ -481,7 +481,7 @@ We'll be happy to answer your questions. Try to reach out us on zeronode gitter 
 <a name="contributing"></a>
 ### Contributing
 Contributions are always welcome! <br/>
-Please read the [contribution guidelines](https://github.com/sfast/zeronode/blob/master/CONTRIBUTING.md) first.
+Please read the [contribution guidelines](https://github.com/sfast/zeronode/blob/master/docs/CONTRIBUTING.md) first.
 
 ### Contributors
 * [Artak Vardanyan](https://github.com/artakvg)
