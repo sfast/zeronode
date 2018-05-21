@@ -80,7 +80,7 @@ All aggregations are stored in Aggregation table.
 ### How to define column
 You can define custom column in aggregation table, for collecting specific metrics.
 ```javascript
-node.metricdefineColumn (columnName: String, initialValue, reducer: function, isIndex: Boolean)
+node.metric.defineColumn(columnName: String, initialValue, reducer: function, isIndex: Boolean)
 /*
 columenName: is name of column.
 initialvalue:  is initial value of column, used in reducer.
@@ -98,7 +98,7 @@ reducers first parameter is row, second parameter is requesy/tick record.
 Define Column 
 ```javascript
 let node = new Node()
-node.metrics.defineColumn('foo', 0, (row, record) => {
+node.metric.defineColumn('foo', 0, (row, record) => {
   //update value, by using row.foo value and record info.
 }, true)
 
@@ -111,7 +111,7 @@ Make query
 ```javasript
 let node = new Node()
 node.enableMetrics(100)
-let { result, total }node.metrics.getMetrics({
+let { result, total }node.metric.getMetrics({
     request: true,
     out: true,
     latency: {'$lt': 10e9}
