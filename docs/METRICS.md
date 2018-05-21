@@ -92,3 +92,30 @@ reducers first parameter is row, second parameter is requesy/tick record.
 
 ```
 
+
+### Examples 
+
+Define Column 
+```javascript
+let node = new Node()
+node.metrics.defineColumn('foo', 0, (row, record) => {
+  //update value, by using row.foo value and record info.
+}, true)
+
+//this will create column with name foo and 0 initial value 
+```
+
+<br>
+
+Make query
+```javasript
+let node = new Node()
+node.enableMetrics(100)
+let { result, total }node.metrics.getMetrics({
+    request: true,
+    out: true,
+    latency: {'$lt': 10e9}
+})
+
+// this query will return all sent request rows, that have latency lower than 1 second.
+```
