@@ -2,7 +2,7 @@
  * Created by artak on 2/15/17.
  */
 
-export let events = {
+export const events = {
   CLIENT_CONNECTED: 1,
   CLIENT_FAILURE: 2,
   CLIENT_STOP: 3,
@@ -14,4 +14,12 @@ export let events = {
   METRICS: 9,
   SERVER_RECONNECT_FAILURE: 10,
   CONNECT_TO_SERVER: 11
+}
+
+export const MetricCollections = {
+  SEND_REQUEST: 'send_request',
+  SEND_TICK: 'send_tick',
+  GOT_REQUEST: 'got_request',
+  GOT_TICK: 'got_tick',
+  AGGREGATION: 'aggregation'
 }

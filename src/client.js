@@ -45,7 +45,7 @@ export default class Client extends DealerSocket {
     try {
       let _scope = _private.get(this)
 
-        // actually connected
+      // actually connected
       await super.connect(serverAddress, timeout)
 
       let requestData = {

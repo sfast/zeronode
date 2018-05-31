@@ -1,3 +1,4 @@
+-  // sockets/socket.js we need to add replyError () also add this in docs
 -  // TODO::dhar maybe we need metrics by tags also under socket/socket.js
 -  ~~// TODO::dhar check if all ticked events will reach clients even if we'll unbind quickly~~, (tested, it's ok)
 -  // TODO::dhar optimize winner node,

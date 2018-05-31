@@ -39,7 +39,4 @@ jspm_packages
 .idea/*
 dist/
 
-# Added for docdash documents genereted by npm run doc
-docs/
-
 tmp/

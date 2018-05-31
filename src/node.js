@@ -37,16 +37,15 @@ export default class Node extends EventEmitter {
 
     this.logger = config.logger || defaultLogger
 
+    // ** default metric is disabled
+    let metric = new Metric({id})
+
     let _scope = {
       id,
       bind,
       options,
       config,
-      metric: {
-        status: false,
-        info: new Metric({id}),
-        interval: null
-      },
+      metric,
       nodeServer: null,
       nodeClients: new Map(),
       nodeClientsAddressIndex: new Map(),
@@ -145,7 +144,7 @@ export default class Node extends EventEmitter {
     return nodeServer.unbind()
   }
 
-    // ** connect returns the id of the connected node
+  // ** connect returns the id of the connected node
   async connect ({ address, timeout, reconnectionTimeout } = {}) {
     if (typeof address !== 'string' || address.length === 0) {
       throw new Error(`Wrong type for argument address ${address}`)
@@ -153,8 +152,6 @@ export default class Node extends EventEmitter {
 
     let _scope = _private.get(this)
     let { id, metric, nodeClientsAddressIndex, nodeClients, config } = _scope
-    let metricEnabled = metric.status
-    let metricInfo = metric.info
     let clientConfig = config
 
     if (reconnectionTimeout) clientConfig = Object.assign({}, config, { RECONNECTION_TIMEOUT: reconnectionTimeout })
@@ -178,11 +175,11 @@ export default class Node extends EventEmitter {
     client.on(events.SERVER_RECONNECT_FAILURE, (serverActor) => this.emit(events.SERVER_RECONNECT_FAILURE, serverActor))
 
     // **
-    client.setMetric(metricEnabled)
+    client.setMetric(metric.status)
 
     let { actorId } = await client.connect(address, timeout)
 
-    this::_attachMetricsHandlers(client, metricInfo)
+    this::_attachMetricsHandlers(client, metric)
 
     this.logger.info(`Node connected: ${this.getId()} -> ${actorId}`)
 
@@ -196,7 +193,7 @@ export default class Node extends EventEmitter {
     return client.getServerActor().toJSON()
   }
 
-    // TODO::avar maybe disconnect from node ?
+  // TODO::avar maybe disconnect from node ?
   async disconnect (address = 'tcp://127.0.0.1:3000') {
     if (typeof address !== 'string' || address.length === 0) {
       throw new Error(`Wrong type for argument address ${address}`)
@@ -217,7 +214,11 @@ export default class Node extends EventEmitter {
     client.removeAllListeners(MetricType.GOT_TICK)
     client.removeAllListeners(MetricType.SEND_REQUEST)
     client.removeAllListeners(MetricType.GOT_REQUEST)
-    client.removeAllListeners(MetricType.GOT_REPLY)
+    client.removeAllListeners(MetricType.SEND_REPLY_SUCCESS)
+    client.removeAllListeners(MetricType.SEND_REPLY_ERROR)
+    client.removeAllListeners(MetricType.GOT_REPLY_SUCCESS)
+    client.removeAllListeners(MetricType.GOT_REPLY_ERROR)
+    client.removeAllListeners(MetricType.REQUEST_TIMEOUT)
 
     await client.disconnect()
     this::_removeClientAllListeners(client)
@@ -288,7 +289,7 @@ export default class Node extends EventEmitter {
 
     tickWatcher.addFn(fn)
 
-        // ** _scope.nodeServer is constructed in Node constructor
+    // ** _scope.nodeServer is constructed in Node constructor
     nodeServer.onTick(event, fn)
 
     nodeClients.forEach((client) => {
@@ -420,35 +421,31 @@ export default class Node extends EventEmitter {
     return this.tickAll({ event, data, filter, down: false, up: true })
   }
 
-  enableMetrics (interval = 1000) {
+  enableMetrics (flushInterval) {
     let _scope = _private.get(this)
     let {metric, nodeClients, nodeServer} = _scope
-    metric.status = true
+    metric.enable(flushInterval)
 
     nodeClients.forEach((client) => {
       client.setMetric(true)
     }, this)
 
     nodeServer.setMetric(true)
+  }
 
-    metric.interval = setInterval(() => {
-      metric.info.getCpu()
-      metric.info.getMemory()
-      this.emit(events.METRICS, metric.info)
-    }, interval)
+  get metric () {
+    let { metric } = _private.get(this)
+    return metric
   }
 
   disableMetrics () {
-    let _scope = _private.get(this)
-    let {metric, nodeClients, nodeServer} = _scope
-    clearInterval(metric.interval)
-    metric.status = false
+    let {metric, nodeClients, nodeServer} = _private.get(this)
+    metric.disable()
+
     nodeClients.forEach((client) => {
       client.setMetric(false)
     }, this)
     nodeServer.setMetric(false)
-    metric.interval = null
-    metric.info.flush()
   }
 
   async setOptions (options) {
@@ -469,9 +466,6 @@ function _initNodeServer () {
   let _scope = _private.get(this)
   let {id, bind, options, metric, config} = _scope
 
-  let metricStatus = metric.status
-  let metricsInfo = metric.info
-
   let nodeServer = new Server({ id, bind, options, config })
   // ** handlers for nodeServer
   nodeServer.on('error', (err) => this.emit('error', err))
@@ -480,8 +474,8 @@ function _initNodeServer () {
   nodeServer.on(events.CLIENT_STOP, (clientActor) => this.emit(events.CLIENT_STOP, clientActor))
 
   // ** enabling metrics
-  nodeServer.setMetric(metricStatus)
-  this::_attachMetricsHandlers(nodeServer, metricsInfo)
+  nodeServer.setMetric(metric.status)
+  this::_attachMetricsHandlers(nodeServer, metric)
 
   _scope.nodeServer = nodeServer
 }
@@ -528,7 +522,7 @@ function _addExistingListenersToClient (client) {
 
   // ** adding previously added onRequests-s for this client to
   _scope.requestWatcherMap.forEach((requestWatcher, requestEvent) => {
-        // ** TODO what about order of functions ?
+    // ** TODO what about order of functions ?
     requestWatcher.getFnMap().forEach((index, fn) => {
       client.onRequest(requestEvent, this::fn)
     }, this)
@@ -538,7 +532,7 @@ function _addExistingListenersToClient (client) {
 function _removeClientAllListeners (client) {
   let _scope = _private.get(this)
 
-    // ** removing all handlers
+  // ** removing all handlers
   _scope.tickWatcherMap.forEach((tickWatcher, event) => {
     client.offTick(event)
   }, this)
@@ -549,19 +543,49 @@ function _removeClientAllListeners (client) {
   }, this)
 }
 
-function _attachMetricsHandlers (socket, metricsInfo) {
-  socket.on(MetricType.SEND_TICK, (toNode) => metricsInfo.sendTick(toNode))
+function _attachMetricsHandlers (socket, metric) {
+  socket.on(MetricType.SEND_TICK, (envelop) => {
+    this.emit(MetricType.SEND_TICK, envelop)
+    metric.sendTick(envelop)
+  })
 
-  socket.on(MetricType.SEND_REQUEST, (toNode) => metricsInfo.sendRequest(toNode))
+  socket.on(MetricType.SEND_REQUEST, (envelop) => {
+    this.emit(MetricType.SEND_REQUEST, envelop)
+    metric.sendRequest(envelop)
+  })
 
-  socket.on(MetricType.REQUEST_TIMEOUT, (fromNode) => metricsInfo.requestTimeout(fromNode))
+  socket.on(MetricType.SEND_REPLY_SUCCESS, (envelop) => {
+    this.emit(MetricType.SEND_REPLY_SUCCESS, envelop)
+    metric.sendReplySuccess(envelop)
+  })
 
-  socket.on(MetricType.GOT_TICK, (fromNode) => metricsInfo.gotTick(fromNode))
+  socket.on(MetricType.SEND_REPLY_ERROR, (envelop) => {
+    this.emit(MetricType.SEND_REPLY_ERROR, envelop)
+    metric.sendReplyError(envelop)
+  })
 
-  socket.on(MetricType.GOT_REQUEST, (fromNode) => metricsInfo.gotRequest(fromNode))
+  socket.on(MetricType.REQUEST_TIMEOUT, (envelop) => {
+    this.emit(MetricType.REQUEST_TIMEOUT, envelop)
+    metric.requestTimeout(envelop)
+  })
 
-  socket.on(MetricType.GOT_REPLY, (data) => {
-    let {id, sendTime, getTime, replyTime, replyGetTime} = data
-    metricsInfo.gotReply({id, sendTime, getTime, replyTime, replyGetTime})
+  socket.on(MetricType.GOT_TICK, (envelop) => {
+    this.emit(MetricType.GOT_TICK, envelop)
+    metric.gotTick(envelop)
+  })
+
+  socket.on(MetricType.GOT_REQUEST, (envelop) => {
+    this.emit(MetricType.GOT_REQUEST, envelop)
+    metric.gotRequest(envelop)
+  })
+
+  socket.on(MetricType.GOT_REPLY_SUCCESS, (envelop) => {
+    this.emit(MetricType.GOT_REPLY_SUCCESS, envelop)
+    metric.gotReplySuccess(envelop)
+  })
+
+  socket.on(MetricType.GOT_REPLY_ERROR, (envelop) => {
+    this.emit(MetricType.GOT_REPLY_ERROR, envelop)
+    metric.gotReplyError(envelop)
   })
 }

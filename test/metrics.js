@@ -1,7 +1,6 @@
 import { assert } from 'chai'
-import _ from 'underscore'
 
-import { Node, NodeEvents, ErrorCodes } from '../src'
+import { Node, MetricEvents, ErrorCodes } from '../src'
 
 describe('metrics', () => {
   let clientNode, serverNode
@@ -20,29 +19,26 @@ describe('metrics', () => {
     serverNode = null
   })
 
-  it('enable/disable metrics', (done) => {
-    clientNode.on(NodeEvents.METRICS, () => {
-      clientNode.disableMetrics()
-      done()
-    })
-    clientNode.enableMetrics(100)
-  })
-
   it('tick metrics', (done) => {
-    clientNode.on(NodeEvents.METRICS, (data) => {
-      if (!data.ticks.size) return
+    clientNode.on(MetricEvents.SEND_TICK, (data) => {
+      assert.equal(data.owner, clientNode.getId())
+      assert.equal(data.recipient, serverNode.getId())
       done()
     })
     clientNode.enableMetrics(100)
+    serverNode.enableMetrics()
     clientNode.tickAny({ event: 'foo', data: 'bar' })
   })
 
   it('request metrics', (done) => {
-    clientNode.on(NodeEvents.METRICS, (data) => {
-      if (!data.requests.size) return
+    clientNode.on(MetricEvents.SEND_REQUEST, (data) => {
+      assert.equal(data.owner, clientNode.getId())
+      assert.equal(data.recipient, serverNode.getId())
       done()
     })
+
     clientNode.enableMetrics(100)
+    serverNode.enableMetrics()
     clientNode.requestAny({ event: 'foo', data: 'bar', timeout: 100 })
       .catch((err) => {
         //
@@ -50,12 +46,19 @@ describe('metrics', () => {
   })
 
   it('request-timeout metrics', (done) => {
-    clientNode.on(NodeEvents.METRICS, (data) => {
-      if (!data.requests.size || !data.requests.get(serverNode.getId()).timeouted) return
+    let id = ''
+    clientNode.on(MetricEvents.SEND_REQUEST, (data) => {
+      id = data.id
+      assert.equal(data.owner, clientNode.getId())
+      assert.equal(data.recipient, serverNode.getId())
+    })
 
+    clientNode.on(MetricEvents.REQUEST_TIMEOUT, (data) => {
+      assert.equal(data.id, id)
       done()
     })
     clientNode.enableMetrics(100)
+    serverNode.enableMetrics()
     clientNode.requestAny({ event: 'foo', data: 'bar', timeout: 100 })
       .catch((err) => {
         //
@@ -63,13 +66,46 @@ describe('metrics', () => {
   })
 
   it('request-reply metrics', (done) => {
-    clientNode.on(NodeEvents.METRICS, (data) => {
-      if (!data.requests.size || !data.requests.get(serverNode.getId()).delay.send) return
+    let id = ''
+    clientNode.on(MetricEvents.SEND_REQUEST, (data) => {
+      id = data.id
+      assert.equal(data.owner, clientNode.getId())
+      assert.equal(data.recipient, serverNode.getId())
+    })
+    clientNode.on(MetricEvents.GOT_REPLY_SUCCESS, (data) => {
+      assert.equal(data.recipient, clientNode.getId())
+      assert.equal(data.owner, serverNode.getId())
+      assert.equal(data.id, id)
       done()
     })
     clientNode.enableMetrics(100)
+    serverNode.enableMetrics()
     serverNode.onRequest('foo', ({ reply }) => {
       reply('bar')
+    })
+    clientNode.requestAny({ event: 'foo', data: 'bar' })
+      .catch((err) => {
+        //
+      })
+  })
+
+  it('request-error metrics', (done) => {
+    let id = ''
+    clientNode.on(MetricEvents.SEND_REQUEST, (data) => {
+      id = data.id
+      assert.equal(data.owner, clientNode.getId())
+      assert.equal(data.recipient, serverNode.getId())
+    })
+    clientNode.on(MetricEvents.GOT_REPLY_ERROR, (data) => {
+      assert.equal(data.recipient, clientNode.getId())
+      assert.equal(data.owner, serverNode.getId())
+      assert.equal(id, data.id)
+      done()
+    })
+    clientNode.enableMetrics(100)
+    serverNode.enableMetrics()
+    serverNode.onRequest('foo', ({ error }) => {
+      error('bar')
     })
     clientNode.requestAny({ event: 'foo', data: 'bar' })
       .catch((err) => {
