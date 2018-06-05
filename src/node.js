@@ -177,6 +177,8 @@ export default class Node extends EventEmitter {
     // **
     client.setMetric(metric.status)
 
+    this::_addExistingListenersToClient(client)
+
     let { actorId } = await client.connect(address, timeout)
 
     this::_attachMetricsHandlers(client, metric)
@@ -185,8 +187,6 @@ export default class Node extends EventEmitter {
 
     nodeClientsAddressIndex.set(addressHash, actorId)
     nodeClients.set(actorId, client)
-
-    this::_addExistingListenersToClient(client)
 
     this.emit(events.CONNECT_TO_SERVER, client.getServerActor().toJSON())
 
