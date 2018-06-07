@@ -171,8 +171,27 @@ export default class Node extends EventEmitter {
     client.on('error', (err) => this.emit('error', err))
     client.on(events.SERVER_FAILURE, (serverActor) => this.emit(events.SERVER_FAILURE, serverActor))
     client.on(events.SERVER_STOP, (serverActor) => this.emit(events.SERVER_STOP, serverActor))
-    client.on(events.SERVER_RECONNECT, (serverActor) => this.emit(events.SERVER_RECONNECT, serverActor))
-    client.on(events.SERVER_RECONNECT_FAILURE, (serverActor) => this.emit(events.SERVER_RECONNECT_FAILURE, serverActor))
+    client.on(events.SERVER_RECONNECT, (serverActor) => {
+      try {
+        let addressHash = md5(serverActor.address)
+        let oldId = nodeClientsAddressIndex.get(addressHash)
+        nodeClients.delete(oldId)
+        nodeClientsAddressIndex.set(addressHash, serverActor.id)
+        nodeClients.set(serverActor.id, client)
+      } catch (err) {
+        this.logger.error('Error while handling server reconnect', err)
+      }
+      this.emit(events.SERVER_RECONNECT, serverActor)
+    })
+    client.on(events.SERVER_RECONNECT_FAILURE, (serverActor) => {
+      try {
+        nodeClients.delete(serverActor.id)
+        nodeClientsAddressIndex.delete(md5(serverActor.address))
+      } catch (err) {
+        this.logger.error('Error while handling server reconnect failure', err)
+      }
+      this.emit(events.SERVER_RECONNECT_FAILURE, serverActor)
+    })
 
     // **
     client.setMetric(metric.status)
