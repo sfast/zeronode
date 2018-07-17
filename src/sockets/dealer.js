@@ -10,9 +10,6 @@ import { Socket, SocketEvent } from './socket'
 import Envelop from './envelope'
 import { EnvelopType, DealerStateType, Timeouts } from './enum'
 
-// ** enable cancellation , by default it's turned off
-Promise.config({ cancellation: true })
-
 let _private = new WeakMap()
 
 export default class DealerSocket extends Socket {
@@ -152,8 +149,10 @@ export default class DealerSocket extends Socket {
     let _scope = _private.get(this)
     let { socket, routerAddress, connectionPromise, reconnectionTimeoutInstance } = _scope
 
-    //* if connection promise is pending then cancel it
-    if (connectionPromise && connectionPromise.isPending()) connectionPromise.cancel()
+    //* if connection promise is pending then rejecting it
+    if (connectionPromise && connectionPromise.isPending()) {
+      connectionPromise.reject('Disconnecting')
+    }
 
     if (reconnectionTimeoutInstance) {
       clearTimeout(reconnectionTimeoutInstance)
