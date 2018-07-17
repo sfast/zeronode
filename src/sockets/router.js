@@ -9,8 +9,6 @@ import { Socket } from './socket'
 import Envelop from './envelope'
 import {EnvelopType} from './enum'
 
-Promise.config({ cancellation: true })
-
 let _private = new WeakMap()
 
 export default class RouterSocket extends Socket {
@@ -88,9 +86,9 @@ export default class RouterSocket extends Socket {
       let _scope = _private.get(this)
       let {socket, bindAddress, bindPromise} = _scope
 
-      //* if bind promise is pending then cancel it
+      //* if bind promise is pending then reject it
       if (bindPromise && bindPromise.isPending()) {
-        bindPromise.cancel()
+        bindPromise.reject('Unbinding')
       }
 
       _scope.bindPromise = null
