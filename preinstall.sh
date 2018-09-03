@@ -16,7 +16,7 @@ if [ "${OS}" == "windowsnt" ]; then
 elif [ "${OS}" == "darwin" ]; then
     OS=mac
     packageManager="brew"
-    libzmq="libzmq-dev"
+    libzmq="zeromq"
 else
     OS=`uname`
     if [ "${OS}" = "SunOS" ] ; then
@@ -42,7 +42,7 @@ else
             DistroBasedOn='Mandrake'
             PSUEDONAME=`cat /etc/mandrake-release | sed s/.*\(// | sed s/\)//`
             REV=`cat /etc/mandrake-release | sed s/.*release\ // | sed s/\ .*//`
-        elif [ -f /etc/debian_version ] ; then
+        elif [ -f /etc/debian_version ] && [ -f /etc/lsb-release ] ; then
             DistroBasedOn='Debian'
             DIST=`cat /etc/lsb-release | grep '^DISTRIB_ID' | awk -F=  '{ print $2 }'`
             PSUEDONAME=`cat /etc/lsb-release | grep '^DISTRIB_CODENAME' | awk -F=  '{ print $2 }'`
@@ -64,6 +64,7 @@ else
 fi
 
 if [ "${OS}" != "mac" ] && [ "${DistroBasedOn}" != "debian" ] && [ "${DistroBasedOn}" != "redhat" ]; then
+    echo "Can't install zeromq on this os, need to install manually."
     exit 0
 fi
 
