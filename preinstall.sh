@@ -29,13 +29,15 @@ else
     elif [ "${OS}" = "Linux" ] ; then
         if [ -f /etc/redhat-release ] ; then
             DistroBasedOn='RedHat'
-            packageManager="yum"
+            packageManager="sudo yum"
+            libzmq="zeromq"
             DIST=`cat /etc/redhat-release |sed s/\ release.*//`
             PSUEDONAME=`cat /etc/redhat-release | sed s/.*\(// | sed s/\)//`
             REV=`cat /etc/redhat-release | sed s/.*release\ // | sed s/\ .*//`
         elif [ -f /etc/SuSE-release ] ; then
             DistroBasedOn='SuSe'
             packageManager="zypper"
+            libzmq="zeromq"
             PSUEDONAME=`cat /etc/SuSE-release | tr "\n" ' '| sed s/VERSION.*//`
             REV=`cat /etc/SuSE-release | tr "\n" ' ' | sed s/.*=\ //`
         elif [ -f /etc/mandrake-release ] ; then
@@ -79,7 +81,5 @@ haveZmq=$?
 if [ $haveZmq == 0 ]; then
     exit 0;
 fi
-
-
 
 $packageManager install -y $libzmq
