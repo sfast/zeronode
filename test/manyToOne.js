@@ -11,7 +11,7 @@ describe('manyToOne', () => {
   const CLIENTS_COUNT = 10
 
   beforeEach(async () => {
-    clients = _.map(_.range(CLIENTS_COUNT), (i) => new Node({ options: {clientName: `client${i}`} }))
+    clients = _.map(_.range(CLIENTS_COUNT), (i) => new Node({ options: {clientName: `client${i}`, idx: [i]} }))
     serverNode = new Node({ bind: 'tcp://127.0.0.1:3000' })
     await serverNode.bind()
   })
@@ -48,6 +48,30 @@ describe('manyToOne', () => {
           done()
         })
         serverNode.tickAny({event: 'foo', data: expectedMessage, filter: {clientName: 'client2'}})
+      })
+  })
+
+  it('tickAnyFromServer-object-eq', (done) => {
+    Promise.all(_.map(clients, (client) => client.connect({ address: serverNode.getAddress() })))
+      .then(() => {
+        let expectedMessage = 'bar'
+        clients[2].onTick('foo', (data) => {
+          assert.equal(data, expectedMessage)
+          done()
+        })
+        serverNode.tickAny({event: 'foo', data: expectedMessage, filter: {clientName: { $eq: 'client2' }}})
+      })
+  })
+
+  it('tickAnyFromServer-object-contains', (done) => {
+    Promise.all(_.map(clients, (client) => client.connect({ address: serverNode.getAddress() })))
+      .then(() => {
+        let expectedMessage = 'bar'
+        clients[2].onTick('foo', (data) => {
+          assert.equal(data, expectedMessage)
+          done()
+        })
+        serverNode.tickAny({event: 'foo', data: expectedMessage, filter: {idx: { $contains: 2 }}})
       })
   })
 

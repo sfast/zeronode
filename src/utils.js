@@ -24,6 +24,41 @@ const optionsPredicateBuilder = (options) => {
         if (_.isString(optionValue) || _.isNumber(optionValue)) {
           return optionValue !== nodeOptionValue
         }
+
+        if (_.isObject(optionValue)) {
+            return !!_.find(optionValue, (value, operator) => {
+                switch (operator) {
+                    case '$eq':
+                        return value !== nodeOptionValue
+                    case '$ne':
+                        return value === nodeOptionValue
+                    case '$aeq':
+                        return value != nodeOptionValue
+                    case '$gt':
+                        return value >= nodeOptionValue
+                    case '$gte':
+                        return value > nodeOptionValue
+                    case '$lt':
+                        return value <= nodeOptionValue
+                    case '$lte':
+                        return value < nodeOptionValue
+                    case '$between':
+                        return value[0] >= nodeOptionValue || value[1] <= nodeOptionValue
+                    case '$regex':
+                        return !value.test(nodeOptionValue)
+                    case '$in':
+                        return value.indexOf(nodeOptionValue) === -1
+                    case '$nin':
+                        return value.indexOf(nodeOptionValue) !== -1
+                    case '$contains':
+                        return nodeOptionValue.indexOf(value) === -1
+                    case '$containsAny':
+                        return !!_.find(value, (v) => nodeOptionValue.indexOf(v) === -1)
+                    case '$containsNone':
+                        return !!_.find(value, (v) => nodeOptionValue.indexOf(v) !== -1)
+                }
+            })
+        }
       }
 
       return true
