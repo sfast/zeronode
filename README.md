@@ -254,34 +254,62 @@ If handler is not provided then removes all of the listeners.
 <a name="requestAny"></a>
 #### znode.requestAny({ event: String, data: Object, timeout: Number, filter: Object/Function, down: Bool, up: Bool })
 General method to send request to __only one__ znode satisfying the filter.<br/>
-Filter can be an object or a predicate function.
+Filter can be an object or a predicate function. Each filter key can be object itself, with this keys.
+- **$eq** - strict equal to provided value.
+- **$ne** - not equal to provided value.
+- **$aeq** - loose equal to provided value.
+- **$gt** - greater than provided value.
+- **$gte** - greater than or equal to provided value.
+- **$lt** - less than provided value.
+- **$lte** - less than or equal to provided value.
+- **$between** - between provided values (value must be tuple. eg [10, 20]).
+- **$regex** - match to provided regex.
+- **$in** - matching any of the provided values.
+- **$nin** - not matching any of the provided values.
+- **$contains** - contains provided value.
+- **$containsAny** - contains any of the provided values.
+- **$containsNone** - contains none of the provided values.
 
 ```javascript
     // ** send request to one of znodes that have version 1.*.*
     znode.requestAny({
         event: 'foo',
-        data: { foo: 'bar' }),
+        data: { foo: 'bar' },
         filter: { version: /^1.(\d+\.)?(\d+)$/ }
+    })
+    
+    // ** send request to one of znodes whose version is greater than 1.0.0
+    znode.requestAny({
+        event: 'foo',
+        data: { foo: 'bar' },
+        filter: { version: { $gt: '1.0.0' } }
+    })
+    
+    // ** send request to one of znodes whose version is between 1.0.0 and 2.0.0
+    znode.requestAny({
+        event: 'foo',
+        data: { foo: 'bar' },
+        filter: { version: { $between: ['1.0.0', '2.0.0.'] } }
     })
 
     // ** send request to one of znodes that have even length of name.
     znode.requestAny({
         event: 'foo',
-        data: { foo: 'bar' }),
+        data: { foo: 'bar' },
         filter: (options) => !(options.name.length % 2)
     })
 
     // ** send request to one of znodes that connected to your znode (downstream client znodes)
     znode.requestAny({
         event: 'foo',
-        data: { foo: 'bar' }),
+        data: { foo: 'bar' },
         up: false
     })
 
     // ** send request to one of znodes that your znode is connected to (upstream znodes).
     znode.requestAny({
         event: 'foo',
-        data: { foo: 'bar' }),
+        data: { foo: 'bar' },
         down: false
     })
 ```
