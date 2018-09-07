@@ -52,7 +52,7 @@ Zeronode allows to create complex network topologies (i.e. line, ring, partial o
 Each participant/actor in your network topology we call __znode__, which can act as a sever, as a client or hybrid.
 
 ```javascript
-import { Node } from 'zeronode';
+import Node from 'zeronode';
 
 let znode = new Node({
     id: 'steadfast',
@@ -62,11 +62,13 @@ let znode = new Node({
 
 // ** If znode is binded to some interface then other znodes can connect to it
 // ** In this case znode acts as a server, but it's not limiting znode to connect also to other znodes (hybrid)
-await znode.bind('tcp://127.0.0.1:6000');
+(async () => {
+    await znode.bind('tcp://127.0.0.1:6000');
+})();
 
 // ** znode can connect to multiple znodes
-znode.connect({address: tcp://127.0.0.1:6001})
-znode.connect({address: tcp://127.0.0.1:6002})
+znode.connect({address: 'tcp://127.0.0.1:6001'})
+znode.connect({address: 'tcp://127.0.0.1:6002'})
 
 // ** If 2 znodes are connected together then we have a channel between them 
 // ** and both znodes can talk to each other via various messeging patterns - i.e. request/reply, tick (fire and forgot) etc ...
@@ -363,7 +365,6 @@ import Node from 'zeronode';
    myServiceServer.onRequest('welcome', ({ head, body, reply, next }) => {
        console.log('onRequest - welcome', body);
        reply("Hello client");
-       next();
    });
    
    // ** bind znode to given address provided during construction
