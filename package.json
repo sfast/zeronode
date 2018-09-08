@@ -25,7 +25,7 @@
     "request"
   ],
   "scripts": {
-    "test": "cross-env NODE_ENV=test nyc --check-coverage mocha --exit --timeout 10000",
+    "test": "snyk test && cross-env NODE_ENV=test nyc --check-coverage mocha --exit --timeout 10000",
     "snyktest": "snyk test",
     "standard": "standard './src/**/*.js' --parser babel-eslint --verbose | snazzy",
     "format": "standard './src/**/*.js' --parser babel-eslint  --fix --verbose | snazzy",
@@ -43,7 +43,7 @@
     "url": "git+https://github.com/sfast/zeronode.git"
   },
   "author": "Steadfast.tech",
-  "license": "ISC",
+  "license": "MIT",
   "bugs": {
     "url": "https://github.com/sfast/zeronode/issues"
   },
@@ -57,7 +57,7 @@
     "lokijs": "^1.5.3",
     "md5": "^2.2.1",
     "pattern-emitter": "latest",
-    "snyk": "^1.71.0",
+    "snyk": "^1.95.0",
     "underscore": "^1.8.3",
     "uuid": "^3.2.1",
     "winston": "^2.4.1",
