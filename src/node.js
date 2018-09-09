@@ -20,7 +20,7 @@ let MetricType = Enum.MetricType
 
 const _private = new WeakMap()
 
-let defaultLogger = new (winston.Logger)({
+let defaultLogger = winston.createLogger({
   transports: [
     new (winston.transports.Console)({level: 'error'})
   ]
