@@ -52,7 +52,7 @@ Zeronode allows to create complex network topologies (i.e. line, ring, partial o
 Each participant/actor in your network topology we call __znode__, which can act as a sever, as a client or hybrid.
 
 ```javascript
-import { Node } from 'zeronode';
+import Node from 'zeronode';
 
 let znode = new Node({
     id: 'steadfast',
@@ -62,11 +62,13 @@ let znode = new Node({
 
 // ** If znode is binded to some interface then other znodes can connect to it
 // ** In this case znode acts as a server, but it's not limiting znode to connect also to other znodes (hybrid)
-await znode.bind('tcp://127.0.0.1:6000');
+(async () => {
+    await znode.bind('tcp://127.0.0.1:6000');
+})();
 
 // ** znode can connect to multiple znodes
-znode.connect({address: tcp://127.0.0.1:6001})
-znode.connect({address: tcp://127.0.0.1:6002})
+znode.connect({address: 'tcp://127.0.0.1:6001'})
+znode.connect({address: 'tcp://127.0.0.1:6002'})
 
 // ** If 2 znodes are connected together then we have a channel between them 
 // ** and both znodes can talk to each other via various messeging patterns - i.e. request/reply, tick (fire and forgot) etc ...
@@ -371,22 +373,27 @@ myServiceServer.js
 import Node from 'zeronode';
 
 (async function() {
-   let myServiceServer = new Node({ id: 'myServiceServer',  bind: 'tcp://127.0.0.1:6000', options: { layer: 'LayerA' } });
-   
-   // ** attach event listener to myServiceServer
-   myServiceServer.onTick('welcome', (data) => {
-       console.log('onTick - welcome', data);
-   });
+    let myServiceServer = new Node({ id: 'myServiceServer',  bind: 'tcp://127.0.0.1:6000', options: { layer: 'LayerA' } });
 
-   // ** attach request listener to myServiceServer
-   myServiceServer.onRequest('welcome', ({ head, body, reply, next }) => {
-       console.log('onRequest - welcome', body);
-       reply("Hello client");
-       next();
-   });
-   
-   // ** bind znode to given address provided during construction
-   await myServiceServer.bind();
+    // ** attach event listener to myServiceServer
+    myServiceServer.onTick('welcome', (data) => {
+        console.log('onTick - welcome', data);
+    });
+
+    // ** attach request listener to myServiceServer
+    myServiceServer.onRequest('welcome', ({ head, body, reply, next }) => {
+        console.log('onRequest - welcome', body);
+        reply("Hello client");
+        next();
+    });
+
+    // second handler for same channel
+    myServiceServer.onRequest('welcome', ({ head, body, reply, next }) => {
+        console.log('onRequest second - welcome', body);
+    });
+
+    // ** bind znode to given address provided during construction
+    await myServiceServer.bind();
 }());
 
 ```
@@ -397,22 +404,22 @@ myServiceClient.js
 import Node from 'zeronode'
 
 (async function() {
-   let myServiceClient = new Node({ options: { layer: 'LayerA' } });
-   
-   //** connect one node to another node with address
-   await myServiceClient.connect({ address: 'tcp://127.0.0.1:6000' });
-   
-   let serverNodeId = 'myServiceServer';
-   
-   // ** tick() is like firing an event to another node
-   myServiceClient.tick({ to: serverNodeId, event: 'welcome', data:'Hi server!!!' });
-   
-   // ** you request to another node and getting a promise
-   // ** which will be resolve after reply.
-   let responseFromServer = await myServiceClient.request({ to: serverNodeId, event: 'welcome', data: 'Hi server, I am client !!!' });
-   
-   console.log(`response from server is "${responseFromServer}"`);
-   // ** response from server is "Hello client."
+    let myServiceClient = new Node({ options: { layer: 'LayerA' } });
+
+    //** connect one node to another node with address
+    await myServiceClient.connect({ address: 'tcp://127.0.0.1:6000' });
+
+    let serverNodeId = 'myServiceServer';
+
+    // ** tick() is like firing an event to another node
+    myServiceClient.tick({ to: serverNodeId, event: 'welcome', data:'Hi server!!!' });
+
+    // ** you request to another node and getting a promise
+    // ** which will be resolve after reply.
+    let responseFromServer = await myServiceClient.request({ to: serverNodeId, event: 'welcome', data: 'Hi server, I am client !!!' });
+
+    console.log(`response from server is "${responseFromServer}"`);
+    // ** response from server is "Hello client."
 }());
 
 ```
