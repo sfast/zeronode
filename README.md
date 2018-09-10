@@ -365,6 +365,7 @@ import Node from 'zeronode';
     myServiceServer.onRequest('welcome', ({ head, body, reply, next }) => {
         console.log('onRequest - welcome', body);
         reply("Hello client");
+        next();
     });
 
     // second handler for same channel
