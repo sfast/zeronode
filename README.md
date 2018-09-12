@@ -5,7 +5,7 @@
 [![NPM](https://nodei.co/npm/zeronode.png)](https://nodei.co/npm/zeronode/)<br/><br/>
 
 [<img src="https://img.shields.io/gitter/room/nwjs/nw.js.svg">](https://gitter.im/npm-zeronode/Lobby) 
-[![Known Vulnerabilities](https://snyk.io/test/npm/zeronode/badge.svg)](https://snyk.io/test/npm/zeronode)
+[![Known Vulnerabilities](https://snyk.io/test/github/sfast/zeronode/badge.svg)](https://snyk.io/test/github/sfast/zeronode)
 
 
 ## Zeronode - minimal building block for NodeJS microservices
