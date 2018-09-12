@@ -6,6 +6,11 @@
 
 [<img src="https://img.shields.io/gitter/room/nwjs/nw.js.svg">](https://gitter.im/npm-zeronode/Lobby) 
 [![Known Vulnerabilities](https://snyk.io/test/github/sfast/zeronode/badge.svg)](https://snyk.io/test/github/sfast/zeronode)
+![GitHub](https://img.shields.io/github/license/sfast/zeronode.svg)
+![GitHub issues](https://img.shields.io/github/issues/sfast/zeronode.svg)
+
+![Tweet about zeronode](https://img.shields.io/twitter/url/http/shields.io.svg?style=social)
+![GitHub stars](https://img.shields.io/github/stars/sfast/zeronode.svg?style=social&label=Stars)
 
 
 ## Zeronode - minimal building block for NodeJS microservices
@@ -47,7 +52,7 @@ and it'll also install [zeromq](http://zeromq.org) for you.
 For other platforms please open an issue or feel free to contribute.
 
 <a name="basics"></a>
-### Basics 
+### Basics
 Zeronode allows to create complex network topologies (i.e. line, ring, partial or full mesh, star, three, hybrid ...) 
 Each participant/actor in your network topology we call __znode__, which can act as a sever, as a client or hybrid.
 
@@ -91,9 +96,9 @@ All Benchmark tests are completed on Intel(R) Core(TM) i5-6200U CPU @ 2.30GHz.
 </tbody></table>
 <br/>
 
-
 <a name="api"></a>
-### API
+### API 
+
 #### Basic methods
 * [<code>**new Node()**</code>](#node)
 * [<code>znode.**bind()**</code>](#bind)
