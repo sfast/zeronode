@@ -6,10 +6,10 @@
 
 [<img src="https://img.shields.io/gitter/room/nwjs/nw.js.svg">](https://gitter.im/npm-zeronode/Lobby) 
 [![Known Vulnerabilities](https://snyk.io/test/github/sfast/zeronode/badge.svg)](https://snyk.io/test/github/sfast/zeronode)
-![GitHub](https://img.shields.io/github/license/sfast/zeronode.svg)
+![GitHub license](https://img.shields.io/github/license/sfast/zeronode.svg)
 ![GitHub issues](https://img.shields.io/github/issues/sfast/zeronode.svg)
 
-![Tweet about zeronode](https://img.shields.io/twitter/url/http/shields.io.svg?style=social)
+[![Tweet](https://img.shields.io/twitter/url/http/shields.io.svg?style=social)](https://twitter.com/intent/tweet?text=Zeronode%20-%20rock%20solid%20transport%20and%20smarts%20for%20building%20NodeJS%20microservices.%E2%9C%8C%E2%9C%8C%E2%9C%8C&url=https://github.com/sfast/zeronode&hashtags=microservices,scaling,loadbalancing,zeromq,awsomenodejs,nodejs)
 ![GitHub stars](https://img.shields.io/github/stars/sfast/zeronode.svg?style=social&label=Stars)
 
 
