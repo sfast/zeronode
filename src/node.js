@@ -32,6 +32,12 @@ export default class Node extends EventEmitter {
 
     id = id || _generateNodeId()
     options = options || {}
+    Object.defineProperty(options, '_id', {
+      value: id,
+      writable: false,
+      configurable: true,
+      enumerable: true
+    })
     config = config || {}
     config.logger = defaultLogger
 
@@ -467,9 +473,16 @@ export default class Node extends EventEmitter {
     nodeServer.setMetric(false)
   }
 
-  async setOptions (options) {
+  async setOptions (options = {}) {
     let _scope = _private.get(this)
     _scope.options = options
+
+    Object.defineProperty(options, '_id', {
+      value: _scope.id,
+      writable: false,
+      configurable: true,
+      enumerable: true
+    })
 
     let {nodeServer, nodeClients} = _scope
     nodeServer.setOptions(options)
