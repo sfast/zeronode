@@ -200,6 +200,24 @@ describe('oneToOne, failures', () => {
       })
   }).timeout(15000)
 
+
+  it('client ping', (done) => {
+    let date = Date.now()
+
+    serverNode.bind()
+      .then(() => {
+        return clientNode.connect({ address: serverNode.getAddress() })
+      })
+      .then(() => {
+        setTimeout(() => {
+          let client = serverNode.getClientInfo({ id: clientNode.getId() })
+          assert.isAbove(client.online, date)
+          done()
+        }, 10000)
+      })
+  }).timeout(15000)
+
+
   it('server failure', (done) => {
     let routerServer = new Router()
 
