@@ -336,6 +336,24 @@ describe('oneToOne successfully connected', () => {
     assert.equal(serverNode.getOptions().foo, 'bar')
     assert.equal(clientNode.getOptions().foo, 'bar')
   })
+
+  it('set options event in server node', (done) => {
+    serverNode.on(NodeEvents.OPTIONS_SYNC, ({ id, newOptions }) => {
+      assert.deepEqual(clientNode.getOptions(), newOptions)
+      assert.equal(id, clientNode.getId())
+      done()
+    })
+    clientNode.setOptions(Object.assign({}, clientNode.getOptions(), { foo: 'bar' }))
+  })
+
+  it('set options event in client node', (done) => {
+    clientNode.on(NodeEvents.OPTIONS_SYNC, ({ id, newOptions }) => {
+      assert.deepEqual(serverNode.getOptions(), newOptions)
+      assert.equal(id, serverNode.getId())
+      done()
+    })
+    serverNode.setOptions(Object.assign({}, serverNode.getOptions(), { foo: 'bar' }))
+  })
 })
 
 describe('reconnect', () => {
