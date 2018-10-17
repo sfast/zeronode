@@ -165,6 +165,7 @@ function _clientOptionsSync ({actorId, options}) {
       throw new Error(`Client actor '${actorId}' is not available on server '${this.getId()}'`)
     }
     actorModel.setOptions(options)
+    this.emit(events.OPTIONS_SYNC, { id: actorModel.getId(), newOptions: options })
   } catch (err) {
     let clientOptionsSyncHandlerError = new ZeronodeError({ socketId: this.getId(), code: ErrorCodes.CLIENT_OPTIONS_SYNC_HANDLER, error: err })
     clientOptionsSyncHandlerError.description = `Error while handling client options sync on server ${this.getId()}`

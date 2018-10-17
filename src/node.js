@@ -198,6 +198,7 @@ export default class Node extends EventEmitter {
       }
       this.emit(events.SERVER_RECONNECT_FAILURE, serverActor)
     })
+    client.on(events.OPTIONS_SYNC, ({ id, newOptions }) => this.emit(events.OPTIONS_SYNC, { id, newOptions }))
 
     // **
     client.setMetric(metric.status)
@@ -244,6 +245,7 @@ export default class Node extends EventEmitter {
     client.removeAllListeners(MetricType.GOT_REPLY_SUCCESS)
     client.removeAllListeners(MetricType.GOT_REPLY_ERROR)
     client.removeAllListeners(MetricType.REQUEST_TIMEOUT)
+    client.removeAllListeners(MetricType.OPTIONS_SYNC)
 
     await client.disconnect()
     this::_removeClientAllListeners(client)
@@ -504,6 +506,7 @@ function _initNodeServer () {
   nodeServer.on(events.CLIENT_FAILURE, (clientActor) => this.emit(events.CLIENT_FAILURE, clientActor))
   nodeServer.on(events.CLIENT_CONNECTED, (clientActor) => this.emit(events.CLIENT_CONNECTED, clientActor))
   nodeServer.on(events.CLIENT_STOP, (clientActor) => this.emit(events.CLIENT_STOP, clientActor))
+  nodeServer.on(events.OPTIONS_SYNC, ({ id, newOptions }) => this.emit(events.OPTIONS_SYNC, { id, newOptions }))
 
   // ** enabling metrics
   nodeServer.setMetric(metric.status)
