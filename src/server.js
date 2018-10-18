@@ -57,7 +57,7 @@ export default class Server extends RouterSocket {
 
   setOptions (options, notify = true) {
     super.setOptions(options)
-    if (notify) {
+    if (notify && this.isOnline()) {
       _.each(this.getOnlineClients(), (client) => {
         this.tick({event: events.OPTIONS_SYNC, data: {actorId: this.getId(), options}, to: client.id, mainEvent: true})
       })
