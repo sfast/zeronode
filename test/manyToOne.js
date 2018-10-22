@@ -203,7 +203,7 @@ describe('manyToOne', () => {
           assert.equal(data, expectedMessage)
           done()
         })
-        serverNode.tickAny({event: 'foo', data: expectedMessage, filter: {idx: { $containsAny: [2] }}})
+        serverNode.tickAny({event: 'foo', data: expectedMessage, filter: {idx: { $containsAny: [2, 100] }}})
       })
   })
 
