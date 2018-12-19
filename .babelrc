@@ -1,9 +1,13 @@
 {
-  "presets": [ "env"],
-  "plugins" : ["transform-function-bind", "transform-runtime"],
-  "env": {
-    "test": {
-      "plugins": [ "istanbul" ]
-    }
-  }
+  "presets": ["@babel/preset-env"],
+  "plugins" : [
+    "@babel/plugin-proposal-function-bind",
+    "@babel/plugin-proposal-object-rest-spread",
+    ["@babel/transform-runtime",
+      {
+        "helpers": false,
+        "regenerator": true
+      }
+    ]
+  ]
 }

@@ -7,6 +7,5 @@ ignore:
         reason: >-
           Chownr has a recently reported issue to snyk, though the issue itself
           has been known for over a year.
-        expires: '2018-12-09T00:17:38.835Z'
-# patches apply the minimum changes required to fix a vulnerability
-patch:
+        expires: '2020-01-18T16:03:09.970Z'
+patch: {}

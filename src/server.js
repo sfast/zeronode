@@ -10,11 +10,11 @@ import { Router as RouterSocket } from './sockets'
 let _private = new WeakMap()
 
 export default class Server extends RouterSocket {
-  constructor ({id, bind, config, options} = {}) {
+  constructor ({ id, bind, config, options } = {}) {
     options = options || {}
     config = config || {}
 
-    super({id, options, config})
+    super({ id, options, config })
 
     let _scope = {
       clientModels: new Map(),
@@ -39,12 +39,12 @@ export default class Server extends RouterSocket {
   }
 
   getClientById (clientId) {
-    let {clientModels} = _private.get(this)
+    let { clientModels } = _private.get(this)
     return clientModels.has(clientId) ? clientModels.get(clientId) : null
   }
 
   getOnlineClients () {
-    let {clientModels} = _private.get(this)
+    let { clientModels } = _private.get(this)
     let onlineClients = []
     clientModels.forEach((actor) => {
       if (actor.isOnline()) {
@@ -59,7 +59,7 @@ export default class Server extends RouterSocket {
     super.setOptions(options)
     if (notify && this.isOnline()) {
       _.each(this.getOnlineClients(), (client) => {
-        this.tick({event: events.OPTIONS_SYNC, data: {actorId: this.getId(), options}, to: client.id, mainEvent: true})
+        this.tick({ event: events.OPTIONS_SYNC, data: { actorId: this.getId(), options }, to: client.id, mainEvent: true })
       })
     }
   }
@@ -96,8 +96,8 @@ export default class Server extends RouterSocket {
 }
 
 // ** Request handlers
-function _clientPingTick ({actor, stamp}) {
-  let {clientModels} = _private.get(this)
+function _clientPingTick ({ actor, stamp }) {
+  let { clientModels } = _private.get(this)
   // ** PING DATA FROM CLIENT, actor is client id
 
   let actorModel = clientModels.get(actor)
@@ -108,13 +108,15 @@ function _clientPingTick ({actor, stamp}) {
 }
 
 function _clientStopRequest (request) {
-  let {clientModels} = _private.get(this)
-  let {actorId, options} = request.body
+  let { clientModels } = _private.get(this)
+  let { actorId, options } = request.body
 
   // ** just replying acknowledgment
-  request.reply({stamp: Date.now()})
+  request.reply({ stamp: Date.now() })
 
   let actorModel = clientModels.get(actorId)
+  if(!actorModel) return
+
   actorModel.markStopped()
   actorModel.mergeOptions(options)
 
@@ -123,11 +125,11 @@ function _clientStopRequest (request) {
 
 function _clientConnectedRequest (request) {
   let _scope = _private.get(this)
-  let {clientModels, clientCheckInterval} = _scope
+  let { clientModels, clientCheckInterval } = _scope
 
-  let {actorId, options} = request.body
+  let { actorId, options } = request.body
 
-  let actorModel = new ActorModel({id: actorId, options: options, online: true})
+  let actorModel = new ActorModel({ id: actorId, options: options, online: true })
 
   clientModels.set(actorId, actorModel)
 
@@ -137,7 +139,7 @@ function _clientConnectedRequest (request) {
     _scope.clientCheckInterval = setInterval(this::_checkClientHeartBeat, clientHeartbeatInterval)
   }
 
-  let replyData = {actorId: this.getId(), options: this.getOptions()}
+  let replyData = { actorId: this.getId(), options: this.getOptions() }
   // ** replyData {actorId, options}
   request.reply(replyData)
 
@@ -156,9 +158,9 @@ function _checkClientHeartBeat () {
   })
 }
 
-function _clientOptionsSync ({actorId, options}) {
+function _clientOptionsSync ({ actorId, options }) {
   try {
-    let {clientModels} = _private.get(this)
+    let { clientModels } = _private.get(this)
     let actorModel = clientModels.get(actorId)
     // TODO::remove after some time
     if (!actorModel) {

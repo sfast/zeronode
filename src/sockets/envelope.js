@@ -27,7 +27,7 @@ class Parse {
 const lengthSize = 1
 
 export default class Envelop {
-  constructor ({type, id = '', tag = '', data, owner = '', recipient = '', mainEvent}) {
+  constructor ({ type, id = '', tag = '', data, owner = '', recipient = '', mainEvent }) {
     if (type) {
       this.setType(type)
     }
@@ -93,7 +93,7 @@ export default class Envelop {
     let tagLength = buffer.readInt8(tagStart - lengthSize)
     let tag = buffer.slice(tagStart, tagStart + tagLength).toString('utf8').replace(/\0/g, '')
 
-    return {mainEvent, type, id, owner, recipient, tag}
+    return { mainEvent, type, id, owner, recipient, tag }
   }
 
   static readDataFromBuffer (buffer) {
@@ -112,8 +112,8 @@ export default class Envelop {
   }
 
   static fromBuffer (buffer) {
-    let {id, type, owner, recipient, tag, mainEvent} = Envelop.readMetaFromBuffer(buffer)
-    let envelop = new Envelop({type, id, tag, owner, recipient, mainEvent})
+    let { id, type, owner, recipient, tag, mainEvent } = Envelop.readMetaFromBuffer(buffer)
+    let envelop = new Envelop({ type, id, tag, owner, recipient, mainEvent })
 
     let envelopData = Envelop.readDataFromBuffer(buffer)
     if (envelopData) {

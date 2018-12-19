@@ -19,7 +19,7 @@ export default class DealerSocket extends Socket {
 
     let socket = zmq.socket('dealer')
 
-    super({id, socket, options, config})
+    super({ id, socket, options, config })
 
     let _scope = {
       socket,
@@ -32,7 +32,7 @@ export default class DealerSocket extends Socket {
   }
 
   getAddress () {
-    let {routerAddress} = _private.get(this)
+    let { routerAddress } = _private.get(this)
     return routerAddress
   }
 
@@ -74,7 +74,7 @@ export default class DealerSocket extends Socket {
 
     // ** if connect is called for the first time then creating the connection promise
     _scope.connectionPromise = new Promise((resolve, reject) => {
-      let {socket} = _scope
+      let { socket } = _scope
       let { RECONNECTION_TIMEOUT } = this.getConfig()
       RECONNECTION_TIMEOUT = RECONNECTION_TIMEOUT || Timeouts.RECONNECTION_TIMEOUT
 
@@ -103,7 +103,7 @@ export default class DealerSocket extends Socket {
 
         this.once(SocketEvent.DISCONNECT, onDisconnectionHandler)
         this.setOnline()
-        this.emit(SocketEvent.RECONNECT, {fd, endpoint})
+        this.emit(SocketEvent.RECONNECT, { fd, endpoint })
       }
 
       const onDisconnectionHandler = () => {
@@ -170,13 +170,13 @@ export default class DealerSocket extends Socket {
   }
 
   // ** Polymorphic functions
-  request ({to, event, data, timeout, mainEvent = false} = {}) {
-    let envelop = new Envelop({type: EnvelopType.REQUEST, tag: event, data, owner: this.getId(), recipient: to, mainEvent})
+  request ({ to, event, data, timeout, mainEvent = false } = {}) {
+    let envelop = new Envelop({ type: EnvelopType.REQUEST, tag: event, data, owner: this.getId(), recipient: to, mainEvent })
     return super.request(envelop, timeout)
   }
 
-  tick ({to, event, data, mainEvent = false} = {}) {
-    let envelop = new Envelop({type: EnvelopType.TICK, tag: event, data, owner: this.getId(), recipient: to, mainEvent})
+  tick ({ to, event, data, mainEvent = false } = {}) {
+    let envelop = new Envelop({ type: EnvelopType.TICK, tag: event, data, owner: this.getId(), recipient: to, mainEvent })
     return super.tick(envelop)
   }
 

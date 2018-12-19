@@ -82,7 +82,7 @@ const _updateAggregationTable = function () {
         timeout: 0,
         size: 0
       }
-      _.each(customColumns, ({initialValue}, columnName) => {
+      _.each(customColumns, ({ initialValue }, columnName) => {
         row[columnName] = initialValue
       })
       row = aggregationTable.insert(row)
@@ -102,7 +102,7 @@ const _updateAggregationTable = function () {
       latencySum += request.duration.latency
       processSum += request.duration.process
       sizeSum += request.size[0] + request.size[1]
-      _.each(customColumns, ({reducer}, columnName) => {
+      _.each(customColumns, ({ reducer }, columnName) => {
         row[columnName] = reducer(row, request)
       })
     })
@@ -126,7 +126,7 @@ const _updateAggregationTable = function () {
         count: 0,
         size: 0
       }
-      _.each(customColumns, ({initialValue}, columnName) => {
+      _.each(customColumns, ({ initialValue }, columnName) => {
         row[columnName] = initialValue
       })
       row = aggregationTable.insert(row)
@@ -138,7 +138,7 @@ const _updateAggregationTable = function () {
     _.each(groupedTicks, (request) => {
       row.count++
       sizeSum += request.size
-      _.each(customColumns, ({reducer}, columnName) => {
+      _.each(customColumns, ({ reducer }, columnName) => {
         row[columnName] = reducer(row, request)
       })
     })
@@ -165,7 +165,7 @@ const _updateAggregationTable = function () {
 }
 
 export default class Metric {
-  constructor ({id} = {}) {
+  constructor ({ id } = {}) {
     let ZeronodeMetricDB = new Loki('zeronode.db')
 
     let _scope = {

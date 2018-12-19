@@ -7,18 +7,18 @@ import Promise from 'bluebird'
 import { ZeronodeError, ErrorCodes } from '../errors'
 import { Socket } from './socket'
 import Envelop from './envelope'
-import {EnvelopType} from './enum'
+import { EnvelopType } from './enum'
 
 let _private = new WeakMap()
 
 export default class RouterSocket extends Socket {
-  constructor ({id, options, config} = {}) {
+  constructor ({ id, options, config } = {}) {
     options = options || {}
     config = config || {}
 
     let socket = zmq.socket('router')
 
-    super({id, socket, options, config})
+    super({ id, socket, options, config })
 
     let _scope = {
       socket,
@@ -30,7 +30,7 @@ export default class RouterSocket extends Socket {
   }
 
   getAddress () {
-    let {bindAddress} = _private.get(this)
+    let { bindAddress } = _private.get(this)
     return bindAddress
   }
 
@@ -84,7 +84,7 @@ export default class RouterSocket extends Socket {
       super.close()
 
       let _scope = _private.get(this)
-      let {socket, bindAddress, bindPromise} = _scope
+      let { socket, bindAddress, bindPromise } = _scope
 
       //* if bind promise is pending then reject it
       if (bindPromise && bindPromise.isPending()) {
@@ -110,13 +110,13 @@ export default class RouterSocket extends Socket {
   }
 
   //* Polymorphic Functions
-  request ({to, event, data, timeout, mainEvent = false} = {}) {
-    let envelop = new Envelop({type: EnvelopType.REQUEST, tag: event, data, owner: this.getId(), recipient: to, mainEvent})
+  request ({ to, event, data, timeout, mainEvent = false } = {}) {
+    let envelop = new Envelop({ type: EnvelopType.REQUEST, tag: event, data, owner: this.getId(), recipient: to, mainEvent })
     return super.request(envelop, timeout)
   }
 
-  tick ({to, event, data, mainEvent = false} = {}) {
-    let envelop = new Envelop({type: EnvelopType.TICK, tag: event, data: data, owner: this.getId(), recipient: to, mainEvent})
+  tick ({ to, event, data, mainEvent = false } = {}) {
+    let envelop = new Envelop({ type: EnvelopType.TICK, tag: event, data: data, owner: this.getId(), recipient: to, mainEvent })
     return super.tick(envelop)
   }
 

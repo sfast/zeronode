@@ -59,7 +59,7 @@ function buildSocketEventHandler (eventName) {
     if (this.debugMode()) {
       this.logger.info(`Emitted '${eventName}' on socket '${this.getId()}'`)
     }
-    this.emit(eventName, {fd, endpoint})
+    this.emit(eventName, { fd, endpoint })
   }
 
   return this::handler
@@ -70,7 +70,7 @@ class Socket extends EventEmitter {
     return animal.getId()
   }
 
-  constructor ({id, socket, config, options} = {}) {
+  constructor ({ id, socket, config, options } = {}) {
     super()
     options = options || {}
     config = config || {}
@@ -110,7 +110,7 @@ class Socket extends EventEmitter {
   }
 
   getId () {
-    let {id} = _private.get(this)
+    let { id } = _private.get(this)
     return id
   }
 
@@ -125,7 +125,7 @@ class Socket extends EventEmitter {
   }
 
   isOnline () {
-    let {online} = _private.get(this)
+    let { online } = _private.get(this)
     return !!online
   }
 
@@ -135,12 +135,12 @@ class Socket extends EventEmitter {
   }
 
   getOptions () {
-    let {options} = _private.get(this)
+    let { options } = _private.get(this)
     return options
   }
 
   getConfig () {
-    let {config} = _private.get(this)
+    let { config } = _private.get(this)
     return config
   }
 
@@ -182,11 +182,11 @@ class Socket extends EventEmitter {
           metric(envelop.toJSON(), -1)
 
           let requestTimeoutedError = new Error(`Request envelop '${envelopId}' timeouted on socket '${this.getId()}'`)
-          requestObj.reject(new ZeronodeError({socketId: this.getId(), envelopId: envelopId, error: requestTimeoutedError, code: ErrorCodes.REQUEST_TIMEOUTED}))
+          requestObj.reject(new ZeronodeError({ socketId: this.getId(), envelopId: envelopId, error: requestTimeoutedError, code: ErrorCodes.REQUEST_TIMEOUTED }))
         }
       }, reqTimeout)
 
-      requests.set(envelopId, {resolve: resolve, reject: reject, timeout: timeout, sendTime: process.hrtime()})
+      requests.set(envelopId, { resolve: resolve, reject: reject, timeout: timeout, sendTime: process.hrtime() })
       this.sendEnvelop(envelop)
     })
   }
@@ -202,7 +202,7 @@ class Socket extends EventEmitter {
   }
 
   sendEnvelop (envelop) {
-    let {socket, metric} = _private.get(this)
+    let { socket, metric } = _private.get(this)
     let msg = this.getSocketMsg(envelop)
     let envelopJSON = envelop.toJSON()
 
@@ -247,7 +247,7 @@ class Socket extends EventEmitter {
   }
 
   detachSocketMonitor () {
-    let {socket, monitorRestartInterval} = _private.get(this)
+    let { socket, monitorRestartInterval } = _private.get(this)
     // ** remove all listeners
     socket.removeAllListeners('connect')
     socket.removeAllListeners('disconnect')
@@ -274,7 +274,7 @@ class Socket extends EventEmitter {
     if (!(endpoint instanceof RegExp)) {
       endpoint = endpoint.toString()
     }
-    let {requestWatcherMap} = _private.get(this)
+    let { requestWatcherMap } = _private.get(this)
     let watcherMap = main ? requestWatcherMap.main : requestWatcherMap.custom
 
     let requestWatcher = watcherMap.get(endpoint)
@@ -288,7 +288,7 @@ class Socket extends EventEmitter {
   }
 
   offRequest (endpoint, fn, main = false) {
-    let {requestWatcherMap} = _private.get(this)
+    let { requestWatcherMap } = _private.get(this)
     let watcherMap = main ? requestWatcherMap.main : requestWatcherMap.custom
 
     if (_.isFunction(fn)) {
@@ -302,12 +302,12 @@ class Socket extends EventEmitter {
   }
 
   onTick (event, fn, main = false) {
-    let {tickEmitter} = _private.get(this)
+    let { tickEmitter } = _private.get(this)
     main ? tickEmitter.main.on(event, fn) : tickEmitter.custom.on(event, fn)
   }
 
   offTick (event, fn, main = false) {
-    let {tickEmitter} = _private.get(this)
+    let { tickEmitter } = _private.get(this)
     let eventTickEmitter = main ? tickEmitter.main : tickEmitter.custom
 
     if (_.isFunction(fn)) {
@@ -327,7 +327,7 @@ function onSocketMessage (empty, envelopBuffer) {
   let { metric, tickEmitter } = _private.get(this)
 
   let { type, id, owner, recipient, tag, mainEvent } = Envelop.readMetaFromBuffer(envelopBuffer)
-  let envelop = new Envelop({type, id, owner, recipient, tag, mainEvent})
+  let envelop = new Envelop({ type, id, owner, recipient, tag, mainEvent })
   let envelopData = Envelop.readDataFromBuffer(envelopBuffer)
   envelop.setData(envelopData)
 
@@ -379,14 +379,14 @@ function syncEnvelopHandler (envelop) {
       envelop.setRecipient(prevOwner)
       envelop.setOwner(self.getId())
       envelop.setType(EnvelopType.RESPONSE)
-      envelop.setData({getTime, replyTime: process.hrtime(), data: response})
+      envelop.setData({ getTime, replyTime: process.hrtime(), data: response })
       self.sendEnvelop(envelop)
     },
     error: (err) => {
       envelop.setRecipient(prevOwner)
       envelop.setOwner(self.getId())
       envelop.setType(EnvelopType.ERROR)
-      envelop.setData({getTime, replyTime: process.hrtime(), data: err})
+      envelop.setData({ getTime, replyTime: process.hrtime(), data: err })
 
       self.sendEnvelop(envelop)
     },
@@ -410,19 +410,19 @@ function syncEnvelopHandler (envelop) {
 function determineHandlersByTag (tag, main = false) {
   let handlers = []
 
-  let {requestWatcherMap} = _private.get(this)
+  let { requestWatcherMap } = _private.get(this)
   let watcherMap = main ? requestWatcherMap.main : requestWatcherMap.custom
 
   for (let endpoint of watcherMap.keys()) {
     if (endpoint instanceof RegExp) {
       if (endpoint.test(tag)) {
         watcherMap.get(endpoint).getFnMap().forEach((index, fnKey) => {
-          handlers.push({index, fnKey})
+          handlers.push({ index, fnKey })
         })
       }
     } else if (endpoint === tag) {
       watcherMap.get(endpoint).getFnMap().forEach((index, fnKey) => {
-        handlers.push({index, fnKey})
+        handlers.push({ index, fnKey })
       })
     }
   }
@@ -433,7 +433,7 @@ function determineHandlersByTag (tag, main = false) {
 }
 
 function responseEnvelopHandler (envelop) {
-  let {requests, metric} = _private.get(this)
+  let { requests, metric } = _private.get(this)
 
   let id = envelop.getId()
   if (!requests.has(id)) {
@@ -442,7 +442,7 @@ function responseEnvelopHandler (envelop) {
   }
 
   //* * requestObj is like {resolve, reject, timeout : clearRequestTimeout}
-  let {timeout, sendTime, resolve, reject} = requests.get(id)
+  let { timeout, sendTime, resolve, reject } = requests.get(id)
 
   // ** getTime is the time when message arrives to server
   // ** replyTime is the time when message is send from server

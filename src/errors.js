@@ -23,7 +23,7 @@ const ErrorCodes = {
 }
 
 class ZeronodeError extends Error {
-  constructor ({socketId, envelopId, code, error, message, description} = {}) {
+  constructor ({ socketId, envelopId, code, error, message, description } = {}) {
     error = error || {}
     message = message || error.message
     description = description || message
