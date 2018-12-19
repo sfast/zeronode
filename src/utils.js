@@ -53,7 +53,7 @@ const optionsPredicateBuilder = (options) => {
                     case '$contains':
                         return nodeOptionValue.indexOf(value) === -1
                     case '$containsAny':
-                        return !!_.find(value, (v) => nodeOptionValue.indexOf(v) === -1)
+                        return !_.find(value, (v) => nodeOptionValue.indexOf(v) !== -1)
                     case '$containsNone':
                         return !!_.find(value, (v) => nodeOptionValue.indexOf(v) !== -1)
                 }
