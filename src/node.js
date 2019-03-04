@@ -25,7 +25,12 @@ let defaultLogger = winston.createLogger({
     new (winston.transports.Console)({ level: 'error' })
   ]
 })
-
+/**
+ * @param {Number} id
+ * @param {Socket} bind
+ * @param {Object} options 
+ * @param {Object} config
+ */
 export default class Node extends EventEmitter {
   constructor ({ id, bind, options, config } = {}) {
     super()
@@ -62,22 +67,32 @@ export default class Node extends EventEmitter {
     _private.set(this, _scope)
     this::_initNodeServer()
   }
-
+/**
+ * Getting id 
+ */
   getId () {
     let { id } = _private.get(this)
     return id
   }
-
+/**
+ * Getting Address
+ */
   getAddress () {
     let { nodeServer } = _private.get(this)
     return nodeServer ? nodeServer.getAddress() : null
   }
-
+/**
+ * Getting options
+ */
   getOptions () {
     let { options } = _private.get(this)
     return options
   }
-
+/**
+ * Get the information abour server 
+ * @param {String} address 
+ * @param {Number} id
+ */
   getServerInfo ({ address, id }) {
     let { nodeClients, nodeClientsAddressIndex } = _private.get(this)
 
@@ -96,7 +111,11 @@ export default class Node extends EventEmitter {
 
     return serverActor ? serverActor.toJSON() : null
   }
-
+/** 
+ * Get the information abour client  
+ * @param {String} address 
+ * @param {Number} id 
+ * */
   getClientInfo ({ id }) {
     let { nodeServer } = _private.get(this)
 
@@ -104,7 +123,13 @@ export default class Node extends EventEmitter {
 
     return client ? client.toJSON() : null
   }
-
+/**
+ * 
+ * @param {Object} options
+ * @param {Boolean} up
+ * @param {Boolean} down
+ *  
+ */
   getFilteredNodes ({ options, predicate, up = true, down = true } = {}) {
     let _scope = _private.get(this)
     let nodes = new Set()
@@ -130,27 +155,45 @@ export default class Node extends EventEmitter {
 
     return Array.from(nodes)
   }
-
+/**
+ * Setting the address
+ * @param {String} bind 
+ */
   setAddress (bind) {
     let { nodeServer } = _private.get(this)
     nodeServer ? nodeServer.setAddress(bind) : this.logger.info('No server available')
   }
 
-  // ** returns promise
+  /**
+   * Binds the znode to the specified interface and port and returns promise. 
+   * You can bind only to one address. Address can be of the following protocols: tcp, inproc(in-process/inter-thread), ipc(inter-process). 
+   * @param {String} address 
+   */
   bind (address) {
     let { nodeServer } = _private.get(this)
     return nodeServer.bind(address)
   }
 
-  // ** returns promise
+  /**
+   * Unbinds the server znode and returns promise.
+   * Unbinding doesn't stop znode, it can still be connected to other nodes if there are any,
+   * it just stops the server behaviour of znode, and on all the client znodes (connected to this server znode) SERVER_STOP event will be triggered.
+   */
   unbind () {
     let { nodeServer } = _private.get(this)
     if (!nodeServer) return Promise.resolve()
 
     return nodeServer.unbind()
   }
-
-  // ** connect returns the id of the connected node
+  /**
+   * Connects the znode to server znode with specified address and returns promise. 
+   * znode can connect to multiple znodes. If timeout is provided (in milliseconds) 
+   * then the connect()-s promise will be rejected if connection is taking longer.
+   * connect returns the id of the connected node
+   * @param {String} address
+   * @param {Number} timeout 
+   * @param {Number} reconnectionTimeout
+   */
   async connect ({ address, timeout, reconnectionTimeout } = {}) {
     if (typeof address !== 'string' || address.length === 0) {
       throw new Error(`Wrong type for argument address ${address}`)
@@ -253,7 +296,11 @@ export default class Node extends EventEmitter {
     nodeClientsAddressIndex.delete(addressHash)
     return true
   }
-
+/**
+ * Unbinds znode, disconnects from all connected addresses (znodes) and returns promise.
+ * @param {Server} nodeServer
+ * @param {Clinet} nodeClient
+ */
   async stop () {
     let { nodeServer, nodeClients } = _private.get(this)
     let stopPromise = []
@@ -270,7 +317,11 @@ export default class Node extends EventEmitter {
 
     await Promise.all(stopPromise)
   }
-
+/**
+ * Adds request handler for given event on znode.
+ * @param {Event} requestEvent 
+ * @param {Function} fn 
+ */
   onRequest (requestEvent, fn) {
     let _scope = _private.get(this)
     let { requestWatcherMap, nodeClients, nodeServer } = _scope
@@ -289,7 +340,12 @@ export default class Node extends EventEmitter {
       client.onRequest(requestEvent, fn)
     }, this)
   }
-
+/**
+ * Removes request handler for given event.
+   If handler is not provided then removes all of the listeners.
+ * @param {Event} requestEvent 
+ * @param {Function} fn 
+ */
   offRequest (requestEvent, fn) {
     let _scope = _private.get(this)
 
@@ -303,7 +359,11 @@ export default class Node extends EventEmitter {
       requestWatcher.removeFn(fn)
     }
   }
-
+/**
+ * Adds tick(event) handler for given event
+ * @param {Event} event 
+ * @param {Function} fn 
+ */
   onTick (event, fn) {
     let _scope = _private.get(this)
     let { tickWatcherMap, nodeClients, nodeServer } = _scope
@@ -323,7 +383,12 @@ export default class Node extends EventEmitter {
       client.onTick(event, fn)
     })
   }
-
+/**
+ * Removes given tick(event) handler from event listeners' list. 
+   If handler is not provided then removes all of the listeners.
+ * @param {Event} event 
+ * @param {Function} fn 
+ */
   offTick (event, fn) {
     let _scope = _private.get(this)
     _scope.nodeServer.offTick(event)
@@ -336,7 +401,13 @@ export default class Node extends EventEmitter {
       tickWatcher.removeFn(fn)
     }
   }
-
+/**
+ * to is the serverId of node so we request
+ * @param {Id} to 
+ * @param {Event} event
+ * @param {Any}  data
+ * @param {Number} timeout 
+ */
   async request ({ to, event, data, timeout } = {}) {
     let _scope = _private.get(this)
 
@@ -354,7 +425,12 @@ export default class Node extends EventEmitter {
 
     throw new ZeronodeError({ message: `Node with id '${to}' is not found.`, code: ErrorCodes.NODE_NOT_FOUND })
   }
-
+/**
+ * Ticks(emits) event to given znode(to).
+ * @param {Id} to
+ * @param {Event} event
+ * @param {Any} data
+ */
   tick ({ to, event, data } = {}) {
     let _scope = _private.get(this)
     let { nodeServer, nodeClients } = _scope
@@ -367,7 +443,13 @@ export default class Node extends EventEmitter {
     }
     throw new ZeronodeError({ message: `Node with id '${to}' is not found.`, code: ErrorCodes.NODE_NOT_FOUND })
   }
-
+  /**General method to send request to only one znode satisfying the filter
+   * @param {Event} event
+     @param {Any} data
+     @param {Number} timeou
+     @param {Object} filter
+   *  
+   */
   async requestAny ({ event, data, timeout, filter, down = true, up = true } = {}) {
     let nodesFilter = { down, up }
     if (_.isFunction(filter)) {
@@ -386,17 +468,32 @@ export default class Node extends EventEmitter {
     let to = this::_getWinnerNode(filteredNodes, event)
     return this.request({ to, event, data, timeout })
   }
-
+/**
+ * Send request to one of downstream znodes (znodes which has been connected to your znode via connect()
+ * @param {Event} event
+ * @param {Any} data
+ * @param {Number} timeout
+ * @param {Object} filter
+ */
   async requestDownAny ({ event, data, timeout, filter } = {}) {
     let result = await this.requestAny({ event, data, timeout, filter, down: true, up: false })
     return result
   }
-
+  /**
+   * Send request to one of upstream znodes (znodes to which your znode has been connected via connect() ).
+   * @param {Event} event
+   * @param {Any} data
+   * @param {Number} timeout
+   * @param {object} filter
+   */
   async requestUpAny ({ event, data, timeout, filter } = {}) {
     let result = await this.requestAny({ event, data, timeout, filter, down: false, up: true })
     return result
   }
-
+  /**
+   * General method to send tick-s to only one znode satisfying the filter.
+   * @param {*} param0 
+   */
   tickAny ({ event, data, filter, down = true, up = true } = {}) {
     let nodesFilter = { down, up }
     if (_.isFunction(filter)) {
@@ -413,15 +510,33 @@ export default class Node extends EventEmitter {
     let nodeId = this::_getWinnerNode(filteredNodes, event)
     return this.tick({ to: nodeId, event, data })
   }
-
+/**
+ * 
+Send tick-s to one of downstream znodes (znodes which has been connected to your znode via connect() 
+ * @param {Event} event
+ * @param {}
+ * @param {Object} filter 
+ */
   tickDownAny ({ event, data, filter } = {}) {
     return this.tickAny({ event, data, filter, down: true, up: false })
   }
-
+/**
+ * Send tick-s to one of upstream znodes (znodes to which your znode has been connected via connect() 
+ * @param {Event} event
+ * @param {}
+ * @param {Object} filter 
+ */
   tickUpAny ({ event, data, filter } = {}) {
     return this.tickAny({ event, data, filter, down: false, up: true })
   }
-
+/**
+ * Tick to ALL znodes satisfying the filter (object or predicate function), up ( upstream ) and down ( downstream ).
+ * @param {Event} event
+ * @param {}
+ * @param {Object} filter 
+ * @param {Boolean} down
+ * @param {Boolean} up
+ */
   tickAll ({ event, data, filter, down = true, up = true } = {}) {
     let nodesFilter = { down, up }
     if (_.isFunction(filter)) {
@@ -439,15 +554,30 @@ export default class Node extends EventEmitter {
 
     return Promise.all(tickPromises)
   }
-
+/**
+ * Tick to ALL downstream znodes.
+ * @param {Event} event
+ * @param {}
+ * @param {Object} filter 
+ */
   tickDownAll ({ event, data, filter } = {}) {
     return this.tickAll({ event, data, filter, down: true, up: false })
   }
+  /**
+   * Tick to ALL upstream znodes.
+   * @param {Event} event
+   * @param {}
+   * @param {Object} filter  
+   */
 
   tickUpAll ({ event, data, filter } = {}) {
     return this.tickAll({ event, data, filter, down: false, up: true })
   }
-
+/**
+ * Enables metrics, events will be triggered by the given interval. 
+ * Default interval is 1000 msEnables metrics, events will be triggered by the given interval. Default interval is 1000 ms
+ * @param {Number} flushInterval 
+ */
   enableMetrics (flushInterval) {
     let _scope = _private.get(this)
     let { metric, nodeClients, nodeServer } = _scope
@@ -464,7 +594,9 @@ export default class Node extends EventEmitter {
     let { metric } = _private.get(this)
     return metric
   }
-
+/**
+ * Stops triggering events, and removes all collected data
+ */
   disableMetrics () {
     let { metric, nodeClients, nodeServer } = _private.get(this)
     metric.disable()
@@ -473,7 +605,10 @@ export default class Node extends EventEmitter {
       client.setMetric(false)
     }, this)
     nodeServer.setMetric(false)
-  }
+  }/**
+   * Setting the Options
+   * @param {Object} options 
+   */
 
   async setOptions (options = {}) {
     let _scope = _private.get(this)

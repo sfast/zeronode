@@ -1,10 +1,22 @@
+/**
+ * @file Envelope file
+ * @author Vahan Hovsepyan
+ */
+
 import _ from 'underscore'
 import crypto from 'crypto'
 import BufferAlloc from 'buffer-alloc'
 import BufferFrom from 'buffer-from'
-
+/**
+ * Class for parsing 
+ */
 class Parse {
-  // serialize
+  /**
+   * {@link https://en.wikipedia.org/wiki/Serialization|Serializing } the data to JSON
+   * 
+   * {@link Parse } 
+   * @param data 
+   */ 
   static dataToBuffer (data) {
     try {
       return BufferFrom(JSON.stringify({ data }))
@@ -13,7 +25,10 @@ class Parse {
     }
   }
 
-  // deserialize
+  /**
+   * Parsing JSON to data 
+   * @param  data 
+   */ 
   static bufferToData (data) {
     try {
       let ob = JSON.parse(data.toString())
@@ -26,6 +41,9 @@ class Parse {
 
 const lengthSize = 1
 
+/**Describe message format 
+ * @class Envelop 
+*/
 export default class Envelop {
   constructor ({ type, id = '', tag = '', data, owner = '', recipient = '', mainEvent }) {
     if (type) {
@@ -43,7 +61,9 @@ export default class Envelop {
     this.owner = owner
     this.recipient = recipient
   }
-
+/**
+ *
+ */
   toJSON () {
     return {
       type: this.type,
@@ -58,10 +78,11 @@ export default class Envelop {
 
   /**
      *
-     * @param buffer
+     * 
      * @description {
-     *      mainEvent: 1,
-     *      type: 1,
+     *    @type {buffer}
+     *    @param buffer   mainEvent: 1,
+     *       type: 1,
      *      idLength: 4,
      *      id: idLength,
      *      ownerLength: 4,
@@ -69,7 +90,9 @@ export default class Envelop {
      *      recipientLength: 4,
      *      recipient: recipientLength,
      *      tagLength: 4,
-     *      tag: tagLength
+     *      tag: tagLength}
+     * 
+
      * @return {{mainEvent: boolean, type, id: string, owner: string, recipient: string, tag: string}}
      */
   static readMetaFromBuffer (buffer) {
@@ -95,7 +118,11 @@ export default class Envelop {
 
     return { mainEvent, type, id, owner, recipient, tag }
   }
-
+  /**
+   * 
+   * @param buffer 
+   * @description reading data from buffer
+   */
   static readDataFromBuffer (buffer) {
     let dataBuffer = Envelop.getDataBuffer(buffer)
     return dataBuffer ? Parse.bufferToData(dataBuffer) : null
@@ -110,7 +137,10 @@ export default class Envelop {
 
     return null
   }
-
+/**
+ * 
+ * @param buffer 
+ */
   static fromBuffer (buffer) {
     let { id, type, owner, recipient, tag, mainEvent } = Envelop.readMetaFromBuffer(buffer)
     let envelop = new Envelop({ type, id, tag, owner, recipient, mainEvent })
@@ -122,7 +152,11 @@ export default class Envelop {
 
     return envelop
   }
-
+/**
+ * 
+ * @param  str 
+ * @param  encryption 
+ */
   static stringToBuffer (str, encryption) {
     let strLength = Buffer.byteLength(str, encryption)
     let lengthBuffer = BufferAlloc(lengthSize)
@@ -141,7 +175,10 @@ export default class Envelop {
 
     return length
   }
-
+/**
+ * Get the Buffer 
+ * Return the Buffer 
+ */
   getBuffer () {
     let bufferArray = []
 
@@ -171,51 +208,80 @@ export default class Envelop {
 
     return Buffer.concat(bufferArray)
   }
-
+/**
+ * Get the id 
+ */
   getId () {
     return this.id
   }
-
+/**
+ * Get the tag
+ */
   getTag () {
     return this.tag
   }
-
+/**
+ * Get the owner 
+ */
   getOwner () {
     return this.owner
   }
 
+/**
+ * Set the owner manualy , setting by Id 
+ * @param {Number} owner 
+ */
   setOwner (owner) {
     this.owner = owner
   }
-
+/**
+ * Get the receiver 
+ */
   getRecipient () {
     return this.recipient
   }
-
+/**
+ * Set the recevier,setting by Id 
+ * @param {Number} recipient 
+ */
   setRecipient (recipient) {
     this.recipient = recipient
   }
 
   // ** type of envelop
-
+/**
+ * Get the type 
+ */
   getType () {
     return this.type
   }
-
+/**
+ * Set the type 
+ * @param {String} type 
+ */
   setType (type) {
     this.type = type
   }
 
   // ** data of envelop
-
+/**
+ * Get the Data
+ * @param {Any} data 
+ */
   getData (data) {
     return this.data
   }
-
+/**
+ * Set the Data 
+ * @param {Any} data 
+ */
   setData (data) {
     this.data = data
   }
-
+/**
+ * Check if event is mainEvent
+ * Returns Boolean
+ */
   isMain () {
     return !!this.mainEvent
   }

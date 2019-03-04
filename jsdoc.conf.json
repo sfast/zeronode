@@ -1,0 +1,19 @@
+{
+    "source" : {
+        "include": ["./src/sockets","./src"]
+    },
+    "opts" : {
+        "destination" : "./docs/docs",
+        
+        "template": "../node_modules/jaguarjs-jsdoc"
+    },
+    "templates" : {
+        "default" : {
+            "outputSourceFiles" : false,
+            "useLongnameInNav" : true
+        },
+        "useLongnameInNav": true
+    },
+    "plugins": ["minami"]
+
+}
