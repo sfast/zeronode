@@ -1,100 +1,11 @@
 {
-  "name": "zeronode",
-  "version": "1.1.27",
-  "description": "Minimal building block for NodeJS microservices",
-  "main": "./dist/index.js",
-  "directories": {
-    "example": "examples"
-  },
-  "keywords": [
-    "micro",
-    "service",
-    "microservice",
-    "micro-service",
-    "microservices",
-    "micro-services",
-    "services",
-    "micro services",
-    "micro service",
-    "networking",
-    "distributed",
-    "distributed-message",
-    "distributed message",
-    "loadbalancing",
-    "loadbalance",
-    "request"
-  ],
+  "name": "zeronode-tsc",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
   "scripts": {
-    "test": "cross-env NODE_ENV=test nyc --check-coverage mocha --exit --timeout 10000",
-    "snyktest": "snyk test",
-    "standard": "standard './src/**/*.js' --parser babel-eslint --verbose | snazzy",
-    "format": "standard './src/**/*.js' --parser babel-eslint  --fix --verbose | snazzy",
-    "rimraf": "rimraf",
-    "clear": "rimraf ./dist",
-    "compile": "./node_modules/.bin/babel -d dist/ src/",
-    "build": "npm run clear && npm run compile",
-    "preinstall": "bash preinstall.sh",
-    "snyk-protect": "snyk protect",
-    "prepare": "npm run build && npm run snyk-protect"
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/sfast/zeronode.git"
-  },
-  "author": "Steadfast.tech",
-  "license": "MIT",
-  "bugs": {
-    "url": "https://github.com/sfast/zeronode/issues"
-  },
-  "homepage": "https://github.com/sfast/zeronode#readme",
-  "dependencies": {
-    "@babel/runtime": "^7.2.0",
-    "animal-id": "0.0.1",
-    "bluebird": "^3.5.3",
-    "buffer-alloc": "^1.2.0",
-    "buffer-from": "^1.1.1",
-    "lokijs": "^1.5.5",
-    "md5": "^2.2.1",
-    "pattern-emitter": "latest",
-    "underscore": "^1.9.1",
-    "uuid": "^3.3.2",
-    "winston": "^3.1.0",
-    "zeromq": "^5.1.0"
-  },
-  "devDependencies": {
-    "@babel/cli": "^7.2.0",
-    "@babel/core": "^7.2.2",
-    "@babel/node": "^7.2.2",
-    "@babel/plugin-proposal-function-bind": "^7.2.0",
-    "@babel/plugin-proposal-object-rest-spread": "^7.2.0",
-    "@babel/plugin-transform-runtime": "^7.2.0",
-    "@babel/preset-env": "^7.2.0",
-    "@babel/register": "^7.0.0",
-    "babel-eslint": "^10.0.1",
-    "babel-plugin-istanbul": "^5.1.0",
-    "chai": "^4.2.0",
-    "cross-env": "^5.2.0",
-    "eslint-plugin-import": "^2.14.0",
-    "eslint-plugin-node": "^8.0.0",
-    "eslint-plugin-promise": "^4.0.1",
-    "mocha": "^5.2.0",
-    "nyc": "^13.1.0",
-    "rimraf": "^2.6.2",
-    "seneca": "^3.7.0",
-    "snazzy": "^8.0.0",
-    "snyk": "^1.118.0",
-    "standard": "^12.0.1"
-  },
-  "snyk": true,
-  "nyc": {
-    "require": [
-      "@babel/register"
-    ],
-    "reporter": [
-      "lcov",
-      "text"
-    ],
-    "sourceMap": false,
-    "instrument": false
-  }
+  "author": "",
+  "license": "ISC"
 }
