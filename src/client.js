@@ -6,7 +6,13 @@ import { ZeronodeError, ErrorCodes } from './errors'
 import { Dealer as DealerSocket, SocketEvent } from './sockets'
 
 let _private = new WeakMap()
-
+/**
+ * Extends 
+ * {@link DealerSocket}  
+ * @param {Number} id 
+ * @param {Object} options
+ * @param {Object} config
+ */
 export default class Client extends DealerSocket {
   constructor ({ id, options, config } = {}) {
     options = options || {}
@@ -27,19 +33,36 @@ export default class Client extends DealerSocket {
 
     _private.set(this, _scope)
   }
-
+/**
+ * Getting Server {@link ActorModel actor} 
+ */
   getServerActor () {
     let { server } = _private.get(this)
     return server
   }
-
+/**
+ * Setting Options 
+ * @param {Object} options 
+ * @param {Boolean} notify 
+ */
   setOptions (options, notify = true) {
     super.setOptions(options)
     if (notify) {
       this.tick({ event: events.OPTIONS_SYNC, data: { actorId: this.getId(), options }, mainEvent: true })
     }
   }
-
+  /**
+   * Connects the znode to server znode with specified address and returns promise. znode can connect to multiple znodes. 
+   * If timeout is provided (in milliseconds) then the connect()-s promise will be rejected if connection is taking longer.
+     If timeout is not provided it will wait for ages till it connects. 
+     If server znode fails then client znode will try to reconnect in given reconnectionTimeout (defaults to RECONNECTION_TIMEOUT) after which the SERVER_RECONNECT_FAILURE event will be triggered.
+   * This function returns a promise which resolves with server model after server
+   * replies to events.CLIENT_CONNECTED.Creating server model and setting it online
+   * @async 
+   *
+   * @param {String} serverAddress 
+   * @param {Boolean} timeout 
+   */
   // ** returns a promise which resolves with server model after server replies to events.CLIENT_CONNECTED
   async connect (serverAddress, timeout) {
     try {
@@ -68,7 +91,11 @@ export default class Client extends DealerSocket {
       this.emit('error', clientConnectError)
     }
   }
-
+/**
+ * Disconnects znode from specified address and returns promise.
+ * @async
+ * @param {Object} options 
+ */
   async disconnect (options) {
     try {
       let _scope = _private.get(this)
@@ -99,7 +126,19 @@ export default class Client extends DealerSocket {
       this.emit('error', clientDisconnectError)
     }
   }
-
+/**
+ * <pre>
+ * Makes request to znode with id(to) and returns promise. 
+   Promise resolves with data that the requested znode replies. 
+   If timeout is not provided it'll be config.REQUEST_TIMEOUT (defaults to 10000 ms). 
+   If there is no znode with given id, than promise will be rejected with error code ErrorCodes.NODE_NOT_FOUND.
+ * When we have a first request we don't neew to check if server is online or not
+ * </pre>
+ * @param {String} event
+ * @param {Any} data
+ * @param {Boolean} timeout
+ * @param {Boolean} mainEvent 
+ */
   request ({ event, data, timeout, mainEvent } = {}) {
     let server = this.getServerActor()
 
@@ -115,7 +154,16 @@ export default class Client extends DealerSocket {
 
     return super.request({ event, data, timeout, to: server.getId(), mainEvent })
   }
-
+/**
+ * 
+ * Ticks(emits) event to given znode(to).
+   If there is no znode with given id, than throws error with code ErrorCodes.NODE_NOT_FOUND.
+ * @param {String} event
+ * @param  {Any} data
+ * @param {Boolean} mainEvent 
+ * 
+ * 
+ */
   tick ({ event, data, mainEvent } = {}) {
     let server = this.getServerActor()
 
@@ -127,7 +175,9 @@ export default class Client extends DealerSocket {
     super.tick({ event, data, to: server.getId(), mainEvent })
   }
 }
-
+/**
+ * Handling the server fail
+ */
 function _serverFailHandler () {
   try {
     let server = this.getServerActor()
@@ -145,7 +195,10 @@ function _serverFailHandler () {
     this.emit('error', serverFailHandlerError)
   }
 }
-
+/**
+ * 
+ * Trying to reconnect the server 
+ */
 async function _serverReconnectHandler (/* { fd, serverAddress } */) {
   try {
     let server = this.getServerActor()
@@ -179,7 +232,9 @@ async function _serverReconnectHandler (/* { fd, serverAddress } */) {
     this.emit('error', serverReconnectHandlerError)
   }
 }
-
+/**
+ * Server stops the Handler 
+ */
 function _serverStopHandler () {
   try {
     let server = this.getServerActor()
@@ -199,7 +254,11 @@ function _serverStopHandler () {
     this.emit('error', serverStopHandlerError)
   }
 }
-
+/**
+ * This method Sync the server Options
+ * @param {Object} options
+ * @param {Number} actorId 
+ */
 function _serverOptionsSync ({ options, actorId }) {
   try {
     let server = this.getServerActor()
@@ -214,7 +273,9 @@ function _serverOptionsSync ({ options, actorId }) {
     this.emit('error', serverOptionsSyncHandlerError)
   }
 }
-
+/**
+ * Start the Server Pinging
+ */
 function _startServerPinging () {
   let _scope = _private.get(this)
   let { pingInterval } = _scope
@@ -236,7 +297,9 @@ function _startServerPinging () {
     }
   }, interval)
 }
-
+/**
+ * Stop Server Pinging 
+ */
 function _stopServerPinging () {
   let { pingInterval } = _private.get(this)
 

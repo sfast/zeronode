@@ -5,6 +5,7 @@
 import Loki from 'lokijs'
 import _ from 'underscore'
 import { MetricCollections } from './enum'
+import Envelop from './sockets/envelope';
 
 const truePredicate = () => true
 const finishedPredicate = (req) => {
@@ -42,7 +43,12 @@ const MetricUtils = {
 }
 
 let _private = new WeakMap()
-
+/**
+ * Update Aggregation Table 
+ * Resetting timeout an count 
+ * getting requests and ticks
+ * grouping by node and event
+ */
 const _updateAggregationTable = function () {
   let _scope = _private.get(this)
 
@@ -65,6 +71,13 @@ const _updateAggregationTable = function () {
   gotTicks = _.groupBy(gotTicks, (tick) => `${tick.from}${tick.event}`)
 
   // updating row in aggregation table
+  /**
+   * updating row in aggregation table
+   * @param {*} node 
+   * @param {Event} event 
+   * @param {Request} groupedRequests 
+   * @param {Boolean} out 
+   */
   const updateRequestRow = (node, event, groupedRequests, out = false) => {
     let row = aggregationTable.findOne({ node, event, out, request: true })
 
@@ -113,7 +126,13 @@ const _updateAggregationTable = function () {
 
     aggregationTable.update(row)
   }
-
+/**
+ * updating row in aggregation table
+ * @param {*} node 
+ * @param {Event} event 
+ * @param {Event} groupedTicks 
+ * @param {Boolean} out 
+ */
   // updating row in aggregation table
   const updateTickRow = (node, event, groupedTicks, out = false) => {
     let row = aggregationTable.find({ node, event, out, request: false })
@@ -163,7 +182,9 @@ const _updateAggregationTable = function () {
 
   this.flush()
 }
-
+/**
+ * @property {Number} id
+ */
 export default class Metric {
   constructor ({ id } = {}) {
     let ZeronodeMetricDB = new Loki('zeronode.db')
@@ -190,7 +211,10 @@ export default class Metric {
     let { enabled } = _private.get(this)
     return enabled
   }
-
+/**
+ * Get the Metrics 
+ * @param {String} query 
+ */
   getMetrics (query = {}) {
     let { aggregationTable } = _private.get(this)
     if (!this.status) return
@@ -246,14 +270,19 @@ export default class Metric {
 
     customColumns[columnName] = { initialValue, reducer, isIndex }
   }
-
+/**
+ * Enabling
+ * @param {Number} flushTimeout 
+ */
   enable (flushTimeout) {
     let _scope = _private.get(this)
     _scope.enabled = true
     _scope.flushTimeout = flushTimeout || _scope.flushTimeout
     _scope.flushTimeoutInstance = setTimeout(this::_updateAggregationTable, _scope.flushTimeout)
   }
-
+/**
+ * Disabling
+ */
   disable () {
     let _scope = _private.get(this)
     _scope.enabled = false
@@ -261,7 +290,10 @@ export default class Metric {
     this::_updateAggregationTable()
     _scope.count = 0
   }
-
+/**
+ * Sending Request 
+ * @param {Envelop} envelop 
+ */
   // ** actions
   sendRequest (envelop) {
     let { sendRequestCollection, enabled } = _private.get(this)
@@ -269,14 +301,20 @@ export default class Metric {
     let requestInstance = MetricUtils.createRequest(envelop)
     sendRequestCollection.insert(requestInstance)
   }
-
+/**
+ * Get the Request
+ * @param {Envelop} envelop 
+ */
   gotRequest (envelop) {
     let { gotRequestCollection, enabled } = _private.get(this)
     if (!enabled) return
     let requestInstance = MetricUtils.createRequest(envelop)
     gotRequestCollection.insert(requestInstance)
   }
-
+/**
+ * Send reply Success
+ * @param {Envelop} envelop 
+ */
   sendReplySuccess (envelop) {
     let _scope = _private.get(this)
     let { gotRequestCollection, enabled } = _scope
@@ -294,7 +332,10 @@ export default class Metric {
       this::_updateAggregationTable()
     }
   }
-
+/** 
+ * Send reply Error
+ * @param {Envelop} envelop 
+ */
   sendReplyError (envelop) {
     let _scope = _private.get(this)
     let { gotRequestCollection, enabled } = _scope
@@ -312,7 +353,10 @@ export default class Metric {
       this::_updateAggregationTable()
     }
   }
-
+/**
+ * Got Reply Success
+ * @param {Envelop} envelop 
+ */
   gotReplySuccess (envelop) {
     let _scope = _private.get(this)
     let { sendRequestCollection, enabled } = _scope
@@ -330,7 +374,10 @@ export default class Metric {
       this::_updateAggregationTable()
     }
   }
-
+/**
+ * Get Reply Error
+ * @param {Envelop} envelop 
+ */
   gotReplyError (envelop) {
     let _scope = _private.get(this)
     let { sendRequestCollection, enabled } = _scope
@@ -344,7 +391,10 @@ export default class Metric {
     request.size.push(envelop.size)
     sendRequestCollection.update(request)
   }
-
+/**
+ * The request timeout
+ * @param {Envelop} envelop 
+ */
   requestTimeout (envelop) {
     let _scope = _private.get(this)
     let { sendRequestCollection, enabled } = _scope
@@ -360,7 +410,10 @@ export default class Metric {
       this::_updateAggregationTable()
     }
   }
-
+/**
+ * Send the Tick 
+ * @param {Envelop} envelop 
+ */
   sendTick (envelop) {
     let _scope = _private.get(this)
     let { sendTickCollection, enabled } = _scope
@@ -372,7 +425,10 @@ export default class Metric {
       this::_updateAggregationTable()
     }
   }
-
+/**
+ * Got the Tick
+ * @param {Envelop} envelop 
+ */
   gotTick (envelop) {
     let _scope = _private.get(this)
     let { gotTickCollection, enabled } = _scope

@@ -7,7 +7,10 @@ const checkNodeReducer = (node, predicate, accumulatorSet) => {
     accumulatorSet.add(node.getId())
   }
 }
-
+/**
+ * Options predicate Builder 
+ * @param {Object} options 
+ */
 const optionsPredicateBuilder = (options) => {
   return (nodeOptions) => {
     let optionsKeysArray = Object.keys(options)

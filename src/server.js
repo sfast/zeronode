@@ -8,7 +8,16 @@ import { ZeronodeError, ErrorCodes } from './errors'
 import { Router as RouterSocket } from './sockets'
 
 let _private = new WeakMap()
-
+/**
+ * Extends
+ * {@link RouterSocket}
+ * @param {Number} id 
+ * @param {String} bind
+ * @param {Object} config
+ * @param {Object} options 
+ * 
+  */
+ 
 export default class Server extends RouterSocket {
   constructor ({ id, bind, config, options } = {}) {
     options = options || {}
@@ -37,12 +46,17 @@ export default class Server extends RouterSocket {
     // ** ATTACHING CLIENT OPTIONS SYNCING
     this.onTick(events.OPTIONS_SYNC, this::_clientOptionsSync, true)
   }
-
+/**
+ * Get the Clinet by Id 
+ * @param {Number} clientId 
+ */
   getClientById (clientId) {
     let { clientModels } = _private.get(this)
     return clientModels.has(clientId) ? clientModels.get(clientId) : null
   }
-
+/**
+ * Get Clients wich are Online
+ */
   getOnlineClients () {
     let { clientModels } = _private.get(this)
     let onlineClients = []
@@ -54,7 +68,11 @@ export default class Server extends RouterSocket {
 
     return onlineClients
   }
-
+/**
+ * Setting some options 
+ * @param {Object} options 
+ * @param {Boolean} notify 
+ */
   setOptions (options, notify = true) {
     super.setOptions(options)
     if (notify && this.isOnline()) {
@@ -63,14 +81,22 @@ export default class Server extends RouterSocket {
       })
     }
   }
-
+/**
+ * Binds the znode to the specified interface and port and returns promise. 
+ * You can bind only to one address. Address can be of the following protocols: tcp, inproc(in-process/inter-thread), ipc(inter-process).
+ * @param {String} bindAddress 
+ */
   bind (bindAddress) {
     if (_.isString(bindAddress)) {
       this.setAddress(bindAddress)
     }
     return super.bind(this.getAddress())
   }
-
+/**
+ * Unbinds the server znode and returns promise. Unbinding doesn't stop znode, 
+ * it can still be connected to other nodes if there are any, it just stops the server behaviour of znode, 
+ * and on all the client znodes (connected to this server znode) SERVER_STOP event will be triggered
+ */
   unbind () {
     try {
       let _scope = _private.get(this)
@@ -96,6 +122,13 @@ export default class Server extends RouterSocket {
 }
 
 // ** Request handlers
+/**
+ * Client Ping Tick
+ * PING DATA FROM CLIENT, actor is client id
+ * @param {Number} actor
+ * @param {Number} stamp
+ * 
+ */
 function _clientPingTick ({ actor, stamp }) {
   let { clientModels } = _private.get(this)
   // ** PING DATA FROM CLIENT, actor is client id
@@ -106,7 +139,10 @@ function _clientPingTick ({ actor, stamp }) {
     actorModel.ping(stamp)
   }
 }
-
+/**
+ * Request for stopping the client 
+ * @param {request} request 
+ */
 function _clientStopRequest (request) {
   let { clientModels } = _private.get(this)
   let { actorId, options } = request.body
@@ -122,7 +158,10 @@ function _clientStopRequest (request) {
 
   this.emit(events.CLIENT_STOP, actorModel.toJSON())
 }
-
+/**
+ * Clinet Connected Request 
+ * @param {request} request 
+ */
 function _clientConnectedRequest (request) {
   let _scope = _private.get(this)
   let { clientModels, clientCheckInterval } = _scope
@@ -145,8 +184,11 @@ function _clientConnectedRequest (request) {
 
   this.emit(events.CLIENT_CONNECTED, actorModel.toJSON())
 }
+/**
+ * Check clients hearbeat
+ * Checking the ping
+ */
 
-// ** check clients heartbeat
 function _checkClientHeartBeat () {
   _.each(this.getOnlineClients(), (actor) => {
     if (!actor.isGhost()) {
@@ -157,7 +199,12 @@ function _checkClientHeartBeat () {
     }
   })
 }
-
+/**
+ * Sync the Clinet options 
+ * 
+ * @param {Number} actorId 
+ * @param {Object} options
+ */
 function _clientOptionsSync ({ actorId, options }) {
   try {
     let { clientModels } = _private.get(this)

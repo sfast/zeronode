@@ -35,7 +35,9 @@
     "build": "npm run clear && npm run compile",
     "preinstall": "bash preinstall.sh",
     "snyk-protect": "snyk protect",
-    "prepare": "npm run build && npm run snyk-protect"
+    "prepare": "npm run build && npm run snyk-protect",
+    "docs": "../node_modules/.bin/jsdoc --configure jsdoc.conf.json",
+    "generate-docs-dev": "./node_modules/.bin/jsdoc --configure jsdoc.conf.json --private --destination ./docs/docs-dev"
   },
   "repository": {
     "type": "git",
@@ -53,6 +55,7 @@
     "bluebird": "^3.5.3",
     "buffer-alloc": "^1.2.0",
     "buffer-from": "^1.1.1",
+    "jsdoc-export-default-interop": "^0.3.1",
     "lokijs": "^1.5.5",
     "md5": "^2.2.1",
     "pattern-emitter": "latest",
