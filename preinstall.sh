@@ -78,8 +78,13 @@ pkg-config libzmq --exists
 
 haveZmq=$?
 
-if [ $haveZmq == 0 ]; then
-    exit 0;
-fi
+#if [ $haveZmq == 0 ]; then
+#    exit 0;
+#fi
 
-$packageManager install -y $libzmq
+
+if [ $packageManager == "brew" ]; then
+	$packageManager install $libzmq
+else 
+	$packageManager install -y  $libzmq
+fi

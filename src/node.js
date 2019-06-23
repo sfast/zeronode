@@ -580,6 +580,7 @@ Send tick-s to one of downstream znodes (znodes which has been connected to your
  */
   enableMetrics (flushInterval) {
     let _scope = _private.get(this)
+    
     let { metric, nodeClients, nodeServer } = _scope
     metric.enable(flushInterval)
 

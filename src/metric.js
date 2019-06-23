@@ -8,6 +8,7 @@ import { MetricCollections } from './enum'
 import Envelop from './sockets/envelope';
 
 const truePredicate = () => true
+
 const finishedPredicate = (req) => {
   return req.success || req.error || req.timeout
 }
@@ -270,6 +271,7 @@ export default class Metric {
 
     customColumns[columnName] = { initialValue, reducer, isIndex }
   }
+
 /**
  * Enabling
  * @param {Number} flushTimeout 
@@ -280,6 +282,7 @@ export default class Metric {
     _scope.flushTimeout = flushTimeout || _scope.flushTimeout
     _scope.flushTimeoutInstance = setTimeout(this::_updateAggregationTable, _scope.flushTimeout)
   }
+
 /**
  * Disabling
  */
@@ -290,11 +293,11 @@ export default class Metric {
     this::_updateAggregationTable()
     _scope.count = 0
   }
+
 /**
  * Sending Request 
  * @param {Envelop} envelop 
  */
-  // ** actions
   sendRequest (envelop) {
     let { sendRequestCollection, enabled } = _private.get(this)
     if (!enabled) return

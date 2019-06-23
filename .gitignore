@@ -40,3 +40,6 @@ jspm_packages
 dist/
 
 tmp/
+
+# VS code local history
+.history/
