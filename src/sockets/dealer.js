@@ -11,7 +11,13 @@ import Envelop from './envelope'
 import { EnvelopType, DealerStateType, Timeouts } from './enum'
 
 let _private = new WeakMap()
-
+/**
+ * Extends 
+ * {@link Socket}  
+ * @param {Integer} id
+ * @param {Objcet} options 
+ * @param {Objcet} config
+   */
 export default class DealerSocket extends Socket {
   constructor ({ id, options, config } = {}) {
     options = options || {}
@@ -30,30 +36,53 @@ export default class DealerSocket extends Socket {
 
     _private.set(this, _scope)
   }
-
+/**
+ * Get the Address ,returs routerAddress
+ */
   getAddress () {
     let { routerAddress } = _private.get(this)
     return routerAddress
   }
-
+/**
+ * Set the Address
+ * @param {bindAddress} bindAddress 
+ */
   setAddress (routerAddress) {
     let _scope = _private.get(this)
     if (typeof routerAddress === 'string' && routerAddress.length) {
       _scope.routerAddress = routerAddress
     }
   }
-
+/**
+ * Setting Online 
+ */
   setOnline () {
     let _scope = _private.get(this)
     super.setOnline()
     _scope.state = DealerStateType.CONNECTED
   }
-
+/**
+ * Get the State,returns the state 
+ * {@link DealerStateType}
+ */
   getState () {
     let { state } = _private.get(this)
     return state
   }
+/**
+ * Connecting 
+ *  
+ * if trying to connect to other address you need to disconnect first
+ * 
+ * if connection is still pending then returning the Promise of connection
+ * 
+ * if connect is called for the first time then creating the connection promise
+ * 
+ * @param  routerAddress 
+ * @param  timeout 
+ */
 
+ 
   connect (routerAddress, timeout) {
     if (this.isOnline() && routerAddress === this.getAddress()) {
       return Promise.resolve(true)
@@ -64,15 +93,13 @@ export default class DealerSocket extends Socket {
     timeout = timeout || this.getConfig().CONNECTION_TIMEOUT || Timeouts.CONNECTION_TIMEOUT
 
     if (connectionPromise && routerAddress !== this.getAddress()) {
-      // ** if trying to connect to other address you need to disconnect first
+
       let alreadyConnectedError = new Error(`Already connected to '${this.getAddress()}', disconnect before changing connection address to '${routerAddress}'`)
       return Promise.reject(new ZeronodeError({ socketId: this.getId(), code: ErrorCodes.ALREADY_CONNECTED, error: alreadyConnectedError }))
     }
 
-    // ** if connection is still pending then returning it
     if (connectionPromise && connectionPromise.isPending() && routerAddress === this.getAddress()) return connectionPromise
 
-    // ** if connect is called for the first time then creating the connection promise
     _scope.connectionPromise = new Promise((resolve, reject) => {
       let { socket } = _scope
       let { RECONNECTION_TIMEOUT } = this.getConfig()
@@ -83,7 +110,9 @@ export default class DealerSocket extends Socket {
       if (routerAddress) {
         this.setAddress(routerAddress)
       }
-
+/**
+ * On the connection Handler 
+ */
       const onConnectionHandler = () => {
         if (rejectionTimeout) {
           clearTimeout(rejectionTimeout)
@@ -94,18 +123,25 @@ export default class DealerSocket extends Socket {
         this.setOnline()
         resolve()
       }
-
+/**
+ * On the reconnection Handler
+ * @param {Function} fd 
+ * @param {String|RegExp} endpoint 
+ */
       const onReConnectionHandler = (fd, endpoint) => {
         if (_scope.reconnectionTimeoutInstance) {
           clearTimeout(_scope.reconnectionTimeoutInstance)
           _scope.reconnectionTimeoutInstance = null
         }
-
+        
         this.once(SocketEvent.DISCONNECT, onDisconnectionHandler)
         this.setOnline()
         this.emit(SocketEvent.RECONNECT, { fd, endpoint })
       }
-
+/**
+ * 
+ * On the disconnection Handler
+ */
       const onDisconnectionHandler = () => {
         this.setOffline()
         _scope.state = DealerStateType.RECONNECTING
@@ -140,8 +176,12 @@ export default class DealerSocket extends Socket {
 
     return _scope.connectionPromise
   }
-
-  // ** not actually disconnected
+/**
+ * To disconnect we need to remove all listeners 
+ * 
+ * if connection promise is pending then rejecting it
+ */
+  // ** 
   disconnect () {
     //* closing and removing all listeners on socket
     super.close()

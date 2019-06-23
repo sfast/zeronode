@@ -10,8 +10,16 @@ import Envelop from './envelope'
 import { EnvelopType } from './enum'
 
 let _private = new WeakMap()
-
+/**
+ * Extends 
+ * {@link Socket}  
+ * @param {Integer} id
+ * @param {Objcet} options 
+ * @param {Objcet} config
+   */
+ 
 export default class RouterSocket extends Socket {
+  
   constructor ({ id, options, config } = {}) {
     options = options || {}
     config = config || {}
@@ -28,12 +36,17 @@ export default class RouterSocket extends Socket {
 
     _private.set(this, _scope)
   }
-
+/**
+ * Get the Address 
+ */
   getAddress () {
     let { bindAddress } = _private.get(this)
     return bindAddress
   }
-
+/**
+ * Set the Address
+ * @param {bindAddress} bindAddress 
+ */
   setAddress (bindAddress) {
     let _scope = _private.get(this)
 
@@ -42,7 +55,15 @@ export default class RouterSocket extends Socket {
     }
   }
 
-  // ** returns promise
+  /**
+   * 
+   * @param {bindardess} bindAddress 
+   * @returns {Promise}
+   *  if trying to bind to other address you need  unbind first 
+   * 
+   * 
+   *  if bind is still pending then returning the binded Promise 
+   */  
   bind (bindAddress) {
     if (this.isOnline() && bindAddress === this.getAddress()) {
       return Promise.resolve(true)
@@ -76,8 +97,16 @@ export default class RouterSocket extends Socket {
 
     return _scope.bindPromise
   }
-
-  // ** returns promise
+  /**
+   * You can unbind your Znode form address
+   * 
+   * 
+   * and this function will return promise 
+   * @returns {Promise}
+   * 
+   * If bind promise is pending then reject it 
+   */
+  
   unbind () {
     return new Promise((resolve, reject) => {
       //* closing and removing all listeners on socket
@@ -100,7 +129,11 @@ export default class RouterSocket extends Socket {
     })
   }
 
-  // ** returns promise
+  /**
+   * Close the socket  
+   * This function returns Promise 
+   * @returns {Promise }
+   */
   async close () {
     await this.unbind()
 
@@ -110,16 +143,33 @@ export default class RouterSocket extends Socket {
   }
 
   //* Polymorphic Functions
+/**
+ * Polymorphic Function
+ * @param {Id} to
+ * @param {Event} event
+ * @param {Any} data
+ * @param {Number} timeout
+ * @param {Boolean} mainEvent 
+ */
   request ({ to, event, data, timeout, mainEvent = false } = {}) {
     let envelop = new Envelop({ type: EnvelopType.REQUEST, tag: event, data, owner: this.getId(), recipient: to, mainEvent })
     return super.request(envelop, timeout)
   }
-
+/**
+ * * Polymorphic Function
+ * @param {Id} to
+ * @param {Event} event
+ * @param {Any} data
+ * @param {Boolean} mainEvent
+ */
   tick ({ to, event, data, mainEvent = false } = {}) {
     let envelop = new Envelop({ type: EnvelopType.TICK, tag: event, data: data, owner: this.getId(), recipient: to, mainEvent })
     return super.tick(envelop)
   }
-
+/**
+ * Polymorphic Functions
+ * @param {Envelop} envelop 
+ */
   getSocketMsg (envelop) {
     return [envelop.getRecipient(), '', envelop.getBuffer()]
   }

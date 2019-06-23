@@ -11,6 +11,16 @@ import Watchers from './watchers'
 
 let _private = new WeakMap()
 
+
+/**
+ * @function _calculateLatency
+ * This function calculate latency in nanoseconds
+ * Latency value is requestTime - processTime
+ * @param {Number} sendTime
+ * @param {Number} getTime
+ * @param {Number} replyTime
+ * @param {Number} replyGetTime 
+ */
 function _calculateLatency ({ sendTime, getTime, replyTime, replyGetTime }) {
   let processTime = (replyTime[0] * 10e9 + replyTime[1]) - (getTime[0] * 10e9 + getTime[1])
   let requestTime = (replyGetTime[0] * 10e9 + replyGetTime[1]) - (sendTime[0] * 10e9 + sendTime[1])
@@ -24,7 +34,7 @@ function _calculateLatency ({ sendTime, getTime, replyTime, replyGetTime }) {
 const nop = () => {}
 
 /**
- *
+ * @memberof Socket
  * @param envelop: Object
  * @param type: Enum(-1 = timeout, 0 = send, 1 = got)
  */
@@ -53,7 +63,10 @@ function emitMetric (envelop, type = 0) {
 
   this.emit(event, envelop)
 }
-
+/**
+ * This function buld Socket Event Handler 
+ * @param eventName 
+ */
 function buildSocketEventHandler (eventName) {
   const handler = (fd, endpoint) => {
     if (this.debugMode()) {
@@ -64,18 +77,31 @@ function buildSocketEventHandler (eventName) {
 
   return this::handler
 }
-
+/**
+ *
+ * The general Class for creating Sockets 
+ */
 class Socket extends EventEmitter {
   static generateSocketId () {
     return animal.getId()
   }
-
+/**
+ * @param {Integer}  id  Socket ID 
+ * @param   {Socket} socket 
+ * @param  {Object} config Config  
+ * @param {Object} options Options 
+ */
   constructor ({ id, socket, config, options } = {}) {
     super()
     options = options || {}
     config = config || {}
 
-    // ** creating the socket
+    /**
+     * creating the socket
+     * If there is no socket id you will receive any AnimalId
+     * 
+     * 
+     *  */ 
     let socketId = id || Socket.generateSocketId()
     socket.identity = socketId
     socket.on('message', this::onSocketMessage)
@@ -103,56 +129,84 @@ class Socket extends EventEmitter {
 
     _private.set(this, _scope)
 
-    // ** setting the logger as soon as possible
+    /**
+     * setting the logger as soon as possible
+     *  */ 
     this.setLogger(config.logger)
 
     this.debugMode(false)
   }
-
+/**
+ * getting Socket id 
+ * 
+ */
   getId () {
     let { id } = _private.get(this)
     return id
   }
-
+  /**
+   * Setting Online
+   */
   setOnline () {
     let _scope = _private.get(this)
     _scope.online = Date.now()
   }
-
+/**
+ * Setting Offline
+ */
   setOffline () {
     let _scope = _private.get(this)
     _scope.online = false
   }
-
+/**
+ * Is Online
+ */
   isOnline () {
     let { online } = _private.get(this)
     return !!online
   }
 
+  /**
+   * Setting options manual
+   * @param {Object} options 
+   */
   setOptions (options = {}) {
     let _scope = _private.get(this)
     _scope.options = options
   }
-
-  getOptions () {
+  /**
+   * Getting Options 
+   */
+  getOptions () { 
     let { options } = _private.get(this)
     return options
   }
-
+  /**
+   * Getting Config Settings 
+   */
   getConfig () {
     let { config } = _private.get(this)
     return config
   }
-
+  /**
+   * 
+   * @param {String} status 
+   */
   setMetric (status) {
     let _scope = _private.get(this)
     _scope.metric = status ? this::emitMetric : nop
   }
-
+  /**
+   * Setting Logger 
+   * @param {logger} logger you can choose your own logger
+   */
   setLogger (logger) {
     this.logger = logger || console
   }
-
+  /**
+   * Debug Mode 
+   * @param {*} val 
+   */
   debugMode (val) {
     let _scope = _private.get(this)
     if (val) {
@@ -161,7 +215,16 @@ class Socket extends EventEmitter {
       return _scope.isDebugMode
     }
   }
-
+/**
+ * Makes request to znode with id(to) and returns promise. 
+   Promise resolves with data that the requested znode replies. 
+   If timeout is not provided it'll be config.REQUEST_TIMEOUT (defaults to 10000 ms). 
+   If there is no znode with given id, than promise will be rejected with error code ErrorCodes.NODE_NOT_FOUND.
+ * @function
+ * @param {Envelop} envelop  
+ * @param {Number} reqTimeout 
+ * @returns {Promise}  
+ */
   request (envelop, reqTimeout) {
     let { id, requests, metric, config } = _private.get(this)
     reqTimeout = reqTimeout || config.REQUEST_TIMEOUT || Timeouts.REQUEST_TIMEOUT
@@ -190,7 +253,13 @@ class Socket extends EventEmitter {
       this.sendEnvelop(envelop)
     })
   }
+/**
+ * Ticks(emits) event to given znode(to).
+   If there is no znode with given id, than throws error with code ErrorCodes.NODE_NOT_FOUND.
 
+ * @param {Envelop} envelop 
+ * 
+ */
   tick (envelop) {
     let socketId = this.getId()
     if (!this.isOnline()) {
@@ -200,7 +269,10 @@ class Socket extends EventEmitter {
 
     this.sendEnvelop(envelop)
   }
-
+/**
+ * Sending Envelop
+ * @param {Envelop} envelop 
+ */
   sendEnvelop (envelop) {
     let { socket, metric } = _private.get(this)
     let msg = this.getSocketMsg(envelop)
@@ -216,19 +288,27 @@ class Socket extends EventEmitter {
 
     socket.send(msg)
   }
-
+ /**
+  * Attaching 
+  */
   attachSocketMonitor () {
     let _scope = _private.get(this)
     let { config, socket } = _scope
 
-    // ** start monitoring socket events
+    /** 
+     * start monitoring socket events
+     * */ 
     let monitorTimeout = config.MONITOR_TIMEOUT || Timeouts.MONITOR_TIMEOUT
     let monitorRestartTimeout = config.MONITOR_RESTART_TIMEOUT || Timeouts.MONITOR_RESTART_TIMEOUT
-
-    // ** start socket monitoring
+    /**
+     * start socket monitoring
+     */
+     
     socket.monitor(monitorTimeout, 0)
-
-    // ** Handle monitor error and restart it
+    /**
+     *  Handle monitor error and restart it
+     */
+    
     socket.on('monitor_error', () => {
       this.logger.warn(`Restarting monitor after ${monitorRestartTimeout} on socket ${this.getId()}`)
       _scope.monitorRestartInterval = setTimeout(() => socket.monitor(monitorTimeout, 0), monitorRestartTimeout)
@@ -245,7 +325,10 @@ class Socket extends EventEmitter {
     socket.on('close', this::buildSocketEventHandler(SocketEvent.CLOSE))
     socket.on('close_error', this::buildSocketEventHandler(SocketEvent.CLOSE_ERROR))
   }
-
+  /**
+   * Detach Socket Monitor
+   * Remove all listneners 
+   */
   detachSocketMonitor () {
     let { socket, monitorRestartInterval } = _private.get(this)
     // ** remove all listeners
@@ -260,17 +343,26 @@ class Socket extends EventEmitter {
     socket.removeAllListeners('close')
     socket.removeAllListeners('close_error')
 
-    // ** if during closing there is a monitor restart scheduled then clear the schedule
-    if (monitorRestartInterval) clearInterval(monitorRestartInterval)
+    /**
+     * 
+     * if during closing there is a monitor restart scheduled then clear the schedule
+ */ 
+        if (monitorRestartInterval) clearInterval(monitorRestartInterval)
     socket.unmonitor()
   }
-
   close () {
     this.detachSocketMonitor()
   }
-
+    /**
+     * function will called with arguments  request = {body, reply}
+     * @param {RegExp|String} endpoint 
+     * @param {Function} fn 
+     * @param {boolean} main  
+     * 
+     * 
+     */
   onRequest (endpoint, fn, main = false) {
-    // ** function will called with argument  request = {body, reply}
+    // ** 
     if (!(endpoint instanceof RegExp)) {
       endpoint = endpoint.toString()
     }
@@ -286,7 +378,13 @@ class Socket extends EventEmitter {
 
     requestWatcher.addFn(fn)
   }
-
+/**
+ * Removes request handler for given event.
+   If handler is not provided then removes all of the listeners.
+ * @param {RegExp|String} endpoint 
+ * @param {Function} fn 
+ * @param {boolean} main 
+ */
   offRequest (endpoint, fn, main = false) {
     let { requestWatcherMap } = _private.get(this)
     let watcherMap = main ? requestWatcherMap.main : requestWatcherMap.custom
@@ -300,12 +398,23 @@ class Socket extends EventEmitter {
 
     watcherMap.delete(endpoint)
   }
-
+/**
+ * Adds tick(event) handler for given event.
+ * @param {Event} event 
+ * @param {Funciton} fn 
+ * @param {boolean} main 
+ */
   onTick (event, fn, main = false) {
     let { tickEmitter } = _private.get(this)
     main ? tickEmitter.main.on(event, fn) : tickEmitter.custom.on(event, fn)
   }
-
+/**Removes given tick(event) handler from event listeners' list. 
+   If handler is not provided then removes all of the listeners.
+ * 
+ * @param {Event} event 
+ * @param {Function} fn 
+ * @param {boolean} main 
+ */
   offTick (event, fn, main = false) {
     let { tickEmitter } = _private.get(this)
     let eventTickEmitter = main ? tickEmitter.main : tickEmitter.custom
@@ -318,11 +427,15 @@ class Socket extends EventEmitter {
     eventTickEmitter.removeAllListeners(event)
   }
 }
+/**
+ * 
+ *  Handlers of specific envelop msg-es
+    when socket is dealer identity is empty
+    when socket is router, identity is the dealer which sends data
+ * @param {*} empty 
+ * @param {Buffer} envelopBuffer 
+ */
 
-//* * Handlers of specific envelop msg-es
-
-//* * when socket is dealer identity is empty
-//* * when socket is router, identity is the dealer which sends data
 function onSocketMessage (empty, envelopBuffer) {
   let { metric, tickEmitter } = _private.get(this)
 
@@ -349,7 +462,7 @@ function onSocketMessage (empty, envelopBuffer) {
       break
     case EnvelopType.REQUEST:
       metric(envelopJSON, 1)
-      // ** if metric is enabled then emit it
+      //** if metric is enabled then emit it
       this::syncEnvelopHandler(envelop)
       break
     case EnvelopType.RESPONSE:
@@ -359,7 +472,10 @@ function onSocketMessage (empty, envelopBuffer) {
       break
   }
 }
-
+/**
+ * Sync Envelop Handler 
+ * @param {Envelop} envelop 
+ */
 function syncEnvelopHandler (envelop) {
   let self = this
   let getTime = process.hrtime()
@@ -431,7 +547,11 @@ function determineHandlersByTag (tag, main = false) {
     return a.index - b.index
   }).map((ob) => ob.fnKey)
 }
-
+/**
+ * Responsing the Envelop Handler 
+ * The request Object is like {resolve, reject, timeout : clearRequestTimeout}
+ * @param {Envelop} envelop 
+ */
 function responseEnvelopHandler (envelop) {
   let { requests, metric } = _private.get(this)
 
