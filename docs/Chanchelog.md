@@ -1,3 +1,7 @@
+Version: 1.1.31 (June 23 2019, Artak Vardanyan)
+- added Metric documentation
+- removed the vulneribility we found couple of days ago
+
 Version: 1.1.7 (April 8 2018, Artak Vardanyan, David Harutyunyan)
 - added way to reject request with .error(err)
 - changelog date fixed
