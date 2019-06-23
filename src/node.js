@@ -450,6 +450,7 @@ export default class Node extends EventEmitter {
 
   enableMetrics (flushInterval) {
     let _scope = _private.get(this)
+    
     let { metric, nodeClients, nodeServer } = _scope
     metric.enable(flushInterval)
 

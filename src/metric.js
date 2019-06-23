@@ -7,6 +7,7 @@ import _ from 'underscore'
 import { MetricCollections } from './enum'
 
 const truePredicate = () => true
+
 const finishedPredicate = (req) => {
   return req.success || req.error || req.timeout
 }
@@ -247,6 +248,8 @@ export default class Metric {
     customColumns[columnName] = { initialValue, reducer, isIndex }
   }
 
+
+  //TODO:: avar, dave
   enable (flushTimeout) {
     let _scope = _private.get(this)
     _scope.enabled = true
@@ -254,6 +257,7 @@ export default class Metric {
     _scope.flushTimeoutInstance = setTimeout(this::_updateAggregationTable, _scope.flushTimeout)
   }
 
+  //TODO:: avar, dave
   disable () {
     let _scope = _private.get(this)
     _scope.enabled = false
