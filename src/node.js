@@ -14,15 +14,15 @@ import Server from './server'
 import Client from './client'
 import Metric from './metric'
 import { events } from './enum'
-import {Enum, Watchers} from './sockets'
+import { Enum, Watchers } from './sockets'
 
 let MetricType = Enum.MetricType
 
 const _private = new WeakMap()
 
-let defaultLogger = new (winston.Logger)({
+let defaultLogger = winston.createLogger({
   transports: [
-    new (winston.transports.Console)({level: 'error'})
+    new (winston.transports.Console)({ level: 'error' })
   ]
 })
 
@@ -32,13 +32,19 @@ export default class Node extends EventEmitter {
 
     id = id || _generateNodeId()
     options = options || {}
+    Object.defineProperty(options, '_id', {
+      value: id,
+      writable: false,
+      configurable: true,
+      enumerable: true
+    })
     config = config || {}
     config.logger = defaultLogger
 
     this.logger = config.logger || defaultLogger
 
     // ** default metric is disabled
-    let metric = new Metric({id})
+    let metric = new Metric({ id })
 
     let _scope = {
       id,
@@ -58,22 +64,22 @@ export default class Node extends EventEmitter {
   }
 
   getId () {
-    let {id} = _private.get(this)
+    let { id } = _private.get(this)
     return id
   }
 
   getAddress () {
-    let {nodeServer} = _private.get(this)
+    let { nodeServer } = _private.get(this)
     return nodeServer ? nodeServer.getAddress() : null
   }
 
   getOptions () {
-    let {options} = _private.get(this)
+    let { options } = _private.get(this)
     return options
   }
 
   getServerInfo ({ address, id }) {
-    let {nodeClients, nodeClientsAddressIndex} = _private.get(this)
+    let { nodeClients, nodeClientsAddressIndex } = _private.get(this)
 
     if (!id) {
       let addressHash = md5(address)
@@ -126,19 +132,19 @@ export default class Node extends EventEmitter {
   }
 
   setAddress (bind) {
-    let {nodeServer} = _private.get(this)
+    let { nodeServer } = _private.get(this)
     nodeServer ? nodeServer.setAddress(bind) : this.logger.info('No server available')
   }
 
   // ** returns promise
   bind (address) {
-    let {nodeServer} = _private.get(this)
+    let { nodeServer } = _private.get(this)
     return nodeServer.bind(address)
   }
 
   // ** returns promise
   unbind () {
-    let {nodeServer} = _private.get(this)
+    let { nodeServer } = _private.get(this)
     if (!nodeServer) return Promise.resolve()
 
     return nodeServer.unbind()
@@ -171,11 +177,33 @@ export default class Node extends EventEmitter {
     client.on('error', (err) => this.emit('error', err))
     client.on(events.SERVER_FAILURE, (serverActor) => this.emit(events.SERVER_FAILURE, serverActor))
     client.on(events.SERVER_STOP, (serverActor) => this.emit(events.SERVER_STOP, serverActor))
-    client.on(events.SERVER_RECONNECT, (serverActor) => this.emit(events.SERVER_RECONNECT, serverActor))
-    client.on(events.SERVER_RECONNECT_FAILURE, (serverActor) => this.emit(events.SERVER_RECONNECT_FAILURE, serverActor))
+    client.on(events.SERVER_RECONNECT, (serverActor) => {
+      try {
+        let addressHash = md5(serverActor.address)
+        let oldId = nodeClientsAddressIndex.get(addressHash)
+        nodeClients.delete(oldId)
+        nodeClientsAddressIndex.set(addressHash, serverActor.id)
+        nodeClients.set(serverActor.id, client)
+      } catch (err) {
+        this.logger.error('Error while handling server reconnect', err)
+      }
+      this.emit(events.SERVER_RECONNECT, serverActor)
+    })
+    client.on(events.SERVER_RECONNECT_FAILURE, (serverActor) => {
+      try {
+        nodeClients.delete(serverActor.id)
+        nodeClientsAddressIndex.delete(md5(serverActor.address))
+      } catch (err) {
+        this.logger.error('Error while handling server reconnect failure', err)
+      }
+      this.emit(events.SERVER_RECONNECT_FAILURE, serverActor)
+    })
+    client.on(events.OPTIONS_SYNC, ({ id, newOptions }) => this.emit(events.OPTIONS_SYNC, { id, newOptions }))
 
     // **
     client.setMetric(metric.status)
+
+    this::_addExistingListenersToClient(client)
 
     let { actorId } = await client.connect(address, timeout)
 
@@ -185,8 +213,6 @@ export default class Node extends EventEmitter {
 
     nodeClientsAddressIndex.set(addressHash, actorId)
     nodeClients.set(actorId, client)
-
-    this::_addExistingListenersToClient(client)
 
     this.emit(events.CONNECT_TO_SERVER, client.getServerActor().toJSON())
 
@@ -202,7 +228,7 @@ export default class Node extends EventEmitter {
     let addressHash = md5(address)
 
     let _scope = _private.get(this)
-    let {nodeClientsAddressIndex, nodeClients} = _scope
+    let { nodeClientsAddressIndex, nodeClients } = _scope
 
     if (!nodeClientsAddressIndex.has(addressHash)) return true
 
@@ -219,6 +245,7 @@ export default class Node extends EventEmitter {
     client.removeAllListeners(MetricType.GOT_REPLY_SUCCESS)
     client.removeAllListeners(MetricType.GOT_REPLY_ERROR)
     client.removeAllListeners(MetricType.REQUEST_TIMEOUT)
+    client.removeAllListeners(MetricType.OPTIONS_SYNC)
 
     await client.disconnect()
     this::_removeClientAllListeners(client)
@@ -228,7 +255,7 @@ export default class Node extends EventEmitter {
   }
 
   async stop () {
-    let {nodeServer, nodeClients} = _private.get(this)
+    let { nodeServer, nodeClients } = _private.get(this)
     let stopPromise = []
 
     this.disableMetrics()
@@ -246,7 +273,7 @@ export default class Node extends EventEmitter {
 
   onRequest (requestEvent, fn) {
     let _scope = _private.get(this)
-    let {requestWatcherMap, nodeClients, nodeServer} = _scope
+    let { requestWatcherMap, nodeClients, nodeServer } = _scope
 
     let requestWatcher = requestWatcherMap.get(requestEvent)
     if (!requestWatcher) {
@@ -279,7 +306,7 @@ export default class Node extends EventEmitter {
 
   onTick (event, fn) {
     let _scope = _private.get(this)
-    let {tickWatcherMap, nodeClients, nodeServer} = _scope
+    let { tickWatcherMap, nodeClients, nodeServer } = _scope
 
     let tickWatcher = tickWatcherMap.get(event)
     if (!tickWatcher) {
@@ -313,7 +340,7 @@ export default class Node extends EventEmitter {
   async request ({ to, event, data, timeout } = {}) {
     let _scope = _private.get(this)
 
-    let {nodeServer, nodeClients} = _scope
+    let { nodeServer, nodeClients } = _scope
 
     let clientActor = this::_getClientByNode(to)
     if (clientActor) {
@@ -330,7 +357,7 @@ export default class Node extends EventEmitter {
 
   tick ({ to, event, data } = {}) {
     let _scope = _private.get(this)
-    let {nodeServer, nodeClients} = _scope
+    let { nodeServer, nodeClients } = _scope
     let clientActor = this::_getClientByNode(to)
     if (clientActor) {
       return nodeServer.tick({ to: clientActor.getId(), event, data })
@@ -423,8 +450,8 @@ export default class Node extends EventEmitter {
 
   enableMetrics (flushInterval) {
     let _scope = _private.get(this)
-    let {metric, nodeClients, nodeServer} = _scope
-
+    
+    let { metric, nodeClients, nodeServer } = _scope
     metric.enable(flushInterval)
 
     nodeClients.forEach((client) => {
@@ -440,7 +467,7 @@ export default class Node extends EventEmitter {
   }
 
   disableMetrics () {
-    let {metric, nodeClients, nodeServer} = _private.get(this)
+    let { metric, nodeClients, nodeServer } = _private.get(this)
     metric.disable()
 
     nodeClients.forEach((client) => {
@@ -449,11 +476,18 @@ export default class Node extends EventEmitter {
     nodeServer.setMetric(false)
   }
 
-  async setOptions (options) {
+  async setOptions (options = {}) {
     let _scope = _private.get(this)
     _scope.options = options
 
-    let {nodeServer, nodeClients} = _scope
+    Object.defineProperty(options, '_id', {
+      value: _scope.id,
+      writable: false,
+      configurable: true,
+      enumerable: true
+    })
+
+    let { nodeServer, nodeClients } = _scope
     nodeServer.setOptions(options)
     nodeClients.forEach((client) => {
       client.setOptions(options)
@@ -465,7 +499,7 @@ export default class Node extends EventEmitter {
 
 function _initNodeServer () {
   let _scope = _private.get(this)
-  let {id, bind, options, metric, config} = _scope
+  let { id, bind, options, metric, config } = _scope
 
   let nodeServer = new Server({ id, bind, options, config })
   // ** handlers for nodeServer
@@ -473,6 +507,7 @@ function _initNodeServer () {
   nodeServer.on(events.CLIENT_FAILURE, (clientActor) => this.emit(events.CLIENT_FAILURE, clientActor))
   nodeServer.on(events.CLIENT_CONNECTED, (clientActor) => this.emit(events.CLIENT_CONNECTED, clientActor))
   nodeServer.on(events.CLIENT_STOP, (clientActor) => this.emit(events.CLIENT_STOP, clientActor))
+  nodeServer.on(events.OPTIONS_SYNC, ({ id, newOptions }) => this.emit(events.OPTIONS_SYNC, { id, newOptions }))
 
   // ** enabling metrics
   nodeServer.setMetric(metric.status)

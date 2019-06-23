@@ -200,6 +200,24 @@ describe('oneToOne, failures', () => {
       })
   }).timeout(15000)
 
+
+  it('client ping', (done) => {
+    let date = Date.now()
+
+    serverNode.bind()
+      .then(() => {
+        return clientNode.connect({ address: serverNode.getAddress() })
+      })
+      .then(() => {
+        setTimeout(() => {
+          let client = serverNode.getClientInfo({ id: clientNode.getId() })
+          assert.isAbove(client.online, date)
+          done()
+        }, 10000)
+      })
+  }).timeout(15000)
+
+
   it('server failure', (done) => {
     let routerServer = new Router()
 
@@ -317,6 +335,24 @@ describe('oneToOne successfully connected', () => {
     await serverNode.setOptions(Object.assign({}, serverNode.getOptions(), { foo: 'bar' }))
     assert.equal(serverNode.getOptions().foo, 'bar')
     assert.equal(clientNode.getOptions().foo, 'bar')
+  })
+
+  it('set options event in server node', (done) => {
+    serverNode.on(NodeEvents.OPTIONS_SYNC, ({ id, newOptions }) => {
+      assert.deepEqual(clientNode.getOptions(), newOptions)
+      assert.equal(id, clientNode.getId())
+      done()
+    })
+    clientNode.setOptions(Object.assign({}, clientNode.getOptions(), { foo: 'bar' }))
+  })
+
+  it('set options event in client node', (done) => {
+    clientNode.on(NodeEvents.OPTIONS_SYNC, ({ id, newOptions }) => {
+      assert.deepEqual(serverNode.getOptions(), newOptions)
+      assert.equal(id, serverNode.getId())
+      done()
+    })
+    serverNode.setOptions(Object.assign({}, serverNode.getOptions(), { foo: 'bar' }))
   })
 })
 

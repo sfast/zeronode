@@ -6,7 +6,7 @@
 
 export default class ActorModel {
   constructor (data = {}) {
-    let {id, online = true, address, options} = data
+    let { id, online = true, address, options } = data
     this.id = id
 
     this.online = false

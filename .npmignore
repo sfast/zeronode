@@ -9,7 +9,6 @@ tmp/
 .babelrc
 .gitignore
 .npmignore
-.snyk
 Chanchelog.md
 TODO.md
 .idea/

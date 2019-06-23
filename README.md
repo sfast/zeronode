@@ -5,7 +5,12 @@
 [![NPM](https://nodei.co/npm/zeronode.png)](https://nodei.co/npm/zeronode/)<br/><br/>
 
 [<img src="https://img.shields.io/gitter/room/nwjs/nw.js.svg">](https://gitter.im/npm-zeronode/Lobby) 
-[![Known Vulnerabilities](https://snyk.io/test/npm/zeronode/badge.svg)](https://snyk.io/test/npm/zeronode)
+[![Known Vulnerabilities](https://snyk.io/test/github/sfast/zeronode/badge.svg)](https://snyk.io/test/github/sfast/zeronode)
+[![GitHub license](https://img.shields.io/github/license/sfast/zeronode.svg)](https://github.com/sfast/zeronode/blob/master/LICENSE)
+[![GitHub issues](https://img.shields.io/github/issues/sfast/zeronode.svg)](https://github.com/sfast/zeronode/issues)
+
+[![Tweet](https://img.shields.io/twitter/url/http/shields.io.svg?style=social)](https://twitter.com/intent/tweet?text=Zeronode%20-%20rock%20solid%20transport%20and%20smarts%20for%20building%20NodeJS%20microservices.%E2%9C%8C%E2%9C%8C%E2%9C%8C&url=https://github.com/sfast/zeronode&hashtags=microservices,scaling,loadbalancing,zeromq,awsomenodejs,nodejs)
+[![GitHub stars](https://img.shields.io/github/stars/sfast/zeronode.svg?style=social&label=Stars)](https://github.com/sfast/zeronode)
 
 
 ## Zeronode - minimal building block for NodeJS microservices
@@ -47,12 +52,12 @@ and it'll also install [zeromq](http://zeromq.org) for you.
 For other platforms please open an issue or feel free to contribute.
 
 <a name="basics"></a>
-### Basics 
+### Basics
 Zeronode allows to create complex network topologies (i.e. line, ring, partial or full mesh, star, three, hybrid ...) 
 Each participant/actor in your network topology we call __znode__, which can act as a sever, as a client or hybrid.
 
 ```javascript
-import { Node } from 'zeronode';
+import Node from 'zeronode';
 
 let znode = new Node({
     id: 'steadfast',
@@ -62,11 +67,13 @@ let znode = new Node({
 
 // ** If znode is binded to some interface then other znodes can connect to it
 // ** In this case znode acts as a server, but it's not limiting znode to connect also to other znodes (hybrid)
-await znode.bind('tcp://127.0.0.1:6000');
+(async () => {
+    await znode.bind('tcp://127.0.0.1:6000');
+})();
 
 // ** znode can connect to multiple znodes
-znode.connect({address: tcp://127.0.0.1:6001})
-znode.connect({address: tcp://127.0.0.1:6002})
+znode.connect({address: 'tcp://127.0.0.1:6001'})
+znode.connect({address: 'tcp://127.0.0.1:6002'})
 
 // ** If 2 znodes are connected together then we have a channel between them 
 // ** and both znodes can talk to each other via various messeging patterns - i.e. request/reply, tick (fire and forgot) etc ...
@@ -89,9 +96,9 @@ All Benchmark tests are completed on Intel(R) Core(TM) i5-6200U CPU @ 2.30GHz.
 </tbody></table>
 <br/>
 
-
 <a name="api"></a>
-### API
+### API 
+
 #### Basic methods
 * [<code>**new Node()**</code>](#node)
 * [<code>znode.**bind()**</code>](#bind)
@@ -254,34 +261,62 @@ If handler is not provided then removes all of the listeners.
 <a name="requestAny"></a>
 #### znode.requestAny({ event: String, data: Object, timeout: Number, filter: Object/Function, down: Bool, up: Bool })
 General method to send request to __only one__ znode satisfying the filter.<br/>
-Filter can be an object or a predicate function.
+Filter can be an object or a predicate function. Each filter key can be object itself, with this keys.
+- **$eq** - strict equal to provided value.
+- **$ne** - not equal to provided value.
+- **$aeq** - loose equal to provided value.
+- **$gt** - greater than provided value.
+- **$gte** - greater than or equal to provided value.
+- **$lt** - less than provided value.
+- **$lte** - less than or equal to provided value.
+- **$between** - between provided values (value must be tuple. eg [10, 20]).
+- **$regex** - match to provided regex.
+- **$in** - matching any of the provided values.
+- **$nin** - not matching any of the provided values.
+- **$contains** - contains provided value.
+- **$containsAny** - contains any of the provided values.
+- **$containsNone** - contains none of the provided values.
 
 ```javascript
     // ** send request to one of znodes that have version 1.*.*
     znode.requestAny({
         event: 'foo',
-        data: { foo: 'bar' }),
+        data: { foo: 'bar' },
         filter: { version: /^1.(\d+\.)?(\d+)$/ }
+    })
+    
+    // ** send request to one of znodes whose version is greater than 1.0.0
+    znode.requestAny({
+        event: 'foo',
+        data: { foo: 'bar' },
+        filter: { version: { $gt: '1.0.0' } }
+    })
+    
+    // ** send request to one of znodes whose version is between 1.0.0 and 2.0.0
+    znode.requestAny({
+        event: 'foo',
+        data: { foo: 'bar' },
+        filter: { version: { $between: ['1.0.0', '2.0.0.'] } }
     })
 
     // ** send request to one of znodes that have even length of name.
     znode.requestAny({
         event: 'foo',
-        data: { foo: 'bar' }),
+        data: { foo: 'bar' },
         filter: (options) => !(options.name.length % 2)
     })
 
     // ** send request to one of znodes that connected to your znode (downstream client znodes)
     znode.requestAny({
         event: 'foo',
-        data: { foo: 'bar' }),
+        data: { foo: 'bar' },
         up: false
     })
 
     // ** send request to one of znodes that your znode is connected to (upstream znodes).
     znode.requestAny({
         event: 'foo',
-        data: { foo: 'bar' }),
+        data: { foo: 'bar' },
         down: false
     })
 ```
@@ -343,22 +378,27 @@ myServiceServer.js
 import Node from 'zeronode';
 
 (async function() {
-   let myServiceServer = new Node({ id: 'myServiceServer',  bind: 'tcp://127.0.0.1:6000', options: { layer: 'LayerA' } });
-   
-   // ** attach event listener to myServiceServer
-   myServiceServer.onTick('welcome', (data) => {
-       console.log('onTick - welcome', data);
-   });
+    let myServiceServer = new Node({ id: 'myServiceServer',  bind: 'tcp://127.0.0.1:6000', options: { layer: 'LayerA' } });
 
-   // ** attach request listener to myServiceServer
-   myServiceServer.onRequest('welcome', ({ head, body, reply, next }) => {
-       console.log('onRequest - welcome', body);
-       reply("Hello client");
-       next();
-   });
-   
-   // ** bind znode to given address provided during construction
-   await myServiceServer.bind();
+    // ** attach event listener to myServiceServer
+    myServiceServer.onTick('welcome', (data) => {
+        console.log('onTick - welcome', data);
+    });
+
+    // ** attach request listener to myServiceServer
+    myServiceServer.onRequest('welcome', ({ head, body, reply, next }) => {
+        console.log('onRequest - welcome', body);
+        reply("Hello client");
+        next();
+    });
+
+    // second handler for same channel
+    myServiceServer.onRequest('welcome', ({ head, body, reply, next }) => {
+        console.log('onRequest second - welcome', body);
+    });
+
+    // ** bind znode to given address provided during construction
+    await myServiceServer.bind();
 }());
 
 ```
@@ -369,22 +409,22 @@ myServiceClient.js
 import Node from 'zeronode'
 
 (async function() {
-   let myServiceClient = new Node({ options: { layer: 'LayerA' } });
-   
-   //** connect one node to another node with address
-   await myServiceClient.connect({ address: 'tcp://127.0.0.1:6000' });
-   
-   let serverNodeId = 'myServiceServer';
-   
-   // ** tick() is like firing an event to another node
-   myServiceClient.tick({ to: serverNodeId, event: 'welcome', data:'Hi server!!!' });
-   
-   // ** you request to another node and getting a promise
-   // ** which will be resolve after reply.
-   let responseFromServer = await myServiceClient.request({ to: serverNodeId, event: 'welcome', data: 'Hi server, I am client !!!' });
-   
-   console.log(`response from server is "${responseFromServer}"`);
-   // ** response from server is "Hello client."
+    let myServiceClient = new Node({ options: { layer: 'LayerA' } });
+
+    //** connect one node to another node with address
+    await myServiceClient.connect({ address: 'tcp://127.0.0.1:6000' });
+
+    let serverNodeId = 'myServiceServer';
+
+    // ** tick() is like firing an event to another node
+    myServiceClient.tick({ to: serverNodeId, event: 'welcome', data:'Hi server!!!' });
+
+    // ** you request to another node and getting a promise
+    // ** which will be resolve after reply.
+    let responseFromServer = await myServiceClient.request({ to: serverNodeId, event: 'welcome', data: 'Hi server, I am client !!!' });
+
+    console.log(`response from server is "${responseFromServer}"`);
+    // ** response from server is "Hello client."
 }());
 
 ```

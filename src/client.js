@@ -1,9 +1,9 @@
-import {events} from './enum'
+import { events } from './enum'
 import Globals from './globals'
 import ActorModel from './actor'
 import { ZeronodeError, ErrorCodes } from './errors'
 
-import {Dealer as DealerSocket, SocketEvent} from './sockets'
+import { Dealer as DealerSocket, SocketEvent } from './sockets'
 
 let _private = new WeakMap()
 
@@ -29,14 +29,14 @@ export default class Client extends DealerSocket {
   }
 
   getServerActor () {
-    let {server} = _private.get(this)
+    let { server } = _private.get(this)
     return server
   }
 
   setOptions (options, notify = true) {
     super.setOptions(options)
     if (notify) {
-      this.tick({ event: events.OPTIONS_SYNC, data: {actorId: this.getId(), options}, mainEvent: true })
+      this.tick({ event: events.OPTIONS_SYNC, data: { actorId: this.getId(), options }, mainEvent: true })
     }
   }
 
@@ -57,11 +57,11 @@ export default class Client extends DealerSocket {
         mainEvent: true
       }
 
-      let {actorId, options} = await this.request(requestData)
+      let { actorId, options } = await this.request(requestData)
       // ** creating server model and setting it online
-      _scope.server = new ActorModel({id: actorId, options: options, online: true, address: serverAddress})
+      _scope.server = new ActorModel({ id: actorId, options: options, online: true, address: serverAddress })
       this::_startServerPinging()
-      return {actorId, options}
+      return { actorId, options }
     } catch (err) {
       let clientConnectError = new ZeronodeError({ socketId: this.getId(), code: ErrorCodes.CLIENT_CONNECT, error: err })
       clientConnectError.description = `Error while disconnecting client '${this.getId()}'`
@@ -73,7 +73,7 @@ export default class Client extends DealerSocket {
     try {
       let _scope = _private.get(this)
       let server = this.getServerActor()
-      let disconnectData = {actorId: this.getId()}
+      let disconnectData = { actorId: this.getId() }
 
       if (options) {
         disconnectData.options = options
@@ -100,7 +100,7 @@ export default class Client extends DealerSocket {
     }
   }
 
-  request ({event, data, timeout, mainEvent} = {}) {
+  request ({ event, data, timeout, mainEvent } = {}) {
     let server = this.getServerActor()
 
     // this is first request, and there is no need to check if server online or not
@@ -113,10 +113,10 @@ export default class Client extends DealerSocket {
       return Promise.reject(new ZeronodeError({ socketId: this.getId(), error: serverOfflineError, code: ErrorCodes.SERVER_IS_OFFLINE }))
     }
 
-    return super.request({event, data, timeout, to: server.getId(), mainEvent})
+    return super.request({ event, data, timeout, to: server.getId(), mainEvent })
   }
 
-  tick ({event, data, mainEvent} = {}) {
+  tick ({ event, data, mainEvent } = {}) {
     let server = this.getServerActor()
 
     if (!server || !server.isOnline()) {
@@ -124,7 +124,7 @@ export default class Client extends DealerSocket {
       return Promise.reject(new ZeronodeError({ socketId: this.getId(), error: serverOfflineError, code: ErrorCodes.SERVER_IS_OFFLINE }))
     }
 
-    super.tick({event, data, to: server.getId(), mainEvent})
+    super.tick({ event, data, to: server.getId(), mainEvent })
   }
 }
 
@@ -159,7 +159,7 @@ async function _serverReconnectHandler (/* { fd, serverAddress } */) {
       mainEvent: true
     }
 
-    let {actorId, options} = await this.request(requestObj)
+    let { actorId, options } = await this.request(requestObj)
 
     // **  TODO։։avar remove this after some time (server should always be available at this point)
     if (!server) {
@@ -200,13 +200,14 @@ function _serverStopHandler () {
   }
 }
 
-function _serverOptionsSync ({options, actorId}) {
+function _serverOptionsSync ({ options, actorId }) {
   try {
     let server = this.getServerActor()
     if (!server) {
       throw new Error(`Server actor is not available on client '${this.getId()}'`)
     }
     server.setOptions(options)
+    this.emit(events.OPTIONS_SYNC, { id: server.getId(), newOptions: options })
   } catch (err) {
     let serverOptionsSyncHandlerError = new ZeronodeError({ socketId: this.getId(), code: ErrorCodes.SERVER_OPTIONS_SYNC_HANDLER, error: err })
     serverOptionsSyncHandlerError.description = `Error while handling server options sync on client ${this.getId()}`
@@ -216,7 +217,7 @@ function _serverOptionsSync ({options, actorId}) {
 
 function _startServerPinging () {
   let _scope = _private.get(this)
-  let {pingInterval} = _scope
+  let { pingInterval } = _scope
 
   if (pingInterval) {
     clearInterval(pingInterval)
@@ -237,7 +238,7 @@ function _startServerPinging () {
 }
 
 function _stopServerPinging () {
-  let {pingInterval} = _private.get(this)
+  let { pingInterval } = _private.get(this)
 
   if (pingInterval) {
     clearInterval(pingInterval)

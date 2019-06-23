@@ -1,11 +1,11 @@
 # Snyk (https://snyk.io) policy file, patches or ignores known vulnerabilities.
-version: v1.7.1
-ignore: {}
-# patches apply the minimum changes required to fix a vulnerability
-patch:
-  'npm:marked:20170112':
-    - jsdoc > marked:
-        patched: '2017-11-27T00:34:10.816Z'
-  'npm:marked:20170907':
-    - jsdoc > marked:
-        patched: '2017-11-27T00:34:10.816Z'
+version: v1.12.0
+# ignores vulnerabilities until expiry date; change duration by modifying expiry date
+ignore:
+  'npm:chownr:20180731':
+    - zeromq > prebuild-install > tar-fs > chownr:
+        reason: >-
+          Chownr has a recently reported issue to snyk, though the issue itself
+          has been known for over a year.
+        expires: '2020-01-18T16:03:09.970Z'
+patch: {}
