@@ -1,6 +1,6 @@
 import _ from 'underscore'
 import animal from 'animal-id'
-import EventEmitter from 'pattern-emitter'
+import { PatternEmitter } from '@sfast/pattern-emitter-ts'
 
 import { ZeronodeError, ErrorCodes } from '../errors'
 
@@ -65,7 +65,7 @@ function buildSocketEventHandler (eventName) {
   return this::handler
 }
 
-class Socket extends EventEmitter {
+class Socket extends PatternEmitter {
   static generateSocketId () {
     return animal.getId()
   }
@@ -96,8 +96,8 @@ class Socket extends EventEmitter {
         custom: new Map()
       },
       tickEmitter: {
-        main: new EventEmitter(),
-        custom: new EventEmitter()
+        main: new PatternEmitter(),
+        custom: new PatternEmitter()
       }
     }
 
