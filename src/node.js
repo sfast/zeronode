@@ -344,7 +344,7 @@ export default class Node extends PatternEmitter {
 
   offTick (event, fn) {
     let _scope = _private.get(this)
-    _scope.nodeServer.offTick(event)
+    _scope.nodeServer.offTick(event, fn)
     _scope.nodeClients.forEach((client) => {
       client.offTick(event, fn)
     }, this)
