@@ -7,7 +7,6 @@ import { ZeronodeError, ErrorCodes } from '../errors'
 import SocketEvent from './events'
 import Envelop from './envelope'
 import { EnvelopType, MetricType, Timeouts } from './enum'
-import Watchers from './watchers'
 
 let _private = new WeakMap()
 
@@ -92,8 +91,8 @@ class Socket extends PatternEmitter {
       monitorRestartInterval: null,
       requests: new Map(),
       requestWatcherMap: {
-        main: new Map(),
-        custom: new Map()
+        main: new PatternEmitter(),
+        custom: new PatternEmitter()
       },
       tickEmitter: {
         main: new PatternEmitter(),
@@ -276,6 +275,8 @@ class Socket extends PatternEmitter {
     }
     let { requestWatcherMap } = _private.get(this)
     let watcherMap = main ? requestWatcherMap.main : requestWatcherMap.custom
+
+
 
     let requestWatcher = watcherMap.get(endpoint)
 

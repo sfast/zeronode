@@ -15,7 +15,7 @@ import Server from './server'
 import Client from './client'
 import Metric from './metric'
 import { events } from './enum'
-import { Enum, Watchers } from './sockets'
+import { Enum } from './sockets'
 
 let MetricType = Enum.MetricType
 
@@ -306,7 +306,12 @@ export default class Node extends PatternEmitter {
       client.offRequest(requestEvent, fn)
     })
 
-    _scope.requestPEmitter.off(requestEvent, fn)
+    if(!fn) {
+      _scope.requestPEmitter.removeAllListeners(requestEvent)
+    }
+    else {
+      _scope.requestPEmitter.off(requestEvent, fn)
+    }
 
     // let requestWatcher = _scope.requestWatcherMap.get(requestEvent)
     // if (requestWatcher) {
@@ -344,7 +349,12 @@ export default class Node extends PatternEmitter {
       client.offTick(event, fn)
     }, this)
 
-    _scope.tickPEmitter.off(event, fn);
+    if(!fn) {
+      _scope.tickPEmitter.removeAllListeners(event)
+    }
+    else {
+      _scope.tickPEmitter.off(event, fn)  
+    }
 
     // let tickWatcher = _scope.tickWatcherMap.get(event)
     // if (tickWatcher) {
@@ -578,7 +588,7 @@ function _addExistingListenersToClient (client) {
   //   }, this)
   // }, this)
 
-  _scope.tickPEmitter.listeners.forEach((eventArg, fnMap) => {
+  _scope.requestPEmitter.listeners.forEach((eventArg, fnMap) => {
     fnMap.forEach((fn) => {
       client.onTick(event, this::fn)
     }); 
@@ -605,7 +615,7 @@ function _removeClientAllListeners (client) {
   // }, this)
 
     // ** removing all handlers
-  _scope.tickPEmitter.forEach((eventArg, fnMap) => {
+  _scope.tickPEmitter.listeners.forEach((eventArg, fnMap) => {
     client.offTick(eventArg)
   });
 
@@ -615,7 +625,7 @@ function _removeClientAllListeners (client) {
   // }, this)
 
   // ** removing all handlers
-  _scope.tickPEmitter.forEach((eventArg, fnMap) => {
+  _scope.tickPEmitter.listeners.forEach((eventArg, fnMap) => {
     client.offTick(eventArg)
   });
 
