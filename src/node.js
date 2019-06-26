@@ -15,7 +15,7 @@ import Server from './server'
 import Client from './client'
 import Metric from './metric'
 import { events } from './enum'
-import { Enum, Watchers } from './sockets'
+import { Enum } from './sockets'
 
 let MetricType = Enum.MetricType
 
@@ -339,7 +339,7 @@ export default class Node extends PatternEmitter {
 
   offTick (event, fn) {
     let _scope = _private.get(this)
-    _scope.nodeServer.offTick(event)
+    _scope.nodeServer.offTick(event, fn)
     _scope.nodeClients.forEach((client) => {
       client.offTick(event, fn)
     }, this)
@@ -605,7 +605,7 @@ function _removeClientAllListeners (client) {
   // }, this)
 
     // ** removing all handlers
-  _scope.tickPEmitter.forEach((eventArg, fnMap) => {
+  _scope.tickPEmitter.listeners.forEach((eventArg, fnMap) => {
     client.offTick(eventArg)
   });
 
@@ -615,7 +615,7 @@ function _removeClientAllListeners (client) {
   // }, this)
 
   // ** removing all handlers
-  _scope.tickPEmitter.forEach((eventArg, fnMap) => {
+  _scope.tickPEmitter.listeners.forEach((eventArg, fnMap) => {
     client.offTick(eventArg)
   });
 
