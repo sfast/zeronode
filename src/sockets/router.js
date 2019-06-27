@@ -120,7 +120,7 @@ export default class RouterSocket extends Socket {
     return super.tick(envelop)
   }
 
-  getSocketMsg (envelop) {
-    return [envelop.getRecipient(), '', envelop.getBuffer()]
+  getSocketMsg (buffer, recipient) {
+    return [recipient, '', buffer]
   }
 }
