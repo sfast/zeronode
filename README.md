@@ -22,7 +22,7 @@
 * [Examples](#examples)
     * [Basic Examples](#basicExamples)
     * [Basic Examples](#basicExamples)
-* [Advanced] (#advanced)
+* [Advanced](#advanced)
     * [Basic Examples](#basicExamples)
     * [Basic Examples](#basicExamples)
 * [Contributing](#contributing)

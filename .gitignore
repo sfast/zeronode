@@ -43,3 +43,6 @@ tmp/
 
 # VS code local history
 .history/
+*.DS_Store
+
+tsbuild/

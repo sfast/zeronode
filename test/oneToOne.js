@@ -74,7 +74,7 @@ describe('oneToOne, failures', () => {
       serverNode.offRequest('foo')
       await clientNode.request({ to: serverNode.getId(), event: 'foo', data: 'bar', timeout: 200 })
       return Promise.reject('fail')
-    } catch (err) {
+    } catch (err) {      
       assert.include(err.message, 'timeouted')
     }
   })
@@ -83,14 +83,11 @@ describe('oneToOne, failures', () => {
     try {
       await serverNode.bind()
       await clientNode.connect({ address: serverNode.getAddress() })
-
       let fooListener = ({ body, reply }) => {
         reply(body)
       }
-
       serverNode.onRequest('foo', fooListener)
       serverNode.offRequest('foo', fooListener)
-
       await clientNode.request({ to: serverNode.getId(), event: 'foo', data: 'bar', timeout: 200 })
       return Promise.reject('fail')
     } catch (err) {
@@ -156,7 +153,7 @@ describe('oneToOne, failures', () => {
       await clientNode.connect({ address: serverNode.getAddress() })
       await clientNode.disconnect(serverNode.getAddress())
       clientNode.tick({ to: serverNode.getId(), event: 'foo', data: 'bar' })
-    } catch (err) {
+    } catch (err) {      
       assert.equal(err.code, ErrorCodes.NODE_NOT_FOUND)
     }
   })

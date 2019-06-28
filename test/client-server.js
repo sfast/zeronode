@@ -7,10 +7,9 @@ const address = 'tcp://127.0.0.1:5001'
 describe('Client/Server', () => {
   let client, server
 
-  beforeEach((done) => {
-    client = new Client({})
-    server = new Server({})
-    done()
+  beforeEach(async () => {
+    client = new Client()
+    server = new Server()
   })
 
   afterEach(async () => {
