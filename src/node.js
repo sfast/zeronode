@@ -590,7 +590,7 @@ function _addExistingListenersToClient (client) {
 
   _scope.requestPEmitter.listeners.forEach((eventArg, fnMap) => {
     fnMap.forEach((fn) => {
-      client.onTick(event, this::fn)
+      client.onRequest(event, this::fn)
     }); 
 }, this);
 
