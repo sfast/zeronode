@@ -49,6 +49,10 @@ else
             DIST=`cat /etc/lsb-release | grep '^DISTRIB_ID' | awk -F=  '{ print $2 }'`
             PSUEDONAME=`cat /etc/lsb-release | grep '^DISTRIB_CODENAME' | awk -F=  '{ print $2 }'`
             REV=`cat /etc/lsb-release | grep '^DISTRIB_RELEASE' | awk -F=  '{ print $2 }'`
+        elif [ -f /sys/hypervisor/uuid ] && [ `head -c 3 /sys/hypervisor/uuid` == ec2 ]; then
+            DistroBasedOn='RedHat'
+            packageManager="sudo yum"
+            libzmq="zeromq"
         fi
         if [ -f /etc/UnitedLinux-release ] ; then
             DIST="${DIST}[`cat /etc/UnitedLinux-release | tr "\n" ' ' | sed s/VERSION.*//`]"
@@ -78,13 +82,8 @@ pkg-config libzmq --exists
 
 haveZmq=$?
 
-#if [ $haveZmq == 0 ]; then
-#    exit 0;
-#fi
-
-
-if [ $packageManager == "brew" ]; then
-	$packageManager install $libzmq
-else 
-	$packageManager install -y  $libzmq
+if [ $haveZmq == 0 ]; then
+    exit 0;
 fi
+
+$packageManager install -y $libzmq
