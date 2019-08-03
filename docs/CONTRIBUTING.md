@@ -1,17 +1,42 @@
-#### [The PR Flow](https://guides.github.com/introduction/flow/index.html) 
-All code changes happen through Pull Requests.
-Pull Requests are the best way to propose changes to the codebase. 
+## Rules
+1. **No `--force` pushes** or modifying the git history in any way
+2. Follow existing code style
+3. Pull requests with tests are much more likely to be accepted
+4. Follow the guidelines below
 
-1. Fork the repo and create your branch from `master`.
-2. If you've added code that should be tested, add tests.
-3. If you've changed APIs, update the documentation.
-4. Ensure the test suite passes.
-5. Make sure your code lints. ```npm run standard```
-6. Issue that pull request!
+## Bugfix or Feature?
 
-#### Examples of behavior that contributes to creating a positive environment include:
+This project uses the [gitflow workflow](https://www.atlassian.com/git/tutorials/comparing-workflows/gitflow-workflow). Simply put, you need to decide if your contribution will be a bug fix that could be released as a patch, or a feature that will end up being a minor or major release.
+
+### Found a bug that can be fixed without affecting the API?
+
+1. **Fork** this repo
+2. Create a new branch from `master` to work in
+3. **Add tests** if needed
+4. Make sure your code **lints** by running `npm run lint`
+5. Make sure your code **passes tests** by running `npm test`
+6. Submit a **pull request** against the `master` branch
+
+### New feature or anything that would result in a change to the API?
+
+1. **Fork** this repo
+2. Create a new branch from `develop` to work in
+3. **Add tests** to as needed
+4. Make sure your code **lints** by running `npm run standard`
+5. Make sure your code **passes tests** by running `npm run test`
+6. Submit a **pull request** against the `develop` branch
+
+## Releases
+
+Declaring formal releases remains the prerogative of the project maintainer.
+
+### Positive environment
 1. Using welcoming and inclusive language
 2. Being respectful of differing viewpoints and experiences
 3. Gracefully accepting constructive criticism
 4. Focusing on what is best for the community
 5. Showing empathy towards other community members
+
+
+
+
