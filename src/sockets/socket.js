@@ -1,13 +1,12 @@
 import _ from 'underscore'
 import animal from 'animal-id'
-import EventEmitter from 'pattern-emitter'
+import { PatternEmitter } from '@sfast/pattern-emitter-ts'
 
 import { ZeronodeError, ErrorCodes } from '../errors'
 
 import SocketEvent from './events'
 import Envelop from './envelope'
 import { EnvelopType, MetricType, Timeouts } from './enum'
-import Watchers from './watchers'
 
 let _private = new WeakMap()
 
@@ -65,7 +64,7 @@ function buildSocketEventHandler (eventName) {
   return this::handler
 }
 
-class Socket extends EventEmitter {
+class Socket extends PatternEmitter {
   static generateSocketId () {
     return animal.getId()
   }
@@ -91,13 +90,17 @@ class Socket extends EventEmitter {
       isDebugMode: false,
       monitorRestartInterval: null,
       requests: new Map(),
-      requestWatcherMap: {
-        main: new Map(),
-        custom: new Map()
+      // requestWatcherMap: {
+      //   main: new PatternEmitter(),
+      //   custom: new PatternEmitter()
+      // },
+      requestEmitter: {
+        main: new PatternEmitter(),
+        custom: new PatternEmitter()
       },
       tickEmitter: {
-        main: new EventEmitter(),
-        custom: new EventEmitter()
+        main: new PatternEmitter(),
+        custom: new PatternEmitter()
       }
     }
 
@@ -270,35 +273,17 @@ class Socket extends EventEmitter {
   }
 
   onRequest (endpoint, fn, main = false) {
+    if(!_.isFunction(fn)) return
     // ** function will called with argument  request = {body, reply}
-    if (!(endpoint instanceof RegExp)) {
-      endpoint = endpoint.toString()
-    }
-    let { requestWatcherMap } = _private.get(this)
-    let watcherMap = main ? requestWatcherMap.main : requestWatcherMap.custom
-
-    let requestWatcher = watcherMap.get(endpoint)
-
-    if (!requestWatcher) {
-      requestWatcher = new Watchers(endpoint)
-      watcherMap.set(endpoint, requestWatcher)
-    }
-
-    requestWatcher.addFn(fn)
+    let { requestEmitter } = _private.get(this)
+    main ? requestEmitter.main.on(endpoint, fn) : requestEmitter.custom.on(endpoint, fn)
   }
 
   offRequest (endpoint, fn, main = false) {
-    let { requestWatcherMap } = _private.get(this)
-    let watcherMap = main ? requestWatcherMap.main : requestWatcherMap.custom
+    let { requestEmitter } = _private.get(this)
+    let eventRequestEmitter = main ? requestEmitter.main : requestEmitter.custom
 
-    if (_.isFunction(fn)) {
-      let endpointWatcher = watcherMap.get(endpoint)
-      if (!endpointWatcher) return
-      endpointWatcher.removeFn(fn)
-      return
-    }
-
-    watcherMap.delete(endpoint)
+    return _.isFunction(fn) ? eventRequestEmitter.removeListener(endpoint, fn) :  eventRequestEmitter.removeAllListeners(endpoint)
   }
 
   onTick (event, fn, main = false) {
@@ -310,12 +295,7 @@ class Socket extends EventEmitter {
     let { tickEmitter } = _private.get(this)
     let eventTickEmitter = main ? tickEmitter.main : tickEmitter.custom
 
-    if (_.isFunction(fn)) {
-      eventTickEmitter.removeListener(event, fn)
-      return
-    }
-
-    eventTickEmitter.removeAllListeners(event)
+    return _.isFunction(fn) ? eventTickEmitter.removeListener(event, fn) :  eventTickEmitter.removeAllListeners(event)
   }
 }
 
@@ -410,26 +390,10 @@ function syncEnvelopHandler (envelop) {
 function determineHandlersByTag (tag, main = false) {
   let handlers = []
 
-  let { requestWatcherMap } = _private.get(this)
-  let watcherMap = main ? requestWatcherMap.main : requestWatcherMap.custom
+  let { requestEmitter } = _private.get(this)
+  let requestPEmitter = main ? requestEmitter.main : requestEmitter.custom
 
-  for (let endpoint of watcherMap.keys()) {
-    if (endpoint instanceof RegExp) {
-      if (endpoint.test(tag)) {
-        watcherMap.get(endpoint).getFnMap().forEach((index, fnKey) => {
-          handlers.push({ index, fnKey })
-        })
-      }
-    } else if (endpoint === tag) {
-      watcherMap.get(endpoint).getFnMap().forEach((index, fnKey) => {
-        handlers.push({ index, fnKey })
-      })
-    }
-  }
-
-  return handlers.sort((a, b) => {
-    return a.index - b.index
-  }).map((ob) => ob.fnKey)
+  return requestPEmitter.listenersByEventType(tag);
 }
 
 function responseEnvelopHandler (envelop) {
