@@ -187,7 +187,7 @@ export default class DealerSocket extends Socket {
     socket.close()
   }
 
-  getSocketMsg (envelop) {
-    return envelop.getBuffer()
+  getSocketMsg (buffer) {
+    return buffer
   }
 }

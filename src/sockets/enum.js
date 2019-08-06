@@ -6,7 +6,8 @@ let EnvelopType = {
   TICK: 1,
   REQUEST: 2,
   RESPONSE: 3,
-  ERROR: 4
+  ERROR: 4,
+  ROUTE: 5
 }
 
 let MetricType = {

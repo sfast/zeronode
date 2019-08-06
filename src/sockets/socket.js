@@ -1,13 +1,12 @@
 import _ from 'underscore'
 import animal from 'animal-id'
-import EventEmitter from 'pattern-emitter'
+import { PatternEmitter } from '@sfast/pattern-emitter-ts'
 
 import { ZeronodeError, ErrorCodes } from '../errors'
 
 import SocketEvent from './events'
 import Envelop from './envelope'
 import { EnvelopType, MetricType, Timeouts } from './enum'
-import Watchers from './watchers'
 
 let _private = new WeakMap()
 
@@ -27,6 +26,7 @@ const nop = () => {}
  *
  * @param envelop: Object
  * @param type: Enum(-1 = timeout, 0 = send, 1 = got)
+ * @todo envelop arg should be replaced with envelopeMeta which can contain also metrics part
  */
 function emitMetric (envelop, type = 0) {
   let event = ''
@@ -51,6 +51,8 @@ function emitMetric (envelop, type = 0) {
       event = !type ? MetricType.SEND_REPLY_ERROR : MetricType.GOT_REPLY_ERROR
   }
 
+  // ** emitting metric event  and envelop meta
+  // TODO should be enhanced to contain envelop.data.duration and envelop.size of data
   this.emit(event, envelop)
 }
 
@@ -65,7 +67,7 @@ function buildSocketEventHandler (eventName) {
   return this::handler
 }
 
-class Socket extends EventEmitter {
+class Socket extends PatternEmitter {
   static generateSocketId () {
     return animal.getId()
   }
@@ -91,13 +93,17 @@ class Socket extends EventEmitter {
       isDebugMode: false,
       monitorRestartInterval: null,
       requests: new Map(),
-      requestWatcherMap: {
-        main: new Map(),
-        custom: new Map()
+      // requestWatcherMap: {
+      //   main: new PatternEmitter(),
+      //   custom: new PatternEmitter()
+      // },
+      requestEmitter: {
+        main: new PatternEmitter(),
+        custom: new PatternEmitter()
       },
       tickEmitter: {
-        main: new EventEmitter(),
-        custom: new EventEmitter()
+        main: new PatternEmitter(),
+        custom: new PatternEmitter()
       }
     }
 
@@ -153,7 +159,7 @@ class Socket extends EventEmitter {
     this.logger = logger || console
   }
 
-  debugMode (val) {
+  debugMode(val) {
     let _scope = _private.get(this)
     if (val) {
       _scope.isDebugMode = !!val
@@ -162,7 +168,7 @@ class Socket extends EventEmitter {
     }
   }
 
-  request (envelop, reqTimeout) {
+  request(envelop, reqTimeout) {
     let { id, requests, metric, config } = _private.get(this)
     reqTimeout = reqTimeout || config.REQUEST_TIMEOUT || Timeouts.REQUEST_TIMEOUT
 
@@ -187,7 +193,8 @@ class Socket extends EventEmitter {
       }, reqTimeout)
 
       requests.set(envelopId, { resolve: resolve, reject: reject, timeout: timeout, sendTime: process.hrtime() })
-      this.sendEnvelop(envelop)
+      let envelopBuffer = envelop.getBuffer()
+      this.sendEnvelop(envelopBuffer)
     })
   }
 
@@ -198,13 +205,16 @@ class Socket extends EventEmitter {
       throw new ZeronodeError({ socketId, error: socketNotOnlineError, code: ErrorCodes.SOCKET_ISNOT_ONLINE })
     }
 
-    this.sendEnvelop(envelop)
+    // console.log("Tick:: socketId=", socketId, envelop.toMetaJSON());
+    let envelopBuffer = envelop.getBuffer()
+    this.sendEnvelop(envelopBuffer)
   }
 
-  sendEnvelop (envelop) {
+  sendEnvelop (envelopBuffer) {
     let { socket, metric } = _private.get(this)
-    let msg = this.getSocketMsg(envelop)
-    let envelopJSON = envelop.toJSON()
+    let envelopJSON = Envelop.readMetaFromBuffer(envelopBuffer)
+    // console.log("AVAR::LOG:: sendEnvelop envelopJSON = ", envelopJSON);
+    let msg = this.getSocketMsg(envelopBuffer, envelopJSON.recipient)
 
     if (msg instanceof Buffer) {
       envelopJSON.size = msg.length
@@ -270,35 +280,17 @@ class Socket extends EventEmitter {
   }
 
   onRequest (endpoint, fn, main = false) {
+    if(!_.isFunction(fn)) return
     // ** function will called with argument  request = {body, reply}
-    if (!(endpoint instanceof RegExp)) {
-      endpoint = endpoint.toString()
-    }
-    let { requestWatcherMap } = _private.get(this)
-    let watcherMap = main ? requestWatcherMap.main : requestWatcherMap.custom
-
-    let requestWatcher = watcherMap.get(endpoint)
-
-    if (!requestWatcher) {
-      requestWatcher = new Watchers(endpoint)
-      watcherMap.set(endpoint, requestWatcher)
-    }
-
-    requestWatcher.addFn(fn)
+    let { requestEmitter } = _private.get(this)
+    main ? requestEmitter.main.on(endpoint, fn) : requestEmitter.custom.on(endpoint, fn)
   }
 
   offRequest (endpoint, fn, main = false) {
-    let { requestWatcherMap } = _private.get(this)
-    let watcherMap = main ? requestWatcherMap.main : requestWatcherMap.custom
+    let { requestEmitter } = _private.get(this)
+    let eventRequestEmitter = main ? requestEmitter.main : requestEmitter.custom
 
-    if (_.isFunction(fn)) {
-      let endpointWatcher = watcherMap.get(endpoint)
-      if (!endpointWatcher) return
-      endpointWatcher.removeFn(fn)
-      return
-    }
-
-    watcherMap.delete(endpoint)
+    return _.isFunction(fn) ? eventRequestEmitter.removeListener(endpoint, fn) :  eventRequestEmitter.removeAllListeners(endpoint)
   }
 
   onTick (event, fn, main = false) {
@@ -310,12 +302,7 @@ class Socket extends EventEmitter {
     let { tickEmitter } = _private.get(this)
     let eventTickEmitter = main ? tickEmitter.main : tickEmitter.custom
 
-    if (_.isFunction(fn)) {
-      eventTickEmitter.removeListener(event, fn)
-      return
-    }
-
-    eventTickEmitter.removeAllListeners(event)
+    return _.isFunction(fn) ? eventTickEmitter.removeListener(event, fn) :  eventTickEmitter.removeAllListeners(event)
   }
 }
 
@@ -326,18 +313,34 @@ class Socket extends EventEmitter {
 function onSocketMessage (empty, envelopBuffer) {
   let { metric, tickEmitter } = _private.get(this)
 
-  let { type, id, owner, recipient, tag, mainEvent } = Envelop.readMetaFromBuffer(envelopBuffer)
-  let envelop = new Envelop({ type, id, owner, recipient, tag, mainEvent })
-  let envelopData = Envelop.readDataFromBuffer(envelopBuffer)
-  envelop.setData(envelopData)
+  // ** reading metadata of the envelope
+  let envelopMetaJSON = Envelop.readMetaFromBuffer(envelopBuffer)
+  // console.log("AVAR::LOG envelopMetaJSON" ,envelopMetaJSON);
+  let { type, id, owner, recipient, tag, mainEvent, context, size } = envelopMetaJSON
 
-  let envelopJSON = envelop.toJSON()
-  envelopJSON.size = envelopBuffer.length
+  // let dataBuffer = Envelop.getDataBuffer(buffer)
+  // return dataBuffer ? Parse.bufferToData(dataBuffer) : null
+
+  // let envelop = Envelop.fromBuffer(envelopBuffer);
+  // let envelop = new Envelop({ type, id, owner, recipient, tag, mainEvent, context })
+  // envelop.size = envelopBuffer.length
+  // let envelopData = Envelop.readDataFromBuffer(envelopBuffer)
+  // envelop.setData(envelopData)
+
+  // console.log("AVAR::LOG this.getId()" , this.getId(), " recipient=", recipient);
+
+  let envelop;
 
   switch (type) {
     case EnvelopType.TICK:
-      metric(envelopJSON, 1)
+      metric(envelopMetaJSON, 1)
 
+      if (recipient && this.getId() !== recipient) {
+        // ** in this case we need to redirect it to the right place
+        return this::routeEnvelopeHandler(envelopBuffer);
+      }
+
+      let envelopData = Envelop.readDataFromBuffer(envelopBuffer)
       if (mainEvent) {
         tickEmitter.main.emit(tag, envelopData)
       } else {
@@ -348,18 +351,30 @@ function onSocketMessage (empty, envelopBuffer) {
       }
       break
     case EnvelopType.REQUEST:
-      metric(envelopJSON, 1)
+      metric(envelopMetaJSON, 1)
+      if (recipient && this.getId() !== recipient) {
+        // ** in this case we need to redirect it to the right place
+        return this::routeEnvelopeHandler(envelopBuffer);
+      }
+
       // ** if metric is enabled then emit it
+      envelop = Envelop.fromBuffer(envelopBuffer);
       this::syncEnvelopHandler(envelop)
       break
     case EnvelopType.RESPONSE:
     case EnvelopType.ERROR:
-      envelop.size = envelopBuffer.length
+      if (recipient &&  this.getId() !== recipient) {
+        // ** in this case we need to redirect it to the right place
+        return this::routeEnvelopeHandler(envelopBuffer);
+      }
+
+      envelop = Envelop.fromBuffer(envelopBuffer);
       this::responseEnvelopHandler(envelop)
       break
   }
 }
 
+// ** TODO here we are passing envelope without data buffer
 function syncEnvelopHandler (envelop) {
   let self = this
   let getTime = process.hrtime()
@@ -379,16 +394,20 @@ function syncEnvelopHandler (envelop) {
       envelop.setRecipient(prevOwner)
       envelop.setOwner(self.getId())
       envelop.setType(EnvelopType.RESPONSE)
-      envelop.setData({ getTime, replyTime: process.hrtime(), data: response })
-      self.sendEnvelop(envelop)
+      envelop.setContext({ getTime, replyTime: process.hrtime() })
+      envelop.setData({ data: response })
+
+      
+      self.sendEnvelop(envelop.getBuffer())
     },
     error: (err) => {
       envelop.setRecipient(prevOwner)
       envelop.setOwner(self.getId())
       envelop.setType(EnvelopType.ERROR)
-      envelop.setData({ getTime, replyTime: process.hrtime(), data: err })
+      envelop.setContext({ getTime, replyTime: process.hrtime() });
+      envelop.setData({ data: err })
 
-      self.sendEnvelop(envelop)
+      self.sendEnvelop(envelop.getBuffer())
     },
     next: (err) => {
       if (err) {
@@ -410,29 +429,14 @@ function syncEnvelopHandler (envelop) {
 function determineHandlersByTag (tag, main = false) {
   let handlers = []
 
-  let { requestWatcherMap } = _private.get(this)
-  let watcherMap = main ? requestWatcherMap.main : requestWatcherMap.custom
+  let { requestEmitter } = _private.get(this)
+  let requestPEmitter = main ? requestEmitter.main : requestEmitter.custom
 
-  for (let endpoint of watcherMap.keys()) {
-    if (endpoint instanceof RegExp) {
-      if (endpoint.test(tag)) {
-        watcherMap.get(endpoint).getFnMap().forEach((index, fnKey) => {
-          handlers.push({ index, fnKey })
-        })
-      }
-    } else if (endpoint === tag) {
-      watcherMap.get(endpoint).getFnMap().forEach((index, fnKey) => {
-        handlers.push({ index, fnKey })
-      })
-    }
-  }
-
-  return handlers.sort((a, b) => {
-    return a.index - b.index
-  }).map((ob) => ob.fnKey)
+  return requestPEmitter.listenersByEventType(tag);
 }
 
 function responseEnvelopHandler (envelop) {
+  // console.log("AVAR::responseEnvelopHandler", envelop)
   let { requests, metric } = _private.get(this)
 
   let id = envelop.getId()
@@ -446,18 +450,18 @@ function responseEnvelopHandler (envelop) {
 
   // ** getTime is the time when message arrives to server
   // ** replyTime is the time when message is send from server
-  let gotReplyMetric = envelop.toJSON()
-  let { getTime, replyTime } = gotReplyMetric.data
+  let envelopMeta = envelop.toMetaJSON()
+  // console.log("------AVAR::responseEnvelopHandler envelopMeta", envelopMeta)
+  let { getTime, replyTime } = envelopMeta.context
   let duration = _calculateLatency({ sendTime, getTime, replyTime, replyGetTime: process.hrtime() })
 
-  gotReplyMetric.data = {
-    data: gotReplyMetric.data,
+  // ** TODO maybe router should aggregate in a different way
+  envelopMeta.context = {
+    ...envelopMeta.context,
     duration
   }
 
-  gotReplyMetric.size = envelop.size
-
-  metric(gotReplyMetric, 1)
+  metric(envelopMeta, 1)
 
   clearTimeout(timeout)
   requests.delete(id)
@@ -465,6 +469,41 @@ function responseEnvelopHandler (envelop) {
   let { data } = envelop.getData()
   //* * resolving request promise with response data
   envelop.getType() === EnvelopType.ERROR ? reject(data) : resolve(data)
+}
+
+function routeEnvelopeHandler(envelopBuffer) {
+  // ** reading metadata of the envelope
+  let envelopMetaJSON = Envelop.readMetaFromBuffer(envelopBuffer)
+
+  let { type, id, owner, recipient, tag, mainEvent, context, size } = envelopMetaJSON
+  
+  // let dataBuffer = Envelop.getDataBuffer(buffer)
+  // return dataBuffer ? Parse.bufferToData(dataBuffer) : null
+
+  // let envelop = Envelop.fromBuffer(envelopBuffer);
+  // let envelop = new Envelop({ type, id, owner, recipient, tag, mainEvent, context })
+  // envelop.size = envelopBuffer.length
+  // let envelopData = Envelop.readDataFromBuffer(envelopBuffer)
+  // envelop.setData(envelopData)
+
+  // console.log("AVAR::LOG this.getId()" , this.getId(), " recipient=", recipient);
+
+  // -----
+  switch (type) {
+    case EnvelopType.TICK:
+      // TODO maybe we can update metric on router about the best behaving services 
+      // metric(envelopMetaJSON, 1)
+      this.sendEnvelop(envelopBuffer);
+      break
+    case EnvelopType.REQUEST:
+        // TODO::AVAR ROUTING timeout of zeronode
+        this.sendEnvelop(envelopBuffer);
+      break
+    case EnvelopType.RESPONSE:
+    case EnvelopType.ERROR:
+      this.sendEnvelop(envelopBuffer);
+      break
+  }
 }
 
 // ** exports

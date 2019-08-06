@@ -6,7 +6,8 @@ import _ from 'underscore'
 import Promise from 'bluebird'
 import md5 from 'md5'
 import animal from 'animal-id'
-import { EventEmitter } from 'events'
+// import { EventEmitter } from 'events'
+import { PatternEmitter } from "@sfast/pattern-emitter-ts";
 
 import { ZeronodeError, ErrorCodes } from './errors'
 import NodeUtils from './utils'
@@ -14,7 +15,7 @@ import Server from './server'
 import Client from './client'
 import Metric from './metric'
 import { events } from './enum'
-import { Enum, Watchers } from './sockets'
+import { Enum } from './sockets'
 
 let MetricType = Enum.MetricType
 
@@ -26,7 +27,7 @@ let defaultLogger = winston.createLogger({
   ]
 })
 
-export default class Node extends EventEmitter {
+export default class Node extends PatternEmitter {
   constructor ({ id, bind, options, config } = {}) {
     super()
 
@@ -55,8 +56,12 @@ export default class Node extends EventEmitter {
       nodeServer: null,
       nodeClients: new Map(),
       nodeClientsAddressIndex: new Map(),
-      tickWatcherMap: new Map(),
-      requestWatcherMap: new Map()
+
+      // tickWatcherMap: new Map(),
+      // requestWatcherMap: new Map(),
+
+      tickPEmitter: new PatternEmitter(),
+      requestPEmitter: new PatternEmitter(),
     }
 
     _private.set(this, _scope)
@@ -273,15 +278,18 @@ export default class Node extends EventEmitter {
 
   onRequest (requestEvent, fn) {
     let _scope = _private.get(this)
-    let { requestWatcherMap, nodeClients, nodeServer } = _scope
+    // let { requestWatcherMap, nodeClients, nodeServer } = _scope
+    let { requestPEmitter, nodeClients, nodeServer } = _scope
 
-    let requestWatcher = requestWatcherMap.get(requestEvent)
-    if (!requestWatcher) {
-      requestWatcher = new Watchers(requestEvent)
-      requestWatcherMap.set(requestEvent, requestWatcher)
-    }
+    // let requestWatcher = requestWatcherMap.get(requestEvent)
+    // if (!requestWatcher) {
+    //   requestWatcher = new Watchers(requestEvent)
+    //   requestWatcherMap.set(requestEvent, requestWatcher)
+    // }
 
-    requestWatcher.addFn(fn)
+    // requestWatcher.addFn(fn)
+
+    requestPEmitter.on(requestEvent, fn);
 
     nodeServer.onRequest(requestEvent, fn)
 
@@ -298,23 +306,33 @@ export default class Node extends EventEmitter {
       client.offRequest(requestEvent, fn)
     })
 
-    let requestWatcher = _scope.requestWatcherMap.get(requestEvent)
-    if (requestWatcher) {
-      requestWatcher.removeFn(fn)
+    if(!fn) {
+      _scope.requestPEmitter.removeAllListeners(requestEvent)
     }
+    else {
+      _scope.requestPEmitter.off(requestEvent, fn)
+    }
+
+    // let requestWatcher = _scope.requestWatcherMap.get(requestEvent)
+    // if (requestWatcher) {
+    //   requestWatcher.removeFn(fn)
+    // }
   }
 
   onTick (event, fn) {
     let _scope = _private.get(this)
-    let { tickWatcherMap, nodeClients, nodeServer } = _scope
+    // let { tickWatcherMap, nodeClients, nodeServer } = _scope
+    let { tickPEmitter, nodeClients, nodeServer } = _scope
 
-    let tickWatcher = tickWatcherMap.get(event)
-    if (!tickWatcher) {
-      tickWatcher = new Watchers(event)
-      tickWatcherMap.set(event, tickWatcher)
-    }
+    // ** AVAR::commented
+    // let tickWatcher = tickWatcherMap.get(event)
+    // if (!tickWatcher) {
+    //   tickWatcher = new Watchers(event)
+    //   tickWatcherMap.set(event, tickWatcher)
+    // }
 
-    tickWatcher.addFn(fn)
+    // tickWatcher.addFn(fn)
+    tickPEmitter.on(event, fn);
 
     // ** _scope.nodeServer is constructed in Node constructor
     nodeServer.onTick(event, fn)
@@ -326,15 +344,22 @@ export default class Node extends EventEmitter {
 
   offTick (event, fn) {
     let _scope = _private.get(this)
-    _scope.nodeServer.offTick(event)
+    _scope.nodeServer.offTick(event, fn)
     _scope.nodeClients.forEach((client) => {
       client.offTick(event, fn)
     }, this)
 
-    let tickWatcher = _scope.tickWatcherMap.get(event)
-    if (tickWatcher) {
-      tickWatcher.removeFn(fn)
+    if(!fn) {
+      _scope.tickPEmitter.removeAllListeners(event)
     }
+    else {
+      _scope.tickPEmitter.off(event, fn)  
+    }
+
+    // let tickWatcher = _scope.tickWatcherMap.get(event)
+    // if (tickWatcher) {
+    //   tickWatcher.removeFn(fn)
+    // }
   }
 
   async request ({ to, event, data, timeout } = {}) {
@@ -549,34 +574,61 @@ function _addExistingListenersToClient (client) {
   let _scope = _private.get(this)
 
   // ** adding previously added onTick-s for this client to
-  _scope.tickWatcherMap.forEach((tickWatcher, event) => {
-    // ** TODO what about order of functions ?
-    tickWatcher.getFnMap().forEach((index, fn) => {
-      client.onTick(event, this::fn)
-    }, this)
-  }, this)
+  _scope.tickPEmitter.listeners.forEach((eventArg, fnMap) => {
+      fnMap.forEach((fn) => {
+        client.onTick(event, this::fn)
+      }); 
+  }, this);
+
+  // ** adding previously added onTick-s for this client to
+  // _scope.tickWatcherMap.forEach((tickWatcher, event) => {
+  //   // ** TODO what about order of functions ?
+  //   tickWatcher.getFnMap().forEach((index, fn) => {
+  //     client.onTick(event, this::fn)
+  //   }, this)
+  // }, this)
+
+  _scope.requestPEmitter.listeners.forEach((eventArg, fnMap) => {
+    fnMap.forEach((fn) => {
+      client.onRequest(event, this::fn)
+    }); 
+}, this);
+
 
   // ** adding previously added onRequests-s for this client to
-  _scope.requestWatcherMap.forEach((requestWatcher, requestEvent) => {
-    // ** TODO what about order of functions ?
-    requestWatcher.getFnMap().forEach((index, fn) => {
-      client.onRequest(requestEvent, this::fn)
-    }, this)
-  }, this)
+
+  // ** adding previously added onRequests-s for this client to
+  // _scope.requestWatcherMap.forEach((requestWatcher, requestEvent) => {
+  //   // ** TODO what about order of functions ?
+  //   requestWatcher.getFnMap().forEach((index, fn) => {
+  //     client.onRequest(requestEvent, this::fn)
+  //   }, this)
+  // }, this)
 }
 
 function _removeClientAllListeners (client) {
   let _scope = _private.get(this)
 
   // ** removing all handlers
-  _scope.tickWatcherMap.forEach((tickWatcher, event) => {
-    client.offTick(event)
-  }, this)
+  // _scope.tickWatcherMap.forEach((tickWatcher, event) => {
+  //   client.offTick(event)
+  // }, this)
+
+    // ** removing all handlers
+  _scope.tickPEmitter.listeners.forEach((eventArg, fnMap) => {
+    client.offTick(eventArg)
+  });
 
   // ** removing all handlers
-  _scope.requestWatcherMap.forEach((requestWatcher, requestEvent) => {
-    client.offRequest(requestEvent)
-  }, this)
+  // _scope.requestWatcherMap.forEach((requestWatcher, requestEvent) => {
+  //   client.offRequest(requestEvent)
+  // }, this)
+
+  // ** removing all handlers
+  _scope.tickPEmitter.listeners.forEach((eventArg, fnMap) => {
+    client.offTick(eventArg)
+  });
+
 }
 
 function _attachMetricsHandlers (socket, metric) {

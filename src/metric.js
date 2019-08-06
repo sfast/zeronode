@@ -326,7 +326,7 @@ export default class Metric {
     if (!request) return
 
     request.success = true
-    request.duration = envelop.data.duration
+    request.duration = envelop.context.duration
     request.size.push(envelop.size)
     sendRequestCollection.update(request)
 
@@ -344,7 +344,7 @@ export default class Metric {
     if (!request) return
 
     request.error = true
-    request.duration = envelop.data.duration
+    request.duration = envelop.context.duration
     request.size.push(envelop.size)
     sendRequestCollection.update(request)
   }
