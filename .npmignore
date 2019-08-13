@@ -12,4 +12,5 @@ tmp/
 Chanchelog.md
 TODO.md
 .idea/
+.history/
 npm-debug.log
