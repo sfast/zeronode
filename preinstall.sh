@@ -86,7 +86,7 @@ if [ $haveZmq == 0 ]; then
     exit 0;
 fi
 
-if [ $packageManager == "brew" ]; then
+if [ "${packageManager}" == "brew" ]; then
 	$packageManager install $libzmq
 else 
 	$packageManager install -y  $libzmq
