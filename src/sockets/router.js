@@ -1,7 +1,7 @@
 /**
  * Created by artak on 3/2/17.
  */
-import zmq from 'zeromq'
+import * as zmq from 'zeromq'
 import Promise from 'bluebird'
 
 import { ZeronodeError, ErrorCodes } from '../errors'
@@ -16,7 +16,7 @@ export default class RouterSocket extends Socket {
     options = options || {}
     config = config || {}
 
-    let socket = zmq.socket('router')
+    let socket = new zmq.Router()
 
     super({ id, socket, options, config })
 
@@ -51,8 +51,8 @@ export default class RouterSocket extends Socket {
     let _scope = _private.get(this)
     let bindPromise = _scope.bindPromise
 
-    if (bindPromise && bindAddress !== this.getAddress()) {
-      // ** if trying to bind to other address you need to unbind first
+    // ** if already bound or binding to a different address, reject
+    if ((this.isOnline() || bindPromise) && bindAddress !== this.getAddress()) {
       let alreadyBindedError = new Error(`Already binded to '${this.getAddress()}', unbind before changing bind address to '${bindAddress}'`)
       return Promise.reject(new ZeronodeError({ socketId: this.getId(), code: ErrorCodes.ALREADY_BINDED, error: alreadyBindedError }))
     }
@@ -63,41 +63,54 @@ export default class RouterSocket extends Socket {
     if (bindAddress) this.setAddress(bindAddress)
 
     _scope.bindPromise = new Promise((resolve, reject) => {
-      let { socket } = _scope
+      (async () => {
+        let { socket } = _scope
 
-      this.attachSocketMonitor()
+        this.attachSocketMonitor()
 
-      socket.bind(this.getAddress(), (err) => {
-        if (err) return reject(err)
-        this.setOnline()
-        resolve(`Router (${this.getId()}) is binded at address ${this.getAddress()}`)
-      })
+        try {
+          await socket.bind(this.getAddress())
+          this.setOnline()
+          resolve(`Router (${this.getId()}) is binded at address ${this.getAddress()}`)
+        } catch (err) {
+          this.detachSocketMonitor()
+          this.setOffline()
+          _scope.bindPromise = null
+          reject(new ZeronodeError({
+            socketId: this.getId(),
+            code: ErrorCodes.BIND_FAILED,
+            error: err
+          }))
+        }
+      })()
     })
 
     return _scope.bindPromise
   }
 
   // ** returns promise
-  unbind () {
-    return new Promise((resolve, reject) => {
-      //* closing and removing all listeners on socket
-      super.close()
+  async unbind () {
+    //* closing and removing all listeners on socket
+    super.close()
 
-      let _scope = _private.get(this)
-      let { socket, bindAddress, bindPromise } = _scope
+    let _scope = _private.get(this)
+    let { socket, bindAddress } = _scope
 
-      //* if bind promise is pending then reject it
-      if (bindPromise && bindPromise.isPending()) {
-        bindPromise.reject('Unbinding')
+    _scope.bindPromise = null
+
+    // Only unbind if we have a bind address and socket is online
+    if (bindAddress && this.isOnline()) {
+      try {
+        await socket.unbind(bindAddress)
+      } catch (err) {
+        // Gracefully handle unbind errors (e.g., already unbound)
+        if (this.logger) {
+          this.logger.warn(`Unbind error on ${this.getId()}: ${err.message}`)
+        }
       }
+    }
 
-      _scope.bindPromise = null
-
-      socket.unbindSync(bindAddress)
-
-      this.setOffline()
-      resolve()
-    })
+    this.setOffline()
   }
 
   // ** returns promise

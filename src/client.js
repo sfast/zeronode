@@ -18,12 +18,12 @@ export default class Client extends DealerSocket {
       pingInterval: null
     }
 
-    this.on(SocketEvent.DISCONNECT, this::_serverFailHandler)
-    this.on(SocketEvent.RECONNECT, this::_serverReconnectHandler)
+    this.on(SocketEvent.DISCONNECT, _serverFailHandler.bind(this))
+    this.on(SocketEvent.RECONNECT, _serverReconnectHandler.bind(this))
     this.on(SocketEvent.RECONNECT_FAILURE, () => this.emit(events.SERVER_RECONNECT_FAILURE, _scope.server.toJSON()))
 
-    this.onTick(events.SERVER_STOP, this::_serverStopHandler, true)
-    this.onTick(events.OPTIONS_SYNC, this::_serverOptionsSync, true)
+    this.onTick(events.SERVER_STOP, _serverStopHandler.bind(this), true)
+    this.onTick(events.OPTIONS_SYNC, _serverOptionsSync.bind(this), true)
 
     _private.set(this, _scope)
   }
@@ -60,7 +60,7 @@ export default class Client extends DealerSocket {
       let { actorId, options } = await this.request(requestData)
       // ** creating server model and setting it online
       _scope.server = new ActorModel({ id: actorId, options: options, online: true, address: serverAddress })
-      this::_startServerPinging()
+      _startServerPinging.call(this)
       return { actorId, options }
     } catch (err) {
       let clientConnectError = new ZeronodeError({ socketId: this.getId(), code: ErrorCodes.CLIENT_CONNECT, error: err })
@@ -90,9 +90,9 @@ export default class Client extends DealerSocket {
         _scope.server = null
       }
 
-      this::_stopServerPinging()
+      _stopServerPinging.call(this)
 
-      super.disconnect()
+      await super.disconnect()
     } catch (err) {
       let clientDisconnectError = new ZeronodeError({ socketId: this.getId(), code: ErrorCodes.CLIENT_DISCONNECT, error: err })
       clientDisconnectError.description = `Error while disconnecting client '${this.getId()}'`
@@ -134,7 +134,7 @@ function _serverFailHandler () {
 
     if (!server || !server.isOnline()) return
 
-    this::_stopServerPinging()
+    _stopServerPinging.call(this)
 
     server.markFailed()
 
@@ -172,7 +172,7 @@ async function _serverReconnectHandler (/* { fd, serverAddress } */) {
 
     this.emit(events.SERVER_RECONNECT, server.toJSON())
 
-    this::_startServerPinging()
+    _startServerPinging.call(this)
   } catch (err) {
     let serverReconnectHandlerError = new ZeronodeError({ socketId: this.getId(), code: ErrorCodes.SERVER_RECONNECT_HANDLER, error: err })
     serverReconnectHandlerError.description = `Error while handling server reconnect on client ${this.getId()}`
@@ -189,7 +189,7 @@ function _serverStopHandler () {
       throw new Error(`Server actor is not available on client '${this.getId()}'`)
     }
 
-    this::_stopServerPinging()
+    _stopServerPinging.call(this)
 
     server.markStopped()
     this.emit(events.SERVER_STOP, server.toJSON())

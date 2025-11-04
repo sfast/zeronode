@@ -51,7 +51,7 @@ const _updateAggregationTable = function () {
   // resetting timeout and count
   _scope.count = 0
   clearTimeout(_scope.flushTimeoutInstance)
-  _scope.flushTimeoutInstance = setTimeout(this::_updateAggregationTable, _scope.flushTimeout)
+  _scope.flushTimeoutInstance = setTimeout(_updateAggregationTable.bind(this), _scope.flushTimeout)
 
   // getting requests and ticks
   let sendRequests = _scope.sendRequestCollection.where(finishedPredicate)
@@ -254,7 +254,7 @@ export default class Metric {
     let _scope = _private.get(this)
     _scope.enabled = true
     _scope.flushTimeout = flushTimeout || _scope.flushTimeout
-    _scope.flushTimeoutInstance = setTimeout(this::_updateAggregationTable, _scope.flushTimeout)
+    _scope.flushTimeoutInstance = setTimeout(_updateAggregationTable.bind(this), _scope.flushTimeout)
   }
 
   //TODO:: avar, dave
@@ -262,7 +262,7 @@ export default class Metric {
     let _scope = _private.get(this)
     _scope.enabled = false
     clearTimeout(_scope.flushTimeoutInstance)
-    this::_updateAggregationTable()
+    _updateAggregationTable.call(this)
     _scope.count = 0
   }
 
@@ -295,7 +295,7 @@ export default class Metric {
     gotRequestCollection.update(request)
 
     if (++_scope.count === 1000) {
-      this::_updateAggregationTable()
+      _updateAggregationTable.call(this)
     }
   }
 
@@ -313,7 +313,7 @@ export default class Metric {
     gotRequestCollection.update(request)
 
     if (++_scope.count === 1000) {
-      this::_updateAggregationTable()
+      _updateAggregationTable.call(this)
     }
   }
 
@@ -331,7 +331,7 @@ export default class Metric {
     sendRequestCollection.update(request)
 
     if (++_scope.count === 1000) {
-      this::_updateAggregationTable()
+      _updateAggregationTable.call(this)
     }
   }
 
@@ -361,7 +361,7 @@ export default class Metric {
     sendRequestCollection.update(request)
 
     if (++_scope.count === 1000) {
-      this::_updateAggregationTable()
+      _updateAggregationTable.call(this)
     }
   }
 
@@ -373,7 +373,7 @@ export default class Metric {
     sendTickCollection.insert(tickInstance)
 
     if (++_scope.count === 1000) {
-      this::_updateAggregationTable()
+      _updateAggregationTable.call(this)
     }
   }
 
@@ -385,7 +385,7 @@ export default class Metric {
     gotTickCollection.insert(tickInstance)
 
     if (++_scope.count === 1000) {
-      this::_updateAggregationTable()
+      _updateAggregationTable.call(this)
     }
   }
 

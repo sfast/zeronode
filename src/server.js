@@ -26,16 +26,16 @@ export default class Server extends RouterSocket {
     this.setAddress(bind)
 
     // ** ATTACHING client connected
-    this.onRequest(events.CLIENT_CONNECTED, this::_clientConnectedRequest, true)
+    this.onRequest(events.CLIENT_CONNECTED, _clientConnectedRequest.bind(this), true)
 
     // ** ATTACHING client stop
-    this.onRequest(events.CLIENT_STOP, this::_clientStopRequest, true)
+    this.onRequest(events.CLIENT_STOP, _clientStopRequest.bind(this), true)
 
     // ** ATTACHING client ping
-    this.onTick(events.CLIENT_PING, this::_clientPingTick, true)
+    this.onTick(events.CLIENT_PING, _clientPingTick.bind(this), true)
 
     // ** ATTACHING CLIENT OPTIONS SYNCING
-    this.onTick(events.OPTIONS_SYNC, this::_clientOptionsSync, true)
+    this.onTick(events.OPTIONS_SYNC, _clientOptionsSync.bind(this), true)
   }
 
   getClientById (clientId) {
@@ -136,7 +136,7 @@ function _clientConnectedRequest (request) {
   if (!clientCheckInterval) {
     let config = this.getConfig()
     let clientHeartbeatInterval = config.CLIENT_MUST_HEARTBEAT_INTERVAL || Globals.CLIENT_MUST_HEARTBEAT_INTERVAL
-    _scope.clientCheckInterval = setInterval(this::_checkClientHeartBeat, clientHeartbeatInterval)
+    _scope.clientCheckInterval = setInterval(_checkClientHeartBeat.bind(this), clientHeartbeatInterval)
   }
 
   let replyData = { actorId: this.getId(), options: this.getOptions() }

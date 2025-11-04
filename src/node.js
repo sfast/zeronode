@@ -3,7 +3,6 @@
  */
 import winston from 'winston'
 import _ from 'underscore'
-import Promise from 'bluebird'
 import md5 from 'md5'
 import animal from 'animal-id'
 import { EventEmitter } from 'events'
@@ -60,7 +59,7 @@ export default class Node extends EventEmitter {
     }
 
     _private.set(this, _scope)
-    this::_initNodeServer()
+    _initNodeServer.call(this)
   }
 
   getId () {
@@ -203,11 +202,11 @@ export default class Node extends EventEmitter {
     // **
     client.setMetric(metric.status)
 
-    this::_addExistingListenersToClient(client)
+    _addExistingListenersToClient.call(this, client)
 
     let { actorId } = await client.connect(address, timeout)
 
-    this::_attachMetricsHandlers(client, metric)
+    _attachMetricsHandlers.call(this, client, metric)
 
     this.logger.info(`Node connected: ${this.getId()} -> ${actorId}`)
 
@@ -248,7 +247,7 @@ export default class Node extends EventEmitter {
     client.removeAllListeners(MetricType.OPTIONS_SYNC)
 
     await client.disconnect()
-    this::_removeClientAllListeners(client)
+    _removeClientAllListeners.call(this, client)
     nodeClients.delete(nodeId)
     nodeClientsAddressIndex.delete(addressHash)
     return true
@@ -342,7 +341,7 @@ export default class Node extends EventEmitter {
 
     let { nodeServer, nodeClients } = _scope
 
-    let clientActor = this::_getClientByNode(to)
+    let clientActor = _getClientByNode.call(this, to)
     if (clientActor) {
       return nodeServer.request({ to: clientActor.getId(), event, data, timeout })
     }
@@ -358,7 +357,7 @@ export default class Node extends EventEmitter {
   tick ({ to, event, data } = {}) {
     let _scope = _private.get(this)
     let { nodeServer, nodeClients } = _scope
-    let clientActor = this::_getClientByNode(to)
+    let clientActor = _getClientByNode.call(this, to)
     if (clientActor) {
       return nodeServer.tick({ to: clientActor.getId(), event, data })
     }
@@ -383,7 +382,7 @@ export default class Node extends EventEmitter {
     }
 
     // ** find the node id where the request will be sent
-    let to = this::_getWinnerNode(filteredNodes, event)
+    let to = _getWinnerNode.call(this, filteredNodes, event)
     return this.request({ to, event, data, timeout })
   }
 
@@ -410,7 +409,7 @@ export default class Node extends EventEmitter {
     if (!filteredNodes.length) {
       throw new ZeronodeError({ message: `Node with filter is not found.`, code: ErrorCodes.NODE_NOT_FOUND })
     }
-    let nodeId = this::_getWinnerNode(filteredNodes, event)
+    let nodeId = _getWinnerNode.call(this, filteredNodes, event)
     return this.tick({ to: nodeId, event, data })
   }
 
@@ -511,7 +510,7 @@ function _initNodeServer () {
 
   // ** enabling metrics
   nodeServer.setMetric(metric.status)
-  this::_attachMetricsHandlers(nodeServer, metric)
+  _attachMetricsHandlers.call(this, nodeServer, metric)
 
   _scope.nodeServer = nodeServer
 }
@@ -552,7 +551,7 @@ function _addExistingListenersToClient (client) {
   _scope.tickWatcherMap.forEach((tickWatcher, event) => {
     // ** TODO what about order of functions ?
     tickWatcher.getFnMap().forEach((index, fn) => {
-      client.onTick(event, this::fn)
+      client.onTick(event, fn.bind(this))
     }, this)
   }, this)
 
@@ -560,7 +559,7 @@ function _addExistingListenersToClient (client) {
   _scope.requestWatcherMap.forEach((requestWatcher, requestEvent) => {
     // ** TODO what about order of functions ?
     requestWatcher.getFnMap().forEach((index, fn) => {
-      client.onRequest(requestEvent, this::fn)
+      client.onRequest(requestEvent, fn.bind(this))
     }, this)
   }, this)
 }

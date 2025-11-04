@@ -3,7 +3,7 @@
  */
 
 import Promise from 'bluebird'
-import zmq from 'zeromq'
+import * as zmq from 'zeromq'
 
 import { ZeronodeError, ErrorCodes } from '../errors'
 import { Socket, SocketEvent } from './socket'
@@ -17,7 +17,7 @@ export default class DealerSocket extends Socket {
     options = options || {}
     config = config || {}
 
-    let socket = zmq.socket('dealer')
+    let socket = new zmq.Dealer()
 
     super({ id, socket, options, config })
 
@@ -178,6 +178,35 @@ export default class DealerSocket extends Socket {
   tick ({ to, event, data, mainEvent = false } = {}) {
     let envelop = new Envelop({ type: EnvelopType.TICK, tag: event, data, owner: this.getId(), recipient: to, mainEvent })
     return super.tick(envelop)
+  }
+
+  disconnect () {
+    //* closing and removing all listeners on socket
+    super.close()
+
+    let _scope = _private.get(this)
+    let { socket, routerAddress, connectionPromise, reconnectionTimeoutInstance } = _scope
+
+    //* if connection promise is pending then rejecting it
+    if (connectionPromise && connectionPromise.isPending()) {
+      connectionPromise.reject('Disconnecting')
+    }
+
+    if (reconnectionTimeoutInstance) {
+      clearTimeout(reconnectionTimeoutInstance)
+      _scope.reconnectionTimeoutInstance = null
+    }
+
+    _scope.connectionPromise = null
+
+    if (this.getState() !== DealerStateType.DISCONNECTED) {
+      socket.disconnect(routerAddress)
+      _scope.state = DealerStateType.DISCONNECTED
+    }
+
+    this.setOffline()
+    
+    return Promise.resolve()
   }
 
   async close () {

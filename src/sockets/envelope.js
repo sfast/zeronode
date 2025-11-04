@@ -1,13 +1,16 @@
-import _ from 'underscore'
 import crypto from 'crypto'
-import BufferAlloc from 'buffer-alloc'
-import BufferFrom from 'buffer-from'
+
+// Constants
+const LENGTH_SIZE = 1
+const NULL_BYTE_REGEX = /\0/g
+const METADATA_FIELD_COUNT = 4
+const MIN_META_LENGTH = 2
 
 class Parse {
   // serialize
   static dataToBuffer (data) {
     try {
-      return BufferFrom(JSON.stringify({ data }))
+      return Buffer.from(JSON.stringify({ data }))
     } catch (err) {
       console.error(err)
     }
@@ -24,8 +27,6 @@ class Parse {
   }
 }
 
-const lengthSize = 1
-
 export default class Envelop {
   constructor ({ type, id = '', tag = '', data, owner = '', recipient = '', mainEvent }) {
     if (type) {
@@ -33,15 +34,15 @@ export default class Envelop {
     }
 
     this.id = id || crypto.randomBytes(20).toString('hex')
-    this.tag = tag
+    // Ensure string values, convert undefined/null to empty string
+    this.tag = (tag !== undefined && tag !== null) ? String(tag) : ''
+    this.owner = (owner !== undefined && owner !== null) ? String(owner) : ''
+    this.recipient = (recipient !== undefined && recipient !== null) ? String(recipient) : ''
     this.mainEvent = mainEvent
 
     if (data) {
       this.data = data
     }
-
-    this.owner = owner
-    this.recipient = recipient
   }
 
   toJSON () {
@@ -77,21 +78,21 @@ export default class Envelop {
 
     let type = buffer.readInt8(1)
 
-    let idStart = 2 + lengthSize
-    let idLength = buffer.readInt8(idStart - lengthSize)
+    let idStart = 2 + LENGTH_SIZE
+    let idLength = buffer.readInt8(idStart - LENGTH_SIZE)
     let id = buffer.slice(idStart, idStart + idLength).toString('hex')
 
-    let ownerStart = lengthSize + idStart + idLength
-    let ownerLength = buffer.readInt8(ownerStart - lengthSize)
-    let owner = buffer.slice(ownerStart, ownerStart + ownerLength).toString('utf8').replace(/\0/g, '')
+    let ownerStart = LENGTH_SIZE + idStart + idLength
+    let ownerLength = buffer.readInt8(ownerStart - LENGTH_SIZE)
+    let owner = buffer.slice(ownerStart, ownerStart + ownerLength).toString('utf8').replace(NULL_BYTE_REGEX, '')
 
-    let recipientStart = lengthSize + ownerStart + ownerLength
-    let recipientLength = buffer.readInt8(recipientStart - lengthSize)
-    let recipient = buffer.slice(recipientStart, recipientStart + recipientLength).toString('utf8').replace(/\0/g, '')
+    let recipientStart = LENGTH_SIZE + ownerStart + ownerLength
+    let recipientLength = buffer.readInt8(recipientStart - LENGTH_SIZE)
+    let recipient = buffer.slice(recipientStart, recipientStart + recipientLength).toString('utf8').replace(NULL_BYTE_REGEX, '')
 
-    let tagStart = lengthSize + recipientStart + recipientLength
-    let tagLength = buffer.readInt8(tagStart - lengthSize)
-    let tag = buffer.slice(tagStart, tagStart + tagLength).toString('utf8').replace(/\0/g, '')
+    let tagStart = LENGTH_SIZE + recipientStart + recipientLength
+    let tagLength = buffer.readInt8(tagStart - LENGTH_SIZE)
+    let tag = buffer.slice(tagStart, tagStart + tagLength).toString('utf8').replace(NULL_BYTE_REGEX, '')
 
     return { mainEvent, type, id, owner, recipient, tag }
   }
@@ -124,52 +125,80 @@ export default class Envelop {
   }
 
   static stringToBuffer (str, encryption) {
-    let strLength = Buffer.byteLength(str, encryption)
-    let lengthBuffer = BufferAlloc(lengthSize)
-    lengthBuffer.writeInt8(strLength)
-    let strBuffer = BufferAlloc(strLength)
-    strBuffer.write(str, 0, strLength, encryption)
-    return Buffer.concat([lengthBuffer, strBuffer])
+    const strLength = Buffer.byteLength(str, encryption)
+    const buffer = Buffer.allocUnsafe(LENGTH_SIZE + strLength) // Single allocation
+    buffer.writeInt8(strLength, 0)
+    buffer.write(str, LENGTH_SIZE, strLength, encryption)
+    return buffer
   }
 
   static getMetaLength (buffer) {
-    let length = 2
+    let length = MIN_META_LENGTH
 
-    _.each(_.range(4), () => {
-      length += lengthSize + buffer.readInt8(length)
-    })
+    for (let i = 0; i < METADATA_FIELD_COUNT; i++) {
+      length += LENGTH_SIZE + buffer.readInt8(length)
+    }
 
     return length
   }
 
   getBuffer () {
-    let bufferArray = []
-
-    let mainEventBuffer = BufferAlloc(1)
-    mainEventBuffer.writeInt8(+this.mainEvent)
-    bufferArray.push(mainEventBuffer)
-
-    let typeBuffer = BufferAlloc(1)
-    typeBuffer.writeInt8(this.type)
-    bufferArray.push(typeBuffer)
-
-    let idBuffer = Envelop.stringToBuffer(this.id.toString(), 'hex')
-    bufferArray.push(idBuffer)
-
-    let ownerBuffer = Envelop.stringToBuffer(this.owner.toString(), 'utf-8')
-    bufferArray.push(ownerBuffer)
-
-    let recipientBuffer = Envelop.stringToBuffer(this.recipient.toString(), 'utf-8')
-    bufferArray.push(recipientBuffer)
-
-    let tagBuffer = Envelop.stringToBuffer(this.tag.toString(), 'utf-8')
-    bufferArray.push(tagBuffer)
-
+    // Pre-calculate byte lengths for all string fields
+    const idBytes = Buffer.byteLength(this.id, 'hex')
+    const ownerBytes = Buffer.byteLength(this.owner, 'utf-8')
+    const recipientBytes = Buffer.byteLength(this.recipient, 'utf-8')
+    const tagBytes = Buffer.byteLength(this.tag, 'utf-8')
+    
+    // Calculate total buffer size
+    let totalSize = 2 + // mainEvent (1 byte) + type (1 byte)
+      (LENGTH_SIZE + idBytes) +
+      (LENGTH_SIZE + ownerBytes) +
+      (LENGTH_SIZE + recipientBytes) +
+      (LENGTH_SIZE + tagBytes)
+    
+    // Include data buffer if present
+    let dataBuffer = null
     if (this.data) {
-      bufferArray.push(Parse.dataToBuffer(this.data))
+      dataBuffer = Parse.dataToBuffer(this.data)
+      if (dataBuffer) {
+        totalSize += dataBuffer.length
+      }
     }
-
-    return Buffer.concat(bufferArray)
+    
+    // Single allocation for entire envelope
+    const buffer = Buffer.allocUnsafe(totalSize)
+    let offset = 0
+    
+    // Write mainEvent and type
+    buffer.writeInt8(+this.mainEvent, offset++)
+    buffer.writeInt8(this.type, offset++)
+    
+    // Write id with length prefix
+    buffer.writeInt8(idBytes, offset++)
+    buffer.write(this.id, offset, idBytes, 'hex')
+    offset += idBytes
+    
+    // Write owner with length prefix
+    buffer.writeInt8(ownerBytes, offset++)
+    buffer.write(this.owner, offset, ownerBytes, 'utf-8')
+    offset += ownerBytes
+    
+    // Write recipient with length prefix
+    buffer.writeInt8(recipientBytes, offset++)
+    buffer.write(this.recipient, offset, recipientBytes, 'utf-8')
+    offset += recipientBytes
+    
+    // Write tag with length prefix
+    buffer.writeInt8(tagBytes, offset++)
+    buffer.write(this.tag, offset, tagBytes, 'utf-8')
+    offset += tagBytes
+    
+    // Copy data buffer if present
+    if (dataBuffer) {
+      dataBuffer.copy(buffer, offset)
+    }
+    
+    return buffer
   }
 
   getId () {
@@ -185,7 +214,7 @@ export default class Envelop {
   }
 
   setOwner (owner) {
-    this.owner = owner
+    this.owner = (owner !== undefined && owner !== null) ? String(owner) : ''
   }
 
   getRecipient () {
@@ -193,7 +222,7 @@ export default class Envelop {
   }
 
   setRecipient (recipient) {
-    this.recipient = recipient
+    this.recipient = (recipient !== undefined && recipient !== null) ? String(recipient) : ''
   }
 
   // ** type of envelop
@@ -208,7 +237,7 @@ export default class Envelop {
 
   // ** data of envelop
 
-  getData (data) {
+  getData () {
     return this.data
   }
 
