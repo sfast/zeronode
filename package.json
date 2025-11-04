@@ -35,7 +35,11 @@
     "build": "npm run clear && npm run compile",
     "preinstall": "bash preinstall.sh",
     "snyk-protect": "snyk-protect",
-    "prepare": "npm run build && npm run snyk-protect"
+    "prepare": "npm run build && npm run snyk-protect",
+    "benchmark:envelope": "babel-node benchmark/envelope-benchmark.js",
+    "benchmark:throughput": "babel-node benchmark/throughput-benchmark.js",
+    "benchmark:durability": "babel-node benchmark/durability-benchmark.js",
+    "benchmark": "npm run benchmark:envelope && npm run benchmark:throughput"
   },
   "repository": {
     "type": "git",
