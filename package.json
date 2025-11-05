@@ -58,11 +58,11 @@
     "bluebird": "^3.7.2",
     "lokijs": "^1.5.12",
     "md5": "^2.3.0",
-    "pattern-emitter": "latest",
     "underscore": "^1.13.7",
     "uuid": "^13.0.0",
     "winston": "^3.18.3",
-    "zeromq": "^6.5.0"
+    "zeromq": "^6.5.0",
+    "@sfast/pattern-emitter-ts": "git+https://github.com/sfast/pattern-emitter-ts.git"
   },
   "devDependencies": {
     "@babel/cli": "^7.25.9",

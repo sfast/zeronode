@@ -5,6 +5,7 @@ import { assert } from 'chai'
 import _ from 'underscore'
 
 import { Node } from '../src'
+import { TEST_PORTS, getAddress, waitForPortRelease } from './helpers/test-ports'
 
 describe('manyToOne', () => {
   let clients, serverNode
@@ -12,7 +13,7 @@ describe('manyToOne', () => {
 
   beforeEach(async () => {
     clients = _.map(_.range(CLIENTS_COUNT), (i) => new Node({ options: {clientName: `client${i}`, idx: [i]} }))
-    serverNode = new Node({ bind: 'tcp://127.0.0.1:3000' })
+    serverNode = new Node({ bind: getAddress(TEST_PORTS.MANY_TO_ONE) })
     await serverNode.bind()
   })
 
@@ -21,6 +22,7 @@ describe('manyToOne', () => {
     await serverNode.stop()
     clients = null
     serverNode = null
+    await waitForPortRelease()
   })
 
   it('tickFromClients', (done) => {

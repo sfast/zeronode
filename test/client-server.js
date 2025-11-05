@@ -1,8 +1,9 @@
 import { assert } from 'chai'
 import Client from '../src/client'
 import Server from '../src/server'
+import { TEST_PORTS, getAddress, waitForPortRelease } from './helpers/test-ports'
 
-const address = 'tcp://127.0.0.1:5001'
+const address = getAddress(TEST_PORTS.CLIENT_SERVER)
 
 describe('Client/Server', () => {
   let client, server
@@ -18,6 +19,7 @@ describe('Client/Server', () => {
     await server.close()
     client = null
     server = null
+    await waitForPortRelease()
   })
 
   it('tickToServer', done => {

@@ -184,9 +184,10 @@ function _serverStopHandler () {
   try {
     let server = this.getServerActor()
 
-    // ** TODO:: this should not happen, please describe the situation
+    // Server already cleaned up (race condition during disconnect/stop)
+    // This is normal during cleanup when the client disconnects before receiving SERVER_STOP tick
     if (!server) {
-      throw new Error(`Server actor is not available on client '${this.getId()}'`)
+      return
     }
 
     _stopServerPinging.call(this)

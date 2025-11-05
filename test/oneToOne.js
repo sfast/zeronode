@@ -4,13 +4,14 @@
 import { assert } from 'chai'
 import { Node, NodeEvents, ErrorCodes } from '../src'
 import { Dealer, Router } from '../src/sockets'
+import { TEST_PORTS, getAddress, waitForPortRelease } from './helpers/test-ports'
 
 describe('oneToOne, failures', () => {
   let clientNode, serverNode
 
   beforeEach(async () => {
     clientNode = new Node({})
-    serverNode = new Node({ bind: 'tcp://127.0.0.1:3000' })
+    serverNode = new Node({ bind: getAddress(TEST_PORTS.ONE_TO_ONE_FAILURES) })
   })
 
   afterEach(async () => {
@@ -18,6 +19,8 @@ describe('oneToOne, failures', () => {
     await serverNode.stop()
     clientNode = null
     serverNode = null
+    // Longer wait for failures suite due to reconnection scenarios
+    await waitForPortRelease(1000)
   })
 
   it('connect wrong argument', async () => {
@@ -164,19 +167,23 @@ describe('oneToOne, failures', () => {
   it('request after unbind', async () => {
     try {
       await serverNode.bind()
-      await clientNode.connect({ address: serverNode.getAddress() })
+      // Disable reconnection to prevent orphan clients in subsequent tests
+      await clientNode.connect({ address: serverNode.getAddress(), reconnectionTimeout: 0 })
       await serverNode.unbind()
       await serverNode.request({ to: clientNode.getId(), event: 'foo', data: 'bar' })
     } catch (err) {
-      assert.equal(err.message, `Sending failed as socket '${serverNode.getId()}' is not online`)
+      // After unbind, clientModels is cleared, so client is not found
+      assert.equal(err.message, `Node with id '${clientNode.getId()}' is not found.`)
     }
   })
 
   it('client failure', (done) => {
     let dealerClient = new Dealer()
 
-    serverNode.on(NodeEvents.CLIENT_FAILURE, () => {
-      done()
+    serverNode.on(NodeEvents.CLIENT_FAILURE, (clientActor) => {
+      if (clientActor.id === dealerClient.getId()) {
+        done()
+      }
     })
 
     serverNode.bind()
@@ -234,7 +241,7 @@ describe('oneToOne, failures', () => {
       done()
     })
 
-    routerServer.bind('tcp://127.0.0.1:3000')
+    routerServer.bind(getAddress(TEST_PORTS.ONE_TO_ONE_FAILURES))
       .then(() => {
         return clientNode.connect({ address: routerServer.getAddress() })
       })
@@ -249,7 +256,7 @@ describe('oneToOne successfully connected', () => {
 
   beforeEach(async () => {
     clientNode = new Node({})
-    serverNode = new Node({ bind: 'tcp://127.0.0.1:3000' })
+    serverNode = new Node({ bind: getAddress(TEST_PORTS.ONE_TO_ONE_SUCCESS) })
     await serverNode.bind()
     await clientNode.connect({ address: serverNode.getAddress() })
   })
@@ -259,6 +266,7 @@ describe('oneToOne successfully connected', () => {
     await serverNode.stop()
     clientNode = null
     serverNode = null
+    await waitForPortRelease()
   })
 
   it('tickFromClient', (done) => {
@@ -361,7 +369,7 @@ describe('reconnect', () => {
 
   beforeEach(async () => {
     clientNode = new Node({})
-    serverNode = new Node({ bind: 'tcp://127.0.0.1:3000' })
+    serverNode = new Node({ bind: getAddress(TEST_PORTS.ONE_TO_ONE_RECONNECT) })
     await serverNode.bind()
     await clientNode.connect({ address: serverNode.getAddress(), reconnectionTimeout: 500 })
   })
@@ -371,6 +379,7 @@ describe('reconnect', () => {
     await serverNode.stop()
     clientNode = null
     serverNode = null
+    await waitForPortRelease()
   })
 
   it('reconnect failure', (done) => {
@@ -397,7 +406,7 @@ describe('information', () => {
 
   beforeEach(async () => {
     clientNode = new Node({})
-    serverNode = new Node({ bind: 'tcp://127.0.0.1:3000' })
+    serverNode = new Node({ bind: getAddress(TEST_PORTS.ONE_TO_ONE_INFO) })
     await serverNode.bind()
     await clientNode.connect({ address: serverNode.getAddress() })
   })
@@ -407,6 +416,7 @@ describe('information', () => {
     await serverNode.stop()
     clientNode = null
     serverNode = null
+    await waitForPortRelease()
   })
 
   it('get server information with address', (done) => {

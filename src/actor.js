@@ -59,6 +59,10 @@ export default class ActorModel {
     return !!this.ghost
   }
 
+  isFailed () {
+    return !!this.fail
+  }
+
   isOnline () {
     return !!this.online
   }

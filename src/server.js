@@ -47,7 +47,7 @@ export default class Server extends RouterSocket {
     let { clientModels } = _private.get(this)
     let onlineClients = []
     clientModels.forEach((actor) => {
-      if (actor.isOnline()) {
+      if (actor.isOnline() && !actor.isFailed()) {
         onlineClients.push(actor)
       }
     }, this)
@@ -87,11 +87,19 @@ export default class Server extends RouterSocket {
       }
       _scope.clientCheckInterval = null
 
+      // ** clear client models on unbind to reset server state
+      _scope.clientModels.clear()
+
       return super.unbind()
     } catch (err) {
       let serverUnbindError = new ZeronodeError({ socketId: this.getId(), code: ErrorCodes.SERVER_UNBIND, error: err })
       return Promise.reject(serverUnbindError)
     }
+  }
+  
+  async close () {
+    await this.unbind()
+    await super.close()
   }
 }
 
@@ -151,7 +159,8 @@ function _checkClientHeartBeat () {
   _.each(this.getOnlineClients(), (actor) => {
     if (!actor.isGhost()) {
       actor.markGhost()
-    } else {
+    } else if (!actor.isFailed()) {
+      // Only mark as failed and emit once
       actor.markFailed()
       this.emit(events.CLIENT_FAILURE, actor.toJSON())
     }

@@ -5,6 +5,7 @@ import { assert } from 'chai'
 import _ from 'underscore'
 
 import { Node } from '../src'
+import { TEST_PORTS, getPortRange, getAddress, waitForPortRelease } from './helpers/test-ports'
 
 describe('manyToMany', () => {
   let clients, servers, centreNode
@@ -12,8 +13,10 @@ describe('manyToMany', () => {
 
   beforeEach(async () => {
     clients = _.map(_.range(CLIENTS_COUNT), (i) => new Node({ options: {clientName: `client${i}`} }))
-    servers = _.map(_.range(CLIENTS_COUNT), (i) => new Node({ bind: `tcp://127.0.0.1:301${i}`, options: {serverName: `server${i}`} }))
-    centreNode = new Node({ bind: 'tcp://127.0.0.1:3000' })
+    // Use port range 4300-4309 for the servers
+    const serverPorts = getPortRange(TEST_PORTS.MANY_TO_MANY_BASE, CLIENTS_COUNT)
+    servers = _.map(_.range(CLIENTS_COUNT), (i) => new Node({ bind: serverPorts[i], options: {serverName: `server${i}`} }))
+    centreNode = new Node({ bind: getAddress(TEST_PORTS.MANY_TO_MANY_CENTER) })
 
     await centreNode.bind()
     await Promise.all(_.map(servers, async (server) => {
@@ -30,6 +33,7 @@ describe('manyToMany', () => {
     clients = null
     centreNode = null
     servers = null
+    await waitForPortRelease(100) // Longer delay for multiple servers
   })
 
   it('tickAnyUp', (done) => {

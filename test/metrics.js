@@ -1,13 +1,14 @@
 import { assert } from 'chai'
 
 import { Node, MetricEvents, ErrorCodes } from '../src'
+import { TEST_PORTS, getAddress, waitForPortRelease } from './helpers/test-ports'
 
 describe('metrics', () => {
   let clientNode, serverNode
 
   beforeEach(async() => {
     clientNode = new Node({})
-    serverNode = new Node({bind: 'tcp://127.0.0.1:3000'})
+    serverNode = new Node({bind: getAddress(TEST_PORTS.METRICS)})
     await serverNode.bind()
     await clientNode.connect({ address: serverNode.getAddress() })
   })
@@ -17,6 +18,7 @@ describe('metrics', () => {
     await serverNode.stop()
     clientNode = null
     serverNode = null
+    await waitForPortRelease()
   })
 
   it('tick metrics', (done) => {
