@@ -52,6 +52,26 @@ Edit the constants in the file to adjust:
 - `TARGET_RATE` - Messages per second (default: 1000)
 - `REQUEST_RATIO` - Ratio of requests vs ticks (default: 0.3 = 30% requests)
 
+### 4. Multi-Node Durability (`multi-node-durability.js`)
+Tests realistic multi-client scenario with bidirectional communication.
+
+**What it measures:**
+- 1 server node + 3 client nodes
+- Bidirectional messaging (server ↔ clients)
+- Per-client message distribution
+- CPU and memory under multi-node load
+- Realistic production-like scenario
+
+**Run:**
+```bash
+npm run benchmark:multi-node
+```
+
+**Configuration:**
+- `NUM_CLIENTS` - Number of client nodes (default: 3)
+- `TARGET_RATE_PER_CLIENT` - Messages per second per client (default: 1000)
+- `TEST_DURATION` - How long to run (default: 60s)
+
 ## Running All Benchmarks
 
 ```bash

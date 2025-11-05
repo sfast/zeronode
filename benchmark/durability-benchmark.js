@@ -8,9 +8,9 @@ import Client from '../src/client.js'
 import os from 'os'
 
 // Configuration
-const TEST_DURATION = 60000 // 60 seconds (can be increased for longer tests)
-const TARGET_RATE = 1000 // Messages per second
-const REQUEST_RATIO = 0.3 // 30% requests, 70% ticks
+const TEST_DURATION = 600000 // 600 seconds (can be increased for longer tests)
+const TARGET_RATE = 3000 // Messages per second
+const REQUEST_RATIO = 0.7 // 70% requests, 30% ticks
 const REPORT_INTERVAL = 5000 // Report every 5 seconds
 
 // Get CPU usage

@@ -39,6 +39,7 @@
     "benchmark:envelope": "babel-node benchmark/envelope-benchmark.js",
     "benchmark:throughput": "babel-node benchmark/throughput-benchmark.js",
     "benchmark:durability": "babel-node benchmark/durability-benchmark.js",
+    "benchmark:multi-node": "babel-node benchmark/multi-node-durability.js",
     "benchmark": "npm run benchmark:envelope && npm run benchmark:throughput"
   },
   "repository": {
