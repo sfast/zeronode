@@ -40,6 +40,20 @@
     "benchmark:throughput": "babel-node benchmark/throughput-benchmark.js",
     "benchmark:durability": "babel-node benchmark/durability-benchmark.js",
     "benchmark:multi-node": "babel-node benchmark/multi-node-durability.js",
+    "benchmark:node": "babel-node benchmark/node-throughput.js",
+    "benchmark:node-npm": "babel-node benchmark/node-throughput-npm.js",
+    "benchmark:zeromq": "babel-node benchmark/zeromq-baseline.js",
+    "benchmark:nats": "babel-node benchmark/nats-baseline.js",
+    "benchmark:http": "babel-node benchmark/http-baseline.js",
+    "benchmark:quic": "babel-node benchmark/quic-baseline.js",
+    "benchmark:router-dealer": "babel-node benchmark/router-dealer-baseline.js",
+    "benchmark:client-server": "babel-node benchmark/client-server-baseline.js",
+    "benchmark:stress": "babel-node benchmark/client-server-stress.js",
+    "benchmark:lazy-envelope": "babel-node benchmark/lazy-envelope-comparison.js",
+    "benchmark:compare": "npm run benchmark:zeromq && echo '\n\n' && npm run benchmark:node",
+    "benchmark:compare-npm": "npm run benchmark:node-npm && echo '\n\n' && npm run benchmark:node",
+    "benchmark:compare-sockets": "npm run benchmark:zeromq && echo '\n\n' && npm run benchmark:router-dealer",
+    "benchmark:compare-transports": "npm run benchmark:zeromq && echo '\n\n' && npm run benchmark:nats && echo '\n\n' && npm run benchmark:http",
     "benchmark": "npm run benchmark:envelope && npm run benchmark:throughput"
   },
   "repository": {
@@ -54,15 +68,17 @@
   "homepage": "https://github.com/sfast/zeronode#readme",
   "dependencies": {
     "@babel/runtime": "^7.28.4",
+    "@sfast/pattern-emitter-ts": "git+https://github.com/sfast/pattern-emitter-ts.git",
     "animal-id": "0.0.1",
     "bluebird": "^3.7.2",
     "lokijs": "^1.5.12",
     "md5": "^2.3.0",
+    "msgpack-lite": "^0.1.26",
+    "nats": "^2.28.2",
     "underscore": "^1.13.7",
     "uuid": "^13.0.0",
     "winston": "^3.18.3",
-    "zeromq": "^6.5.0",
-    "@sfast/pattern-emitter-ts": "git+https://github.com/sfast/pattern-emitter-ts.git"
+    "zeromq": "^6.5.0"
   },
   "devDependencies": {
     "@babel/cli": "^7.25.9",

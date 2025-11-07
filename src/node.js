@@ -11,11 +11,9 @@ import { ZeronodeError, ErrorCodes } from './errors'
 import NodeUtils from './utils'
 import Server from './server'
 import Client from './client'
-import Metric from './metric'
 import { events } from './enum'
-import { Enum, Watchers } from './sockets'
-
-let MetricType = Enum.MetricType
+import { Enum } from './sockets'
+import { PatternEmitter } from '@sfast/pattern-emitter-ts'
 
 const _private = new WeakMap()
 
@@ -42,20 +40,16 @@ export default class Node extends EventEmitter {
 
     this.logger = config.logger || defaultLogger
 
-    // ** default metric is disabled
-    let metric = new Metric({ id })
-
     let _scope = {
       id,
       bind,
       options,
       config,
-      metric,
       nodeServer: null,
       nodeClients: new Map(),
       nodeClientsAddressIndex: new Map(),
-      tickWatcherMap: new Map(),
-      requestWatcherMap: new Map()
+      tickEmitter: new PatternEmitter(),
+      requestEmitter: new PatternEmitter()
     }
 
     _private.set(this, _scope)
@@ -156,7 +150,7 @@ export default class Node extends EventEmitter {
     }
 
     let _scope = _private.get(this)
-    let { id, metric, nodeClientsAddressIndex, nodeClients, config } = _scope
+    let { id, nodeClientsAddressIndex, nodeClients, config } = _scope
     let clientConfig = config
 
     if (reconnectionTimeout) clientConfig = Object.assign({}, config, { RECONNECTION_TIMEOUT: reconnectionTimeout })
@@ -199,14 +193,9 @@ export default class Node extends EventEmitter {
     })
     client.on(events.OPTIONS_SYNC, ({ id, newOptions }) => this.emit(events.OPTIONS_SYNC, { id, newOptions }))
 
-    // **
-    client.setMetric(metric.status)
-
     _addExistingListenersToClient.call(this, client)
 
     let { actorId } = await client.connect(address, timeout)
-
-    _attachMetricsHandlers.call(this, client, metric)
 
     this.logger.info(`Node connected: ${this.getId()} -> ${actorId}`)
 
@@ -235,16 +224,6 @@ export default class Node extends EventEmitter {
     let client = nodeClients.get(nodeId)
 
     client.removeAllListeners(events.SERVER_FAILURE)
-    client.removeAllListeners(MetricType.SEND_TICK)
-    client.removeAllListeners(MetricType.GOT_TICK)
-    client.removeAllListeners(MetricType.SEND_REQUEST)
-    client.removeAllListeners(MetricType.GOT_REQUEST)
-    client.removeAllListeners(MetricType.SEND_REPLY_SUCCESS)
-    client.removeAllListeners(MetricType.SEND_REPLY_ERROR)
-    client.removeAllListeners(MetricType.GOT_REPLY_SUCCESS)
-    client.removeAllListeners(MetricType.GOT_REPLY_ERROR)
-    client.removeAllListeners(MetricType.REQUEST_TIMEOUT)
-    client.removeAllListeners(MetricType.OPTIONS_SYNC)
 
     await client.disconnect()
     _removeClientAllListeners.call(this, client)
@@ -256,8 +235,6 @@ export default class Node extends EventEmitter {
   async stop () {
     let { nodeServer, nodeClients } = _private.get(this)
     let stopPromise = []
-
-    this.disableMetrics()
 
     if (nodeServer.isOnline()) {
       stopPromise.push(nodeServer.close())
@@ -272,15 +249,9 @@ export default class Node extends EventEmitter {
 
   onRequest (requestEvent, fn) {
     let _scope = _private.get(this)
-    let { requestWatcherMap, nodeClients, nodeServer } = _scope
+    let { requestEmitter, nodeClients, nodeServer } = _scope
 
-    let requestWatcher = requestWatcherMap.get(requestEvent)
-    if (!requestWatcher) {
-      requestWatcher = new Watchers(requestEvent)
-      requestWatcherMap.set(requestEvent, requestWatcher)
-    }
-
-    requestWatcher.addFn(fn)
+    requestEmitter.on(requestEvent, fn)
 
     nodeServer.onRequest(requestEvent, fn)
 
@@ -291,29 +262,25 @@ export default class Node extends EventEmitter {
 
   offRequest (requestEvent, fn) {
     let _scope = _private.get(this)
+    let { requestEmitter, nodeServer, nodeClients } = _scope
+    
+    if (_.isFunction(fn)) {
+      requestEmitter.off(requestEvent, fn)
+    } else {
+      requestEmitter.removeAllListeners(requestEvent)
+    }
 
-    _scope.nodeServer.offRequest(requestEvent, fn)
-    _scope.nodeClients.forEach((client) => {
+    nodeServer.offRequest(requestEvent, fn)
+    nodeClients.forEach((client) => {
       client.offRequest(requestEvent, fn)
     })
-
-    let requestWatcher = _scope.requestWatcherMap.get(requestEvent)
-    if (requestWatcher) {
-      requestWatcher.removeFn(fn)
-    }
   }
 
   onTick (event, fn) {
     let _scope = _private.get(this)
-    let { tickWatcherMap, nodeClients, nodeServer } = _scope
+    let { tickEmitter, nodeClients, nodeServer } = _scope
 
-    let tickWatcher = tickWatcherMap.get(event)
-    if (!tickWatcher) {
-      tickWatcher = new Watchers(event)
-      tickWatcherMap.set(event, tickWatcher)
-    }
-
-    tickWatcher.addFn(fn)
+    tickEmitter.on(event, fn)
 
     // ** _scope.nodeServer is constructed in Node constructor
     nodeServer.onTick(event, fn)
@@ -325,15 +292,18 @@ export default class Node extends EventEmitter {
 
   offTick (event, fn) {
     let _scope = _private.get(this)
-    _scope.nodeServer.offTick(event)
-    _scope.nodeClients.forEach((client) => {
+    let { tickEmitter, nodeServer, nodeClients } = _scope
+    
+    if (_.isFunction(fn)) {
+      tickEmitter.off(event, fn)
+    } else {
+      tickEmitter.removeAllListeners(event)
+    }
+
+    nodeServer.offTick(event, fn)
+    nodeClients.forEach((client) => {
       client.offTick(event, fn)
     }, this)
-
-    let tickWatcher = _scope.tickWatcherMap.get(event)
-    if (tickWatcher) {
-      tickWatcher.removeFn(fn)
-    }
   }
 
   async request ({ to, event, data, timeout } = {}) {
@@ -447,33 +417,8 @@ export default class Node extends EventEmitter {
     return this.tickAll({ event, data, filter, down: false, up: true })
   }
 
-  enableMetrics (flushInterval) {
-    let _scope = _private.get(this)
-    
-    let { metric, nodeClients, nodeServer } = _scope
-    metric.enable(flushInterval)
-
-    nodeClients.forEach((client) => {
-      client.setMetric(true)
-    }, this)
-
-    nodeServer.setMetric(true)
-  }
-
-  get metric () {
-    let { metric } = _private.get(this)
-    return metric
-  }
-
-  disableMetrics () {
-    let { metric, nodeClients, nodeServer } = _private.get(this)
-    metric.disable()
-
-    nodeClients.forEach((client) => {
-      client.setMetric(false)
-    }, this)
-    nodeServer.setMetric(false)
-  }
+  // Metrics methods removed for performance optimization
+  // Use external monitoring tools (Prometheus, StatsD, OpenTelemetry, etc.) instead
 
   async setOptions (options = {}) {
     let _scope = _private.get(this)
@@ -498,7 +443,7 @@ export default class Node extends EventEmitter {
 
 function _initNodeServer () {
   let _scope = _private.get(this)
-  let { id, bind, options, metric, config } = _scope
+  let { id, bind, options, config } = _scope
 
   let nodeServer = new Server({ id, bind, options, config })
   // ** handlers for nodeServer
@@ -507,10 +452,6 @@ function _initNodeServer () {
   nodeServer.on(events.CLIENT_CONNECTED, (clientActor) => this.emit(events.CLIENT_CONNECTED, clientActor))
   nodeServer.on(events.CLIENT_STOP, (clientActor) => this.emit(events.CLIENT_STOP, clientActor))
   nodeServer.on(events.OPTIONS_SYNC, ({ id, newOptions }) => this.emit(events.OPTIONS_SYNC, { id, newOptions }))
-
-  // ** enabling metrics
-  nodeServer.setMetric(metric.status)
-  _attachMetricsHandlers.call(this, nodeServer, metric)
 
   _scope.nodeServer = nodeServer
 }
@@ -547,80 +488,36 @@ function _getWinnerNode (nodeIds, tag) {
 function _addExistingListenersToClient (client) {
   let _scope = _private.get(this)
 
-  // ** adding previously added onTick-s for this client to
-  _scope.tickWatcherMap.forEach((tickWatcher, event) => {
-    // ** TODO what about order of functions ?
-    tickWatcher.getFnMap().forEach((index, fn) => {
-      client.onTick(event, fn.bind(this))
-    }, this)
-  }, this)
+  // ** adding previously added onTick-s for this client
+  // Iterate over all event patterns in the tickEmitter
+  for (let [pattern, listeners] of _scope.tickEmitter.listeners) {
+    listeners.forEach((fn) => {
+      client.onTick(pattern, fn.bind(this))
+    })
+  }
 
-  // ** adding previously added onRequests-s for this client to
-  _scope.requestWatcherMap.forEach((requestWatcher, requestEvent) => {
-    // ** TODO what about order of functions ?
-    requestWatcher.getFnMap().forEach((index, fn) => {
-      client.onRequest(requestEvent, fn.bind(this))
-    }, this)
-  }, this)
+  // ** adding previously added onRequests-s for this client
+  // Iterate over all event patterns in the requestEmitter
+  for (let [pattern, listeners] of _scope.requestEmitter.listeners) {
+    listeners.forEach((fn) => {
+      client.onRequest(pattern, fn.bind(this))
+    })
+  }
 }
 
 function _removeClientAllListeners (client) {
   let _scope = _private.get(this)
 
-  // ** removing all handlers
-  _scope.tickWatcherMap.forEach((tickWatcher, event) => {
-    client.offTick(event)
-  }, this)
+  // ** removing all tick handlers
+  for (let [pattern] of _scope.tickEmitter.listeners) {
+    client.offTick(pattern)
+  }
 
-  // ** removing all handlers
-  _scope.requestWatcherMap.forEach((requestWatcher, requestEvent) => {
-    client.offRequest(requestEvent)
-  }, this)
+  // ** removing all request handlers
+  for (let [pattern] of _scope.requestEmitter.listeners) {
+    client.offRequest(pattern)
+  }
 }
 
-function _attachMetricsHandlers (socket, metric) {
-  socket.on(MetricType.SEND_TICK, (envelop) => {
-    this.emit(MetricType.SEND_TICK, envelop)
-    metric.sendTick(envelop)
-  })
-
-  socket.on(MetricType.SEND_REQUEST, (envelop) => {
-    this.emit(MetricType.SEND_REQUEST, envelop)
-    metric.sendRequest(envelop)
-  })
-
-  socket.on(MetricType.SEND_REPLY_SUCCESS, (envelop) => {
-    this.emit(MetricType.SEND_REPLY_SUCCESS, envelop)
-    metric.sendReplySuccess(envelop)
-  })
-
-  socket.on(MetricType.SEND_REPLY_ERROR, (envelop) => {
-    this.emit(MetricType.SEND_REPLY_ERROR, envelop)
-    metric.sendReplyError(envelop)
-  })
-
-  socket.on(MetricType.REQUEST_TIMEOUT, (envelop) => {
-    this.emit(MetricType.REQUEST_TIMEOUT, envelop)
-    metric.requestTimeout(envelop)
-  })
-
-  socket.on(MetricType.GOT_TICK, (envelop) => {
-    this.emit(MetricType.GOT_TICK, envelop)
-    metric.gotTick(envelop)
-  })
-
-  socket.on(MetricType.GOT_REQUEST, (envelop) => {
-    this.emit(MetricType.GOT_REQUEST, envelop)
-    metric.gotRequest(envelop)
-  })
-
-  socket.on(MetricType.GOT_REPLY_SUCCESS, (envelop) => {
-    this.emit(MetricType.GOT_REPLY_SUCCESS, envelop)
-    metric.gotReplySuccess(envelop)
-  })
-
-  socket.on(MetricType.GOT_REPLY_ERROR, (envelop) => {
-    this.emit(MetricType.GOT_REPLY_ERROR, envelop)
-    metric.gotReplyError(envelop)
-  })
-}
+// Metrics handlers removed for performance optimization
+// Use external monitoring tools (Prometheus, StatsD, etc.) instead

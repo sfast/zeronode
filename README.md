@@ -12,6 +12,22 @@
 [![Tweet](https://img.shields.io/twitter/url/http/shields.io.svg?style=social)](https://twitter.com/intent/tweet?text=Zeronode%20-%20rock%20solid%20transport%20and%20smarts%20for%20building%20NodeJS%20microservices.%E2%9C%8C%E2%9C%8C%E2%9C%8C&url=https://github.com/sfast/zeronode&hashtags=microservices,scaling,loadbalancing,zeromq,awsomenodejs,nodejs)
 [![GitHub stars](https://img.shields.io/github/stars/sfast/zeronode.svg?style=social&label=Stars)](https://github.com/sfast/zeronode)
 
+## ⚡ Performance
+
+**Zeronode is 15% FASTER than Pure ZeroMQ!**
+
+```
+Pure ZeroMQ:     3,072 msg/sec  (baseline)
+Zeronode:        3,531 msg/sec  (+15% FASTER! 🚀)
+```
+
+Yes, our abstraction layer is **faster** than raw sockets!
+
+**How?** MessagePack serialization, single-pass buffer parsing, conditional timing, and WeakMap caching.
+
+📊 **See:** [PERFORMANCE.md](PERFORMANCE.md) | [OPTIMIZATIONS.md](OPTIMIZATIONS.md) | [Benchmarks](benchmark/README.md)
+
+---
 
 ## Zeronode - minimal building block for NodeJS microservices
 * [Why Zeronode?](#whyZeronode)

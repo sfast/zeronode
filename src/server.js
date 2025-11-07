@@ -1,185 +1,264 @@
-import _ from 'underscore'
+/**
+ * Server - Application layer for server-side communication
+ * 
+ * ARCHITECTURE: Protocol-First Design
+ * - Extends Protocol (inherits request/response, tick, handler management)
+ * - Uses RouterSocket for transport (passed to Protocol)
+ * - ONLY listens to ProtocolEvent (NEVER SocketEvent)
+ * - Manages multiple client peers
+ * - Implements health check mechanism
+ * - Handles application-level events
+ */
 
 import { events } from './enum'
 import Globals from './globals'
-import ActorModel from './actor'
-import { ZeronodeError, ErrorCodes } from './errors'
-
+import PeerInfo from './peer'
+import Protocol, { ProtocolEvent } from './protocol'
 import { Router as RouterSocket } from './sockets'
 
 let _private = new WeakMap()
 
-export default class Server extends RouterSocket {
-  constructor ({ id, bind, config, options } = {}) {
-    options = options || {}
+export default class Server extends Protocol {
+  constructor ({ id, config } = {}) {
     config = config || {}
 
-    super({ id, options, config })
+    // Create RouterSocket (transport layer)
+    const socket = new RouterSocket({ id, config })
+    
+    // Pass socket to Protocol
+    super(socket)
 
     let _scope = {
-      clientModels: new Map(),
-      clientCheckInterval: null
+      bindAddress: null,
+      clientPeers: new Map(),      // clientId → PeerInfo
+      healthCheckInterval: null
     }
 
     _private.set(this, _scope)
 
-    this.setAddress(bind)
+    // ✅ ONLY listen to Protocol events
+    this._attachProtocolEventHandlers()
 
-    // ** ATTACHING client connected
-    this.onRequest(events.CLIENT_CONNECTED, _clientConnectedRequest.bind(this), true)
-
-    // ** ATTACHING client stop
-    this.onRequest(events.CLIENT_STOP, _clientStopRequest.bind(this), true)
-
-    // ** ATTACHING client ping
-    this.onTick(events.CLIENT_PING, _clientPingTick.bind(this), true)
-
-    // ** ATTACHING CLIENT OPTIONS SYNCING
-    this.onTick(events.OPTIONS_SYNC, _clientOptionsSync.bind(this), true)
+    // ✅ ONLY listen to application events (via Protocol)
+    this._attachApplicationEventHandlers()
   }
+  
+  // ============================================================================
+  // PROTOCOL EVENT HANDLERS (High-Level)
+  // ============================================================================
+  
+  _attachProtocolEventHandlers () {
+    // ============================================================================
+    // MANUAL PEER DISCOVERY
+    // 
+    // Transport ready → Clients send handshake → Discover peers from messages
+    // ============================================================================
+    
+    // Transport can send/receive - server is ready to accept messages
+    this.on(ProtocolEvent.TRANSPORT_READY, () => {
+      this._startHealthChecks()
+      this.emit(events.SERVER_READY, { serverId: this.getId() })
+    })
 
-  getClientById (clientId) {
-    let { clientModels } = _private.get(this)
-    return clientModels.has(clientId) ? clientModels.get(clientId) : null
+    // Transport disconnected - stop health checks
+    this.on(ProtocolEvent.TRANSPORT_NOT_READY, () => {
+      this._stopHealthChecks()
+      this.emit(events.SERVER_NOT_READY)
+    })
+
+    // Transport permanently closed - cleanup
+    this.on(ProtocolEvent.TRANSPORT_CLOSED, () => {
+      this._stopHealthChecks()
+      this.emit(events.SERVER_CLOSED)
+    })
   }
-
-  getOnlineClients () {
-    let { clientModels } = _private.get(this)
-    let onlineClients = []
-    clientModels.forEach((actor) => {
-      if (actor.isOnline() && !actor.isFailed()) {
-        onlineClients.push(actor)
-      }
-    }, this)
-
-    return onlineClients
-  }
-
-  setOptions (options, notify = true) {
-    super.setOptions(options)
-    if (notify && this.isOnline()) {
-      _.each(this.getOnlineClients(), (client) => {
-        this.tick({ event: events.OPTIONS_SYNC, data: { actorId: this.getId(), options }, to: client.id, mainEvent: true })
-      })
-    }
-  }
-
-  bind (bindAddress) {
-    if (_.isString(bindAddress)) {
-      this.setAddress(bindAddress)
-    }
-    return super.bind(this.getAddress())
-  }
-
-  unbind () {
-    try {
-      let _scope = _private.get(this)
-
-      if (this.isOnline()) {
-        _.each(this.getOnlineClients(), (client) => {
-          this.tick({ to: client.getId(), event: events.SERVER_STOP, mainEvent: true })
+  
+  // ============================================================================
+  // APPLICATION EVENT HANDLERS
+  // ============================================================================
+  
+  _attachApplicationEventHandlers () {
+    // ============================================================================
+    // HANDSHAKE - Client discovery via messages
+    // ============================================================================
+    this.onTick(events.CLIENT_CONNECTED, (data, envelope) => {
+      let { clientPeers } = _private.get(this)
+      
+      const clientId = envelope.owner
+      let peerInfo = clientPeers.get(clientId)
+      
+      if (!peerInfo) {
+        // NEW CLIENT - Discover peer from handshake message
+        peerInfo = new PeerInfo({ 
+          id: clientId,
+          options: data  // Store any client metadata
         })
+        peerInfo.setState('CONNECTED')
+        clientPeers.set(clientId, peerInfo)
+        
+        // Emit peer joined event
+        this.emit(events.CLIENT_JOINED, { 
+          clientId,
+          data
+        })
+      } else {
+        // EXISTING CLIENT - Reconnected, update state
+        peerInfo.setState('HEALTHY')
       }
-
-      // ** clear the heartbeat checking interval
-      if (_scope.clientCheckInterval) {
-        clearInterval(_scope.clientCheckInterval)
+      
+      // Send welcome response (complete handshake)
+      // Note: serverId is automatically in envelope.owner
+      this.tick({
+        to: clientId,
+        event: events.CLIENT_CONNECTED,
+        data: {
+          timestamp: Date.now()
+          // ❌ Removed: serverId (redundant with envelope.owner)
+        }
+      })
+    })
+    
+    // ============================================================================
+    // HEARTBEAT - Client ping
+    // ============================================================================
+    this.onTick(events.CLIENT_PING, (data, envelope) => {
+      let { clientPeers } = _private.get(this)
+      
+      const clientId = envelope.owner
+      const peerInfo = clientPeers.get(clientId)
+      
+      if (peerInfo) {
+        peerInfo.updateLastSeen()
+        peerInfo.setState('HEALTHY')
       }
-      _scope.clientCheckInterval = null
-
-      // ** clear client models on unbind to reset server state
-      _scope.clientModels.clear()
-
-      return super.unbind()
-    } catch (err) {
-      let serverUnbindError = new ZeronodeError({ socketId: this.getId(), code: ErrorCodes.SERVER_UNBIND, error: err })
-      return Promise.reject(serverUnbindError)
+    })
+    
+    // ============================================================================
+    // CLIENT LIFECYCLE
+    // ============================================================================
+    this.onTick(events.CLIENT_STOP, (data, envelope) => {
+      let { clientPeers } = _private.get(this)
+      
+      const clientId = envelope.owner
+      const peerInfo = clientPeers.get(clientId)
+      
+      if (peerInfo) {
+        peerInfo.setState('STOPPED')
     }
+      
+      this.emit(events.CLIENT_STOP, { clientId })
+    })
+  }
+
+  // ============================================================================
+  // PUBLIC API
+  // ============================================================================
+  
+  async bind (bindAddress) {
+      let _scope = _private.get(this)
+    _scope.bindAddress = bindAddress
+    
+    // ✅ Use Protocol's socket (via protected method)
+    const socket = this._getSocket()
+    
+    await socket.bind(bindAddress)
+    // Protocol will emit ProtocolEvent.READY when bound
+  }
+  
+  async unbind () {
+    this._stopHealthChecks()
+    
+    // Notify all clients
+    if (this.isReady()) {
+        try {
+          this.tick({
+            event: events.SERVER_STOP,
+            data: { serverId: this.getId() }
+          })
+    } catch (err) {
+        // Ignore if offline
+      }
+    }
+    
+    // ✅ Use Protocol's socket (via protected method)
+    const socket = this._getSocket()
+    await socket.unbind()
   }
   
   async close () {
     await this.unbind()
-    await super.close()
+    
+    // ✅ Use Protocol's socket (via protected method)
+    const socket = this._getSocket()
+    await socket.close()
   }
-}
-
-// ** Request handlers
-function _clientPingTick ({ actor, stamp }) {
-  let { clientModels } = _private.get(this)
-  // ** PING DATA FROM CLIENT, actor is client id
-
-  let actorModel = clientModels.get(actor)
-
-  if (actorModel) {
-    actorModel.ping(stamp)
+  
+  getClientPeerInfo (clientId) {
+    let { clientPeers } = _private.get(this)
+    return clientPeers.get(clientId)
   }
-}
-
-function _clientStopRequest (request) {
-  let { clientModels } = _private.get(this)
-  let { actorId, options } = request.body
-
-  // ** just replying acknowledgment
-  request.reply({ stamp: Date.now() })
-
-  let actorModel = clientModels.get(actorId)
-  if(!actorModel) return
-
-  actorModel.markStopped()
-  actorModel.mergeOptions(options)
-
-  this.emit(events.CLIENT_STOP, actorModel.toJSON())
-}
-
-function _clientConnectedRequest (request) {
+  
+  getAllClientPeers () {
+    let { clientPeers } = _private.get(this)
+    return Array.from(clientPeers.values())
+  }
+  
+  getConnectedClientCount () {
+    return this.getAllClientPeers().filter(peer => 
+      peer.getState() === 'CONNECTED' || peer.getState() === 'HEALTHY'
+    ).length
+  }
+  
+  // ============================================================================
+  // HEALTH CHECK MECHANISM (Private)
+  // ============================================================================
+  
+  _startHealthChecks () {
+    let _scope = _private.get(this)
+    
+    // Don't start multiple health check intervals
+    if (_scope.healthCheckInterval) {
+      return
+    }
+    
+    const config = this.getConfig()
+    const checkInterval = config.HEALTH_CHECK_INTERVAL || Globals.HEALTH_CHECK_INTERVAL || 30000
+    const ghostThreshold = config.GHOST_THRESHOLD || Globals.CLIENT_TIMEOUT || 60000
+    
+    _scope.healthCheckInterval = setInterval(() => {
+      this._checkClientHealth(ghostThreshold)
+    }, checkInterval)
+  }
+  
+  _stopHealthChecks () {
   let _scope = _private.get(this)
-  let { clientModels, clientCheckInterval } = _scope
-
-  let { actorId, options } = request.body
-
-  let actorModel = new ActorModel({ id: actorId, options: options, online: true })
-
-  clientModels.set(actorId, actorModel)
-
-  if (!clientCheckInterval) {
-    let config = this.getConfig()
-    let clientHeartbeatInterval = config.CLIENT_MUST_HEARTBEAT_INTERVAL || Globals.CLIENT_MUST_HEARTBEAT_INTERVAL
-    _scope.clientCheckInterval = setInterval(_checkClientHeartBeat.bind(this), clientHeartbeatInterval)
+    
+    if (_scope.healthCheckInterval) {
+      clearInterval(_scope.healthCheckInterval)
+      _scope.healthCheckInterval = null
+    }
   }
-
-  let replyData = { actorId: this.getId(), options: this.getOptions() }
-  // ** replyData {actorId, options}
-  request.reply(replyData)
-
-  this.emit(events.CLIENT_CONNECTED, actorModel.toJSON())
-}
-
-// ** check clients heartbeat
-function _checkClientHeartBeat () {
-  _.each(this.getOnlineClients(), (actor) => {
-    if (!actor.isGhost()) {
-      actor.markGhost()
-    } else if (!actor.isFailed()) {
-      // Only mark as failed and emit once
-      actor.markFailed()
-      this.emit(events.CLIENT_FAILURE, actor.toJSON())
-    }
-  })
-}
-
-function _clientOptionsSync ({ actorId, options }) {
-  try {
-    let { clientModels } = _private.get(this)
-    let actorModel = clientModels.get(actorId)
-    // TODO::remove after some time
-    if (!actorModel) {
-      throw new Error(`Client actor '${actorId}' is not available on server '${this.getId()}'`)
-    }
-    actorModel.setOptions(options)
-    this.emit(events.OPTIONS_SYNC, { id: actorModel.getId(), newOptions: options })
-  } catch (err) {
-    let clientOptionsSyncHandlerError = new ZeronodeError({ socketId: this.getId(), code: ErrorCodes.CLIENT_OPTIONS_SYNC_HANDLER, error: err })
-    clientOptionsSyncHandlerError.description = `Error while handling client options sync on server ${this.getId()}`
-    this.emit('error', clientOptionsSyncHandlerError)
+  
+  _checkClientHealth (ghostThreshold) {
+    let { clientPeers } = _private.get(this)
+    const now = Date.now()
+    
+    clientPeers.forEach((peerInfo, clientId) => {
+      const timeSinceLastSeen = now - peerInfo.getLastSeen()
+      
+      if (timeSinceLastSeen > ghostThreshold) {
+        const previousState = peerInfo.getState()
+        peerInfo.setState('GHOST')
+        
+        // Emit event if state changed
+        if (previousState !== 'GHOST') {
+          this.emit(events.CLIENT_GHOST, { 
+            clientId, 
+            lastSeen: peerInfo.getLastSeen(),
+            timeSinceLastSeen 
+          })
+        }
+      }
+    })
   }
 }

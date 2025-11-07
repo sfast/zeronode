@@ -1,25 +1,5 @@
-import _ from 'underscore'
-import animal from 'animal-id'
-import { PatternEmitter } from '@sfast/pattern-emitter-ts'
-
-import { ZeronodeError, ErrorCodes } from '../errors'
-
-import SocketEvent from './events'
-import Envelop from './envelope'
-import { EnvelopType, MetricType, Timeouts } from './enum'
-import Watchers from './watchers'
-
-// ============================================================================
-// CONSTANTS
-// ============================================================================
-
-const NANOSECONDS_PER_SECOND = 1e9
-
-const METRIC_TYPE_VALUES = {
-  SEND: 0,
-  RECEIVE: 1,
-  TIMEOUT: -1
-}
+import { EventEmitter } from 'events'
+import { TransportEvent } from '../transport-events.js'
 
 // ============================================================================
 // PRIVATE STORAGE
@@ -31,261 +11,127 @@ let _private = new WeakMap()
 // UTILITY FUNCTIONS
 // ============================================================================
 
-const nop = () => {}
-
-function calculateLatency ({ sendTime, getTime, replyTime, replyGetTime }) {
-  const processTime = (replyTime[0] * NANOSECONDS_PER_SECOND + replyTime[1]) - 
-                       (getTime[0] * NANOSECONDS_PER_SECOND + getTime[1])
-  const requestTime = (replyGetTime[0] * NANOSECONDS_PER_SECOND + replyGetTime[1]) - 
-                       (sendTime[0] * NANOSECONDS_PER_SECOND + sendTime[1])
-
-  return {
-    process: processTime,
-    latency: requestTime - processTime
-  }
-}
-
-function emitMetric (envelop, type = METRIC_TYPE_VALUES.SEND) {
-  let event = ''
-
-  if (envelop.mainEvent) return
-
-  switch (envelop.type) {
-    case EnvelopType.TICK:
-      event = !type ? MetricType.SEND_TICK : MetricType.GOT_TICK
-      break
-    case EnvelopType.REQUEST:
-      if (type === METRIC_TYPE_VALUES.TIMEOUT) {
-        event = MetricType.REQUEST_TIMEOUT
+async function startMessageListener (socket) {
+  try {
+    for await (const frames of socket) {
+      // Check if we should stop listening (graceful shutdown)
+      let _scope = _private.get(this)
+      if (_scope && _scope.shouldStopListening) {
         break
       }
-      event = !type ? MetricType.SEND_REQUEST : MetricType.GOT_REQUEST
-      break
-    case EnvelopType.RESPONSE:
-      event = !type ? MetricType.SEND_REPLY_SUCCESS : MetricType.GOT_REPLY_SUCCESS
-      break
-    case EnvelopType.ERROR:
-      event = !type ? MetricType.SEND_REPLY_ERROR : MetricType.GOT_REPLY_ERROR
-  }
-
-  this.emit(event, envelop)
-}
-
-function startMessageListener (socket) {
-  (async () => {
-    try {
-      for await (const [empty, envelopBuffer] of socket) {
-        onSocketMessage.call(this, empty, envelopBuffer)
+      
+      // Router sockets receive: [sender, '', buffer] (3 frames)
+      // Dealer sockets receive: ['', buffer] (2 frames)
+      
+      let sender, buffer
+      
+      if (frames.length === 3) {
+        // Router socket format
+        [sender, , buffer] = frames
+      } else if (frames.length === 2) {
+        // Dealer socket format
+        [, buffer] = frames
+        sender = null
+      } else {
+        // Unexpected format
+        this.logger?.warn(`Unexpected message format: ${frames.length} frames`)
+        continue
       }
-    } catch (err) {
-      // Socket closed or error occurred
-      if (this.logger && err.code !== 'EAGAIN') {
-        this.logger.error('Socket message listener error:', err)
-      }
+      
+      // Pure transport: forward ALL messages to protocol layer
+      this.emit(TransportEvent.MESSAGE, { buffer, sender })
     }
-  }).call(this)
+  } catch (err) {
+    // Socket closed or error occurred
+    // EAGAIN: Socket closed normally (expected)
+    if (this.logger && err.code !== 'EAGAIN') {
+      this.logger.error('Socket message listener error:', err)
+    }
+  }
 }
 
 function buildSocketEventHandler (eventName) {
-  const handler = (fd, endpoint) => {
+  return (fd, endpoint) => {
     if (this.debugMode()) {
       this.logger.info(`Emitted '${eventName}' on socket '${this.getId()}'`)
     }
     this.emit(eventName, { fd, endpoint })
   }
-
-  return handler.bind(this)
-}
-
-// ============================================================================
-// MESSAGE HANDLERS
-// ============================================================================
-
-function onSocketMessage (empty, envelopBuffer) {
-  let { metric, tickEmitter } = _private.get(this)
-
-  let { type, id, owner, recipient, tag, mainEvent } = Envelop.readMetaFromBuffer(envelopBuffer)
-  let envelop = new Envelop({ type, id, owner, recipient, tag, mainEvent })
-  let envelopData = Envelop.readDataFromBuffer(envelopBuffer)
-  envelop.setData(envelopData)
-
-  let envelopJSON = envelop.toJSON()
-  envelopJSON.size = envelopBuffer.length
-
-  switch (type) {
-    case EnvelopType.TICK:
-      metric(envelopJSON, METRIC_TYPE_VALUES.RECEIVE)
-
-      if (mainEvent) {
-        tickEmitter.main.emit(tag, envelopData)
-      } else {
-        tickEmitter.custom.emit(tag, envelopData, {
-          id: owner,
-          event: tag
-        })
-      }
-      break
-    case EnvelopType.REQUEST:
-      metric(envelopJSON, METRIC_TYPE_VALUES.RECEIVE)
-      syncEnvelopHandler.call(this, envelop)
-      break
-    case EnvelopType.RESPONSE:
-    case EnvelopType.ERROR:
-      envelop.size = envelopBuffer.length
-      responseEnvelopHandler.call(this, envelop)
-      break
-  }
-}
-
-function syncEnvelopHandler (envelop) {
-  let self = this
-  let getTime = process.hrtime()
-
-  let prevOwner = envelop.getOwner()
-  let handlers = determineHandlersByTag.call(self, envelop.getTag(), envelop.isMain())
-
-  if (!handlers.length) return
-
-  let requestOb = {
-    head: {
-      id: envelop.getOwner(),
-      event: envelop.getTag()
-    },
-    body: envelop.getData(),
-    reply: (response) => {
-      envelop.setRecipient(prevOwner)
-      envelop.setOwner(self.getId())
-      envelop.setType(EnvelopType.RESPONSE)
-      envelop.setData({ getTime, replyTime: process.hrtime(), data: response })
-      self.sendEnvelop(envelop)
-    },
-    error: (err) => {
-      envelop.setRecipient(prevOwner)
-      envelop.setOwner(self.getId())
-      envelop.setType(EnvelopType.ERROR)
-      envelop.setData({ getTime, replyTime: process.hrtime(), data: err })
-
-      self.sendEnvelop(envelop)
-    },
-    next: (err) => {
-      if (err) {
-        return requestOb.error(err)
-      }
-
-      if (!handlers.length) {
-        let noHandlerErr = new Error(`There is no handlers available as to process next() on socket '${self.getId()}'`)
-        throw new ZeronodeError({ socketId: self.getId(), code: ErrorCodes.NO_NEXT_HANDLER_AVAILABLE, error: noHandlerErr })
-      }
-
-      handlers.shift()(requestOb)
-    }
-  }
-
-  handlers.shift()(requestOb)
-}
-
-function determineHandlersByTag (tag, main = false) {
-  let handlers = []
-
-  let { requestWatcherMap } = _private.get(this)
-  let watcherMap = main ? requestWatcherMap.main : requestWatcherMap.custom
-
-  for (let endpoint of watcherMap.keys()) {
-    if (endpoint instanceof RegExp) {
-      if (endpoint.test(tag)) {
-        watcherMap.get(endpoint).getFnMap().forEach((index, fnKey) => {
-          handlers.push({ index, fnKey })
-        })
-      }
-    } else if (endpoint === tag) {
-      watcherMap.get(endpoint).getFnMap().forEach((index, fnKey) => {
-        handlers.push({ index, fnKey })
-      })
-    }
-  }
-
-  return handlers.sort((a, b) => {
-    return a.index - b.index
-  }).map((ob) => ob.fnKey)
-}
-
-function responseEnvelopHandler (envelop) {
-  let { requests, metric } = _private.get(this)
-
-  let id = envelop.getId()
-  if (!requests.has(id)) {
-    return this.logger.warn(`Response ${id} is probably time outed`)
-  }
-
-  let { timeout, sendTime, resolve, reject } = requests.get(id)
-
-  // Calculate timing metrics
-  let gotReplyMetric = envelop.toJSON()
-  let { getTime, replyTime } = gotReplyMetric.data
-  let duration = calculateLatency({ sendTime, getTime, replyTime, replyGetTime: process.hrtime() })
-
-  gotReplyMetric.data = {
-    data: gotReplyMetric.data,
-    duration
-  }
-
-  gotReplyMetric.size = envelop.size
-
-  metric(gotReplyMetric, METRIC_TYPE_VALUES.RECEIVE)
-
-  clearTimeout(timeout)
-  requests.delete(id)
-
-  let { data } = envelop.getData()
-  envelop.getType() === EnvelopType.ERROR ? reject(data) : resolve(data)
 }
 
 // ============================================================================
 // SOCKET CLASS
 // ============================================================================
 
-class Socket extends PatternEmitter {
-  static generateSocketId () {
-    return animal.getId()
-  }
-
-  constructor ({ id, socket, config, options } = {}) {
+class Socket extends EventEmitter {
+  constructor ({ socket, config } = {}) {
     super()
-    options = options || {}
-    config = config || {}
 
-    // ** creating the socket
-    let socketId = id || Socket.generateSocketId()
-    socket.routingId = socketId
-    startMessageListener.call(this, socket)
+    config = config || {}
+    
+    // Validate: socket MUST have routingId set
+    if (!socket.routingId) {
+      throw new Error('Socket must have routingId set before calling super(). Set socket.routingId in subclass constructor.')
+    }
+
+    // Configure common ZeroMQ socket options BEFORE setting up
+    this._configureCommonSocketOptions(socket, config)
 
     let _scope = {
-      id: socketId,
+      id: socket.routingId,
       socket,
       config,
-      options,
       logger: null,
       online: false,
-      metric: nop,
       isDebugMode: false,
-      monitorRestartInterval: null,
-      requests: new Map(),
-      requestWatcherMap: {
-        main: new Map(),
-        custom: new Map()
-      },
-      tickEmitter: {
-        main: new PatternEmitter(),
-        custom: new PatternEmitter()
-      }
+      shouldStopListening: false
     }
 
     _private.set(this, _scope)
 
     // ** setting the logger as soon as possible
-    this.setLogger(config.logger)
+    this.setLogger(config.logger || console)
 
-    this.debugMode(false)
+    this.debugMode(config.debug || false)
+
+    startMessageListener.call(this, socket)
+  }
+
+  /**
+   * Configure common ZeroMQ socket options (base class)
+   * These options apply to ALL socket types (Dealer, Router, etc.)
+   * Subclasses can add socket-specific options before calling super()
+   */
+  _configureCommonSocketOptions (socket, config) {
+    // Linger: How long to keep unsent messages after close
+    // 0 = discard immediately (fast shutdown)
+    // -1 = wait forever (dangerous!)
+    // >0 = wait N milliseconds
+    const linger = config.ZMQ_LINGER !== undefined ? config.ZMQ_LINGER : 0
+    socket.linger = linger
+
+    // High Water Mark for sending: Max queued outgoing messages
+    // Prevents memory exhaustion, blocks send when reached
+    // Default: 10,000 (good balance for production)
+    const sendHighWaterMark = config.ZMQ_SNDHWM || 10000
+    socket.sendHighWaterMark = sendHighWaterMark
+
+    // High Water Mark for receiving: Max queued incoming messages
+    // Default: 10,000 (good balance for production)
+    const receiveHighWaterMark = config.ZMQ_RCVHWM || 10000
+    socket.receiveHighWaterMark = receiveHighWaterMark
+
+    // Send timeout: Max time to wait for send operation
+    // -1 = infinite, 0 = non-blocking, >0 = timeout in ms
+    if (config.ZMQ_SNDTIMEO !== undefined) {
+      socket.sendTimeout = config.ZMQ_SNDTIMEO
+    }
+
+    // Receive timeout: Max time to wait for receive operation
+    // -1 = infinite, 0 = non-blocking, >0 = timeout in ms
+    if (config.ZMQ_RCVTIMEO !== undefined) {
+      socket.receiveTimeout = config.ZMQ_RCVTIMEO
+    }
   }
 
   getId () {
@@ -308,24 +154,9 @@ class Socket extends PatternEmitter {
     return !!online
   }
 
-  setOptions (options = {}) {
-    let _scope = _private.get(this)
-    _scope.options = options
-  }
-
-  getOptions () {
-    let { options } = _private.get(this)
-    return options
-  }
-
   getConfig () {
     let { config } = _private.get(this)
-    return config
-  }
-
-  setMetric (status) {
-    let _scope = _private.get(this)
-    _scope.metric = status ? emitMetric.bind(this) : nop
+    return config || {}
   }
 
   setLogger (logger) {
@@ -341,156 +172,86 @@ class Socket extends PatternEmitter {
     }
   }
 
-  request (envelop, reqTimeout) {
-    let { id, requests, metric, config } = _private.get(this)
-    reqTimeout = reqTimeout || config.REQUEST_TIMEOUT || Timeouts.REQUEST_TIMEOUT
-
-    if (!this.isOnline()) {
-      let err = new Error(`Sending failed as socket '${this.getId()}' is not online`)
-      return Promise.reject(new ZeronodeError({ socketId: id, error: err, code: ErrorCodes.SOCKET_ISNOT_ONLINE }))
+  // Pure transport: send buffer without protocol awareness
+  sendBuffer (buffer, recipient) {
+    let { socket } = _private.get(this)
+    
+    if (this.isOnline()) {
+      let msg = this.getSocketMsgFromBuffer(buffer, recipient)
+      socket.send(msg)
+      return true
     }
 
-    let envelopId = envelop.getId()
-
-    return new Promise((resolve, reject) => {
-      let timeout = setTimeout(() => {
-        if (requests.has(envelopId)) {
-          let requestObj = requests.get(envelopId)
-          requests.delete(envelopId)
-
-          metric(envelop.toJSON(), METRIC_TYPE_VALUES.TIMEOUT)
-
-          let requestTimeoutedError = new Error(`Request envelop '${envelopId}' timeouted on socket '${this.getId()}'`)
-          requestObj.reject(new ZeronodeError({ socketId: this.getId(), envelopId: envelopId, error: requestTimeoutedError, code: ErrorCodes.REQUEST_TIMEOUTED }))
-        }
-      }, reqTimeout)
-
-      requests.set(envelopId, { resolve: resolve, reject: reject, timeout: timeout, sendTime: process.hrtime() })
-      this.sendEnvelop(envelop)
-    })
+    throw new Error(`Sending failed as socket '${this.getId()}' is not online`)
   }
 
-  tick (envelop) {
-    let socketId = this.getId()
-    if (!this.isOnline()) {
-      let socketNotOnlineError = new Error(`Sending failed as socket ${socketId} is not online`)
-      throw new ZeronodeError({ socketId, error: socketNotOnlineError, code: ErrorCodes.SOCKET_ISNOT_ONLINE })
-    }
-
-    this.sendEnvelop(envelop)
+  // Default implementation (overridden in Router/Dealer)
+  getSocketMsgFromBuffer (buffer, recipient) {
+    throw new Error('getSocketMsgFromBuffer is not implemented in the base class. Subclasses must implement this method')
   }
 
-  sendEnvelop (envelop) {
-    let { socket, metric } = _private.get(this)
-    let msg = this.getSocketMsg(envelop)
-    let envelopJSON = envelop.toJSON()
-
-    if (msg instanceof Buffer) {
-      envelopJSON.size = msg.length
-    } else {
-      envelopJSON.size = msg[2].length
-    }
-
-    metric(envelopJSON)
-
-    socket.send(msg)
-  }
-
-  attachSocketMonitor () {
+  /**
+   * Attach socket event listeners (base implementation)
+   * Subclasses (Router/Dealer) should override to attach only relevant events
+   * 
+   * Base class attaches common events that apply to all socket types
+   */
+  attachTransportEventListeners () {
     let { socket } = _private.get(this)
 
-    // ** In zeromq v6, events are accessed via socket.events
+    // Subscribe to common ZeroMQ socket events
     if (socket.events) {
-      socket.events.on('connect', buildSocketEventHandler.call(this, SocketEvent.CONNECT))
-      socket.events.on('disconnect', buildSocketEventHandler.call(this, SocketEvent.DISCONNECT))
-      socket.events.on('connect:delay', buildSocketEventHandler.call(this, SocketEvent.CONNECT_DELAY))
-      socket.events.on('connect:retry', buildSocketEventHandler.call(this, SocketEvent.CONNECT_RETRY))
-      socket.events.on('listen', buildSocketEventHandler.call(this, SocketEvent.LISTEN))
-      socket.events.on('bind:error', buildSocketEventHandler.call(this, SocketEvent.BIND_ERROR))
-      socket.events.on('accept', buildSocketEventHandler.call(this, SocketEvent.ACCEPT))
-      socket.events.on('accept:error', buildSocketEventHandler.call(this, SocketEvent.ACCEPT_ERROR))
-      socket.events.on('close', buildSocketEventHandler.call(this, SocketEvent.CLOSE))
-      socket.events.on('close:error', buildSocketEventHandler.call(this, SocketEvent.CLOSE_ERROR))
+      // Map ZeroMQ close → TransportEvent.CLOSED
+      socket.events.on('close', buildSocketEventHandler.call(this, TransportEvent.CLOSED))
     }
   }
 
-  detachSocketMonitor () {
+  detachTransportEventListeners () {
     let { socket } = _private.get(this)
-    // ** In zeromq v6, events are on socket.events
+    // Unsubscribe from all ZeroMQ socket events
     if (socket.events && typeof socket.events.removeAllListeners === 'function') {
       socket.events.removeAllListeners()
     }
   }
 
+  /**
+   * Stop the message listener gracefully before unbind/disconnect operations
+   * Sets a flag that the async iterator checks on next iteration
+   * This prevents EBUSY errors without closing the socket prematurely
+   */
+  stopMessageListener () {
+    let _scope = _private.get(this)
+    if (_scope) {
+      _scope.shouldStopListening = true
+    }
+  }
+
+  /**
+   * Close the socket (base implementation)
+   * - Sets offline state
+   * - Detaches event listeners
+   * - Closes native ZeroMQ socket (if not already closed)
+   * 
+   * Note: Router/Dealer should call stopMessageListener() first,
+   * then do their cleanup (unbind/disconnect), then call super.close()
+   */
   close () {
-    this.detachSocketMonitor()
-  }
-
-  // --------------------------------------------------------------------------
-  // REQUEST/RESPONSE HANDLING
-  // --------------------------------------------------------------------------
-
-  onRequest (endpoint, fn, main = false) {
-    // ** function will called with argument  request = {body, reply}
-    if (!(endpoint instanceof RegExp)) {
-      endpoint = endpoint.toString()
+    this.setOffline()
+    this.detachTransportEventListeners()
+    
+    let { socket } = _private.get(this)
+    if (socket && !socket.closed) {
+      socket.close()
     }
-    let { requestWatcherMap } = _private.get(this)
-    let watcherMap = main ? requestWatcherMap.main : requestWatcherMap.custom
-
-    let requestWatcher = watcherMap.get(endpoint)
-
-    if (!requestWatcher) {
-      requestWatcher = new Watchers(endpoint)
-      watcherMap.set(endpoint, requestWatcher)
-    }
-
-    requestWatcher.addFn(fn)
-  }
-
-  offRequest (endpoint, fn, main = false) {
-    let { requestWatcherMap } = _private.get(this)
-    let watcherMap = main ? requestWatcherMap.main : requestWatcherMap.custom
-
-    if (_.isFunction(fn)) {
-      let endpointWatcher = watcherMap.get(endpoint)
-      if (!endpointWatcher) return
-      endpointWatcher.removeFn(fn)
-      return
-    }
-
-    watcherMap.delete(endpoint)
-  }
-
-  // --------------------------------------------------------------------------
-  // TICK (ONE-WAY MESSAGE) HANDLING
-  // --------------------------------------------------------------------------
-
-  onTick (event, fn, main = false) {
-    let { tickEmitter } = _private.get(this)
-    main ? tickEmitter.main.on(event, fn) : tickEmitter.custom.on(event, fn)
-  }
-
-  offTick (event, fn, main = false) {
-    let { tickEmitter } = _private.get(this)
-    let eventTickEmitter = main ? tickEmitter.main : tickEmitter.custom
-
-    if (_.isFunction(fn)) {
-      eventTickEmitter.removeListener(event, fn)
-      return
-    }
-
-    eventTickEmitter.removeAllListeners(event)
   }
 }
 
 // ============================================================================
 // EXPORTS
 // ============================================================================
-export { SocketEvent }
 export { Socket }
+export { buildSocketEventHandler }
 
 export default {
-  SocketEvent,
   Socket
 }

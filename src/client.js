@@ -1,247 +1,304 @@
+/**
+ * Client - Application layer for client-side communication
+ * 
+ * ARCHITECTURE: Protocol-First Design
+ * - Extends Protocol (inherits request/response, tick, handler management)
+ * - Uses DealerSocket for transport (passed to Protocol)
+ * - ONLY listens to ProtocolEvent (NEVER SocketEvent)
+ * - Manages server peer state
+ * - Implements ping mechanism
+ * - Handles application-level events
+ */
+
 import { events } from './enum'
 import Globals from './globals'
-import ActorModel from './actor'
+import PeerInfo from './peer'
 import { ZeronodeError, ErrorCodes } from './errors'
-
-import { Dealer as DealerSocket, SocketEvent } from './sockets'
+import Protocol, { ProtocolEvent } from './protocol'
+import { Dealer as DealerSocket } from './sockets'
 
 let _private = new WeakMap()
 
-export default class Client extends DealerSocket {
-  constructor ({ id, options, config } = {}) {
-    options = options || {}
+export default class Client extends Protocol {
+  constructor ({ id, config } = {}) {
     config = config || {}
-
-    super({ id, options, config })
+    
+    // Create DealerSocket (transport layer)
+    const socket = new DealerSocket({ id, config })
+    
+    // Pass socket to Protocol
+    super(socket)
+    
     let _scope = {
-      server: null,
+      routerAddress: null,
+      serverPeerInfo: null,
       pingInterval: null
     }
-
-    this.on(SocketEvent.DISCONNECT, _serverFailHandler.bind(this))
-    this.on(SocketEvent.RECONNECT, _serverReconnectHandler.bind(this))
-    this.on(SocketEvent.RECONNECT_FAILURE, () => this.emit(events.SERVER_RECONNECT_FAILURE, _scope.server.toJSON()))
-
-    this.onTick(events.SERVER_STOP, _serverStopHandler.bind(this), true)
-    this.onTick(events.OPTIONS_SYNC, _serverOptionsSync.bind(this), true)
-
+    
     _private.set(this, _scope)
+    
+    // ✅ ONLY listen to Protocol events
+    this._attachProtocolEventHandlers()
+    
+    // ✅ ONLY listen to application events (via Protocol)
+    this._attachApplicationEventHandlers()
   }
-
-  getServerActor () {
-    let { server } = _private.get(this)
-    return server
-  }
-
-  setOptions (options, notify = true) {
-    super.setOptions(options)
-    if (notify) {
-      this.tick({ event: events.OPTIONS_SYNC, data: { actorId: this.getId(), options }, mainEvent: true })
-    }
-  }
-
-  // ** returns a promise which resolves with server model after server replies to events.CLIENT_CONNECTED
-  async connect (serverAddress, timeout) {
-    try {
-      let _scope = _private.get(this)
-
-      // actually connected
-      await super.connect(serverAddress, timeout)
-
-      let requestData = {
-        event: events.CLIENT_CONNECTED,
-        data: {
-          actorId: this.getId(),
-          options: this.getOptions()
-        },
-        mainEvent: true
+  
+  // ============================================================================
+  // PROTOCOL EVENT HANDLERS (High-Level)
+  // ============================================================================
+  
+  _attachProtocolEventHandlers () {
+    // ============================================================================
+    // MANUAL HANDSHAKE APPROACH
+    // 
+    // Transport ready → Send handshake → Wait for welcome → Start session
+    // ============================================================================
+    
+    // Transport can send/receive bytes - send handshake
+    this.on(ProtocolEvent.TRANSPORT_READY, () => {
+      let { serverPeerInfo } = _private.get(this)
+      
+      if (serverPeerInfo) {
+        serverPeerInfo.setState('CONNECTING')  // ✅ Still connecting (handshake pending)
       }
-
-      let { actorId, options } = await this.request(requestData)
-      // ** creating server model and setting it online
-      _scope.server = new ActorModel({ id: actorId, options: options, online: true, address: serverAddress })
-      _startServerPinging.call(this)
-      return { actorId, options }
+      
+      // Send handshake tick to server (recipient unknown at this point)
+      this._sendClientConnected()
+      
+      // Emit transport ready event (low-level, for debugging)
+      this.emit(events.TRANSPORT_READY)
+    })
+    
+    // Transport disconnected - stop ping, mark peer as ghost
+    this.on(ProtocolEvent.TRANSPORT_NOT_READY, () => {
+      let { serverPeerInfo } = _private.get(this)
+      
+      if (serverPeerInfo) {
+        serverPeerInfo.setState('GHOST')
+      }
+      
+      this._stopPing()
+      
+      // Emit application event
+      this.emit(events.SERVER_DISCONNECTED, { serverId: 'server' })
+    })
+    
+    // Transport permanently closed - reject all, mark failed
+    this.on(ProtocolEvent.TRANSPORT_CLOSED, () => {
+      let { serverPeerInfo } = _private.get(this)
+      
+      if (serverPeerInfo) {
+        serverPeerInfo.setState('FAILED')
+      }
+      
+      this._stopPing()
+      
+      // Emit application event
+      this.emit(events.SERVER_FAILED, { 
+        serverId: 'server'
+      })
+    })
+  }
+  
+  // ============================================================================
+  // APPLICATION EVENT HANDLERS
+  // ============================================================================
+  
+  _attachApplicationEventHandlers () {
+    // ============================================================================
+    // HANDSHAKE RESPONSE - Server welcomes client
+    // ============================================================================
+    this.onTick(events.CLIENT_CONNECTED, (data, envelope) => {
+      let { serverPeerInfo } = _private.get(this)
+      
+      // ✅ Extract server ID from envelope.owner (sender's socket ID)
+      const serverId = envelope.owner
+      
+      if (!serverId) {
+        this.logger?.error('Server handshake response missing sender ID in envelope.owner')
+        return
+      }
+      
+      if (serverPeerInfo) {
+        // ✅ Store server ID (now we know who we're talking to)
+        serverPeerInfo.setId(serverId)
+        serverPeerInfo.setState('READY')  // ✅ Application ready!
+      }
+      
+      // ✅ Start ping now that handshake is complete and we know server ID
+      this._startPing()
+      
+      // ✅ Emit CLIENT READY - handshake complete, session established
+      this.emit(events.CLIENT_READY, { 
+        serverId,
+        serverData: data
+      })
+    })
+    
+    // ============================================================================
+    // SERVER LIFECYCLE EVENTS
+    // ============================================================================
+    this.onTick(events.SERVER_STOP, () => {
+      let { serverPeerInfo } = _private.get(this)
+      
+      if (serverPeerInfo) {
+        serverPeerInfo.setState('STOPPED')
+      }
+      
+      this._stopPing()
+      
+      this.emit(events.SERVER_STOP)
+    })
+  }
+  
+  // ============================================================================
+  // PUBLIC API
+  // ============================================================================
+  
+  async connect (routerAddress, timeout) {
+    let _scope = _private.get(this)
+    _scope.routerAddress = routerAddress
+    
+    // Create server peer info (ID unknown until handshake completes)
+    _scope.serverPeerInfo = new PeerInfo({ 
+      id: null,  // ✅ Will be set after handshake response
+      options: {}
+    })
+    _scope.serverPeerInfo.setState('CONNECTING')
+    
+    // ✅ Use Protocol's socket (via protected method)
+    const socket = this._getSocket()
+    
+    try {
+      await socket.connect(routerAddress, timeout)
+      // Transport is online, but application NOT ready until handshake completes
     } catch (err) {
-      let clientConnectError = new ZeronodeError({ socketId: this.getId(), code: ErrorCodes.CLIENT_CONNECT, error: err })
-      clientConnectError.description = `Error while disconnecting client '${this.getId()}'`
-      this.emit('error', clientConnectError)
+      _scope.serverPeerInfo.setState('FAILED')
+      throw err
     }
   }
-
-  async disconnect (options) {
-    try {
-      let _scope = _private.get(this)
-      let server = this.getServerActor()
-      let disconnectData = { actorId: this.getId() }
-
-      if (options) {
-        disconnectData.options = options
-      }
-
-      if (server && server.isOnline()) {
-        let requestOb = {
+  
+  async disconnect () {
+    let { serverPeerInfo } = _private.get(this)
+    
+    this._stopPing()
+    
+    // Notify server
+    if (this.isReady()) {
+      try {
+        this.tick({
           event: events.CLIENT_STOP,
-          data: disconnectData,
-          mainEvent: true
-        }
-
-        await this.request(requestOb)
-        _scope.server = null
+          data: { clientId: this.getId() }
+        })
+      } catch (err) {
+        // Ignore if offline
       }
-
-      _stopServerPinging.call(this)
-
-      await super.disconnect()
-    } catch (err) {
-      let clientDisconnectError = new ZeronodeError({ socketId: this.getId(), code: ErrorCodes.CLIENT_DISCONNECT, error: err })
-      clientDisconnectError.description = `Error while disconnecting client '${this.getId()}'`
-      this.emit('error', clientDisconnectError)
+    }
+    
+    // ✅ Use Protocol's socket (via protected method)
+    const socket = this._getSocket()
+    await socket.disconnect()
+    
+    if (serverPeerInfo) {
+      serverPeerInfo.setState('STOPPED')
     }
   }
-
-  request ({ event, data, timeout, mainEvent } = {}) {
-    let server = this.getServerActor()
-
-    // this is first request, and there is no need to check if server online or not
-    if (mainEvent && event === events.CLIENT_CONNECTED) {
-      return super.request({ event, data, timeout, mainEvent })
-    }
-
-    if (!server || !server.isOnline()) {
-      let serverOfflineError = new Error(`Server is offline during request, on client: ${this.getId()}`)
-      return Promise.reject(new ZeronodeError({ socketId: this.getId(), error: serverOfflineError, code: ErrorCodes.SERVER_IS_OFFLINE }))
-    }
-
-    return super.request({ event, data, timeout, to: server.getId(), mainEvent })
+  
+  async close () {
+    await this.disconnect()
+    
+    // ✅ Use Protocol's socket (via protected method)
+    const socket = this._getSocket()
+    await socket.close()
   }
-
-  tick ({ event, data, mainEvent } = {}) {
-    let server = this.getServerActor()
-
-    if (!server || !server.isOnline()) {
-      let serverOfflineError = new Error(`Server is offline during request, on client: ${this.getId()}`)
-      return Promise.reject(new ZeronodeError({ socketId: this.getId(), error: serverOfflineError, code: ErrorCodes.SERVER_IS_OFFLINE }))
-    }
-
-    super.tick({ event, data, to: server.getId(), mainEvent })
+  
+  getServerPeerInfo () {
+    let { serverPeerInfo } = _private.get(this)
+    return serverPeerInfo
   }
-}
-
-function _serverFailHandler () {
-  try {
-    let server = this.getServerActor()
-
-    if (!server || !server.isOnline()) return
-
-    _stopServerPinging.call(this)
-
-    server.markFailed()
-
-    this.emit(events.SERVER_FAILURE, server.toJSON())
-  } catch (err) {
-    let serverFailHandlerError = new ZeronodeError({ socketId: this.getId(), code: ErrorCodes.SERVER_RECONNECT_HANDLER, error: err })
-    serverFailHandlerError.description = `Error while handling server failure on client ${this.getId()}`
-    this.emit('error', serverFailHandlerError)
-  }
-}
-
-async function _serverReconnectHandler (/* { fd, serverAddress } */) {
-  try {
-    let server = this.getServerActor()
-
-    let requestObj = {
-      event: events.CLIENT_CONNECTED,
-      data: {
-        actorId: this.getId(),
-        options: this.getOptions()
-      },
-      mainEvent: true
-    }
-
-    let { actorId, options } = await this.request(requestObj)
-
-    // **  TODO։։avar remove this after some time (server should always be available at this point)
-    if (!server) {
-      throw new Error(`Server actor is not available on client '${this.getId()}'`)
-    }
-
-    server.setId(actorId)
-    server.setOnline()
-    server.setOptions(options)
-
-    this.emit(events.SERVER_RECONNECT, server.toJSON())
-
-    _startServerPinging.call(this)
-  } catch (err) {
-    let serverReconnectHandlerError = new ZeronodeError({ socketId: this.getId(), code: ErrorCodes.SERVER_RECONNECT_HANDLER, error: err })
-    serverReconnectHandlerError.description = `Error while handling server reconnect on client ${this.getId()}`
-    this.emit('error', serverReconnectHandlerError)
-  }
-}
-
-function _serverStopHandler () {
-  try {
-    let server = this.getServerActor()
-
-    // Server already cleaned up (race condition during disconnect/stop)
-    // This is normal during cleanup when the client disconnects before receiving SERVER_STOP tick
-    if (!server) {
+  
+  // ============================================================================
+  // PING MECHANISM (Private)
+  // ============================================================================
+  
+  _startPing () {
+    let _scope = _private.get(this)
+    
+    // Don't start multiple ping intervals
+    if (_scope.pingInterval) {
       return
     }
-
-    _stopServerPinging.call(this)
-
-    server.markStopped()
-    this.emit(events.SERVER_STOP, server.toJSON())
-  } catch (err) {
-    let serverStopHandlerError = new ZeronodeError({ socketId: this.getId(), code: ErrorCodes.SERVER_STOP_HANDLER, error: err })
-    serverStopHandlerError.description = `Error while handling server stop on client ${this.getId()}`
-    this.emit('error', serverStopHandlerError)
+    
+    const config = this.getConfig()
+    const pingInterval = config.PING_INTERVAL || Globals.PING_INTERVAL || 10000
+    
+    _scope.pingInterval = setInterval(() => {
+      if (this.isReady()) {
+        const { serverPeerInfo } = _private.get(this)
+        const serverId = serverPeerInfo?.getId()
+        
+        if (!serverId) {
+          this.logger?.warn('Cannot send ping: server ID unknown')
+          return
+        }
+        
+        // ✅ Send ping with explicit recipient
+        this.tick({
+          to: serverId,  // ✅ Now we know server ID!
+          event: events.CLIENT_PING,
+          data: { 
+            timestamp: Date.now()
+            // ❌ Removed: clientId (redundant with envelope.owner)
+          }
+        })
+      }
+    }, pingInterval)
   }
-}
-
-function _serverOptionsSync ({ options, actorId }) {
-  try {
-    let server = this.getServerActor()
-    if (!server) {
-      throw new Error(`Server actor is not available on client '${this.getId()}'`)
+  
+  _stopPing () {
+    let _scope = _private.get(this)
+    
+    if (_scope.pingInterval) {
+      clearInterval(_scope.pingInterval)
+      _scope.pingInterval = null
     }
-    server.setOptions(options)
-    this.emit(events.OPTIONS_SYNC, { id: server.getId(), newOptions: options })
-  } catch (err) {
-    let serverOptionsSyncHandlerError = new ZeronodeError({ socketId: this.getId(), code: ErrorCodes.SERVER_OPTIONS_SYNC_HANDLER, error: err })
-    serverOptionsSyncHandlerError.description = `Error while handling server options sync on client ${this.getId()}`
-    this.emit('error', serverOptionsSyncHandlerError)
   }
-}
-
-function _startServerPinging () {
-  let _scope = _private.get(this)
-  let { pingInterval } = _scope
-
-  if (pingInterval) {
-    clearInterval(pingInterval)
-  }
-
-  let config = this.getConfig()
-  let interval = config.CLIENT_PING_INTERVAL || Globals.CLIENT_PING_INTERVAL
-
-  _scope.pingInterval = setInterval(() => {
-    try {
-      let pingData = { actor: this.getId(), stamp: Date.now() }
-      this.tick({ event: events.CLIENT_PING, data: pingData, mainEvent: true })
-    } catch (err) {
-      let pingError = new ZeronodeError({ socketId: this.getId(), code: ErrorCodes.SERVER_PING_ERROR, error: err })
-      this.emit('error', pingError)
+  
+  _sendClientConnected () {
+    // ✅ Check transport ready (not application ready - that comes after handshake)
+    const socket = this._getSocket()
+    if (!socket.isOnline()) {
+      return
     }
-  }, interval)
-}
-
-function _stopServerPinging () {
-  let { pingInterval } = _private.get(this)
-
-  if (pingInterval) {
-    clearInterval(pingInterval)
+    
+    // Send handshake to server (recipient unknown at this point)
+    this.tick({
+      event: events.CLIENT_CONNECTED,
+      data: {
+        timestamp: Date.now()
+      }
+    })
+  }
+  
+  // ============================================================================
+  // APPLICATION READY CHECK
+  // ============================================================================
+  
+  /**
+   * Override Protocol.isReady() to check application-level readiness
+   * Application is ready when:
+   * 1. Transport is online (socket connected)
+   * 2. Server ID is known (handshake completed)
+   */
+  isReady () {
+    // Check transport ready
+    const transportReady = super.isReady()
+    
+    // Check server ID known
+    const { serverPeerInfo } = _private.get(this)
+    const serverIdKnown = serverPeerInfo && serverPeerInfo.getId()
+    
+    return transportReady && !!serverIdKnown
   }
 }

@@ -2,18 +2,36 @@
  * Created by artak on 2/15/17.
  */
 
+// System events (protected with _system: prefix)
+// These can ONLY be sent by Client/Server internally
 export const events = {
-  CLIENT_CONNECTED: 1,
-  CLIENT_FAILURE: 2,
-  CLIENT_STOP: 3,
-  CLIENT_PING: 4,
-  OPTIONS_SYNC: 5,
-  SERVER_RECONNECT: 6,
-  SERVER_FAILURE: 7,
-  SERVER_STOP: 8,
-  METRICS: 9,
-  SERVER_RECONNECT_FAILURE: 10,
-  CONNECT_TO_SERVER: 11
+  // Client system events
+  CLIENT_CONNECTED: '_system:client_connected',
+  CLIENT_STOP: '_system:client_stop',
+  CLIENT_PING: '_system:client_ping',
+  CLIENT_READY: 'client:ready',  // Application event (after handshake)
+  CLIENT_JOINED: 'client:joined',  // Server event (peer discovered)
+  CLIENT_GHOST: 'client:ghost',  // Server event (peer timeout)
+  
+  // Server system events  
+  SERVER_STOP: '_system:server_stop',
+  SERVER_READY: 'server:ready',
+  SERVER_NOT_READY: 'server:not_ready',
+  SERVER_CLOSED: 'server:closed',
+  SERVER_DISCONNECTED: 'server:disconnected',
+  SERVER_FAILED: 'server:failed',
+  
+  // Transport events (from Protocol)
+  TRANSPORT_READY: 'transport:ready',
+  
+  // Legacy (keep for compatibility, but deprecated)
+  CLIENT_FAILURE: 'client:failure',
+  OPTIONS_SYNC: 'options:sync',
+  SERVER_RECONNECT: 'server:reconnect',
+  SERVER_FAILURE: 'server:failure',
+  SERVER_RECONNECT_FAILURE: 'server:reconnect_failure',
+  CONNECT_TO_SERVER: 'connect:to_server',
+  METRICS: 'metrics'
 }
 
 export const MetricCollections = {
