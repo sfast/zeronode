@@ -1,6 +1,6 @@
 {
   "require": ["@babel/register"],
-  "spec": "test/**/*.test.js",
+  "spec": ["test/**/*.test.js", "src/**/*.test.js"],
   "exit": true,
   "timeout": 10000,
   "recursive": true,

@@ -68,7 +68,7 @@
   "homepage": "https://github.com/sfast/zeronode#readme",
   "dependencies": {
     "@babel/runtime": "^7.28.4",
-    "@sfast/pattern-emitter-ts": "git+https://github.com/sfast/pattern-emitter-ts.git",
+    "@sfast/pattern-emitter-ts": "^0.3.0",
     "animal-id": "0.0.1",
     "bluebird": "^3.7.2",
     "lokijs": "^1.5.12",

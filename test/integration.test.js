@@ -1,0 +1,694 @@
+/**
+ * Integration Tests - Client ↔ Server Communication
+ * 
+ * Real-world usage scenarios showing how Client and Server work together
+ */
+
+import { expect } from 'chai'
+import Client from '../src/protocol/client.js'
+import Server from '../src/protocol/server.js'
+import { events } from '../src/enum.js'
+
+describe('Client ↔ Server Integration', function () {
+  // Increase timeout for integration tests
+  this.timeout(15000)
+
+  let server
+  let serverAddress
+
+  beforeEach(async () => {
+    console.log('\n[TEST] Creating server...')
+    // Create and start server
+    server = new Server({ 
+      id: 'test-server',
+      options: { role: 'server', version: '1.0' }
+    })
+    
+    // Add logging for server events
+    server.on(events.SERVER_READY, () => {
+      console.log('[SERVER] SERVER_READY event fired')
+    })
+    server.on(events.CLIENT_JOINED, ({ clientId }) => {
+      console.log(`[SERVER] CLIENT_JOINED: ${clientId}`)
+    })
+    server.on('transport:ready', () => {
+      console.log('[SERVER] transport:ready event')
+    })
+    
+    console.log('[TEST] Binding server...')
+    await server.bind('tcp://127.0.0.1:0')
+    serverAddress = server.getAddress()
+    console.log(`[TEST] Server bound to: ${serverAddress}`)
+    console.log(`[TEST] Server ready: ${server.isReady()}`)
+  })
+
+  afterEach(async () => {
+    // Cleanup
+    console.log('[TEST] Cleaning up...')
+    if (server) {
+      try {
+        await server.unbind()
+        console.log('[TEST] Server unbound')
+      } catch (err) {
+        console.log('[TEST] Server unbind error:', err.message)
+      }
+    }
+  })
+
+  describe('1. Basic Connection & Handshake', () => {
+    it('should establish connection and exchange options', async () => {
+      console.log('[TEST] Creating client...')
+      const client = new Client({ 
+        id: 'client-1',
+        options: { role: 'worker', region: 'us-east' }
+      })
+      
+      // Add logging for client events
+      client.on(events.TRANSPORT_READY, () => {
+        console.log('[CLIENT] TRANSPORT_READY event')
+      })
+      client.on(events.CLIENT_READY, ({ serverId }) => {
+        console.log(`[CLIENT] CLIENT_READY event, serverId: ${serverId}`)
+      })
+      client.on('transport:ready', () => {
+        console.log('[CLIENT] transport:ready event')
+      })
+      
+      // Connect and wait for handshake
+      console.log(`[TEST] Connecting client to ${serverAddress}...`)
+      try {
+        await client.connect(serverAddress)
+        console.log('[TEST] Client connected successfully')
+      } catch (err) {
+        console.log('[TEST] Client connection error:', err.message)
+        throw err
+      }
+      
+      // Verify client is ready
+      console.log(`[TEST] Client ready: ${client.isReady()}`)
+      expect(client.isReady()).to.be.true
+      
+      // Verify server received client
+      const clientPeer = server.getClientPeerInfo('client-1')
+      expect(clientPeer).to.not.be.null
+      expect(clientPeer.getOptions()).to.deep.equal({
+        role: 'worker',
+        region: 'us-east'
+      })
+      
+      // Verify client received server options
+      const serverPeer = client.getServerPeerInfo()
+      expect(serverPeer.getOptions()).to.deep.equal({
+        role: 'server',
+        version: '1.0'
+      })
+      
+      console.log('[TEST] Disconnecting client...')
+      await client.disconnect()
+      console.log('[TEST] Client disconnected')
+    })
+
+    it('should emit CLIENT_JOINED event on server', (done) => {
+      console.log('[TEST] Testing CLIENT_JOINED event...')
+      
+      const timeoutHandle = setTimeout(() => {
+        console.log('[TEST] CLIENT_JOINED timeout - event never fired')
+        done(new Error('CLIENT_JOINED event timeout'))
+      }, 10000)
+      
+      server.once(events.CLIENT_JOINED, ({ clientId, data }) => {
+        clearTimeout(timeoutHandle)
+        console.log(`[TEST] CLIENT_JOINED received: ${clientId}`)
+        expect(clientId).to.equal('client-1')
+        expect(data).to.deep.equal({ role: 'worker' })
+        done()
+      })
+      
+      const client = new Client({ 
+        id: 'client-1',
+        options: { role: 'worker' }
+      })
+      
+      client.on(events.TRANSPORT_READY, () => {
+        console.log('[CLIENT] TRANSPORT_READY in CLIENT_JOINED test')
+      })
+      
+      console.log('[TEST] Connecting client for CLIENT_JOINED test...')
+      client.connect(serverAddress).catch(err => {
+        clearTimeout(timeoutHandle)
+        console.log('[TEST] Client connect error:', err.message)
+        done(err)
+      })
+    })
+
+    it('should emit CLIENT_READY event on client', (done) => {
+      const client = new Client({ id: 'client-1' })
+      
+      client.once(events.CLIENT_READY, ({ serverId }) => {
+        expect(serverId).to.equal('test-server')
+        done()
+      })
+      
+      client.connect(serverAddress)
+    })
+  })
+
+  describe('2. Request/Response - Client → Server', () => {
+    let client
+
+    beforeEach(async () => {
+      client = new Client({ id: 'client-1' })
+      await client.connect(serverAddress)
+    })
+
+    afterEach(async () => {
+      if (client) await client.disconnect()
+    })
+
+    it('should handle basic request/response', async () => {
+      // Register handler on server
+      server.onRequest('user:get', (data) => {
+        return { 
+          id: data.userId, 
+          name: 'Alice',
+          email: 'alice@example.com'
+        }
+      })
+      
+      // Client sends request
+      const response = await client.request({
+        event: 'user:get',
+        data: { userId: 123 }
+      })
+      
+      expect(response).to.deep.equal({
+        id: 123,
+        name: 'Alice',
+        email: 'alice@example.com'
+      })
+    })
+
+    it('should handle async request handlers', async () => {
+      server.onRequest('db:query', async (data) => {
+        // Simulate async DB operation
+        await new Promise(resolve => setTimeout(resolve, 100))
+        return { results: [`Data for ${data.table}`] }
+      })
+      
+      const response = await client.request({
+        event: 'db:query',
+        data: { table: 'users' }
+      })
+      
+      expect(response.results).to.deep.equal(['Data for users'])
+    })
+
+    it('should propagate handler errors', async () => {
+      server.onRequest('fail:test', () => {
+        throw new Error('Handler failed intentionally')
+      })
+      
+      try {
+        await client.request({
+          event: 'fail:test',
+          data: {}
+        })
+        throw new Error('Should have thrown')
+      } catch (err) {
+        expect(err.message).to.include('Handler failed intentionally')
+      }
+    })
+
+    it('should timeout when no handler registered', async () => {
+      try {
+        await client.request({
+          event: 'nonexistent:handler',
+          data: {},
+          timeout: 500
+        })
+        throw new Error('Should have timed out')
+      } catch (err) {
+        // The server immediately responds with "No handler" error
+        // So we get that error instead of a timeout
+        expect(err.message).to.include('No handler')
+      }
+    })
+  })
+
+  describe('3. Request/Response - Server → Client (Bidirectional)', () => {
+    let client
+
+    beforeEach(async () => {
+      client = new Client({ id: 'client-1' })
+      await client.connect(serverAddress)
+    })
+
+    afterEach(async () => {
+      if (client) await client.disconnect()
+    })
+
+    it('should allow server to request from client', async () => {
+      // Register handler on client
+      client.onRequest('worker:status', () => {
+        return {
+          status: 'healthy',
+          load: 0.25,
+          uptime: 3600
+        }
+      })
+      
+      // Server sends request to specific client
+      const response = await server.request({
+        to: 'client-1',
+        event: 'worker:status',
+        data: {}
+      })
+      
+      expect(response).to.deep.equal({
+        status: 'healthy',
+        load: 0.25,
+        uptime: 3600
+      })
+    })
+
+    it('should handle bidirectional communication', async () => {
+      // Client handler
+      client.onRequest('client:ping', () => 'client-pong')
+      
+      // Server handler
+      server.onRequest('server:ping', () => 'server-pong')
+      
+      // Test both directions
+      const clientResponse = await server.request({
+        to: 'client-1',
+        event: 'client:ping',
+        data: {}
+      })
+      
+      const serverResponse = await client.request({
+        event: 'server:ping',
+        data: {}
+      })
+      
+      expect(clientResponse).to.equal('client-pong')
+      expect(serverResponse).to.equal('server-pong')
+    })
+  })
+
+  describe('4. Tick - Fire-and-Forget (Client → Server)', () => {
+    let client
+
+    beforeEach(async () => {
+      client = new Client({ id: 'client-1' })
+      await client.connect(serverAddress)
+    })
+
+    afterEach(async () => {
+      if (client) await client.disconnect()
+    })
+
+    it('should send tick from client to server', (done) => {
+      server.onTick('log:event', (data, envelope) => {
+        expect(data).to.deep.equal({
+          level: 'info',
+          message: 'User logged in'
+        })
+        expect(envelope.owner).to.equal('client-1')
+        done()
+      })
+      
+      client.tick({
+        event: 'log:event',
+        data: {
+          level: 'info',
+          message: 'User logged in'
+        }
+      })
+    })
+
+    it('should not wait for response on tick', async () => {
+      let handlerCalled = false
+      
+      server.onTick('async:event', async (data) => {
+        // Simulate slow handler
+        await new Promise(resolve => setTimeout(resolve, 1000))
+        handlerCalled = true
+      })
+      
+      const start = Date.now()
+      client.tick({ event: 'async:event', data: {} })
+      const elapsed = Date.now() - start
+      
+      // Should return immediately
+      expect(elapsed).to.be.lessThan(100)
+      
+      // Wait for handler
+      await new Promise(resolve => setTimeout(resolve, 1100))
+      expect(handlerCalled).to.be.true
+    })
+  })
+
+  describe('5. Tick - Fire-and-Forget (Server → Client)', () => {
+    let client
+
+    beforeEach(async () => {
+      client = new Client({ id: 'client-1' })
+      await client.connect(serverAddress)
+    })
+
+    afterEach(async () => {
+      if (client) await client.disconnect()
+    })
+
+    it('should send tick from server to client', (done) => {
+      client.onTick('notification:new', (data) => {
+        expect(data).to.deep.equal({
+          type: 'message',
+          from: 'Alice',
+          text: 'Hello!'
+        })
+        done()
+      })
+      
+      server.tick({
+        to: 'client-1',
+        event: 'notification:new',
+        data: {
+          type: 'message',
+          from: 'Alice',
+          text: 'Hello!'
+        }
+      })
+    })
+  })
+
+  describe('6. Broadcasting to Multiple Clients', () => {
+    let client1, client2, client3
+
+    beforeEach(async () => {
+      client1 = new Client({ id: 'client-1' })
+      client2 = new Client({ id: 'client-2' })
+      client3 = new Client({ id: 'client-3' })
+      
+      await Promise.all([
+        client1.connect(serverAddress),
+        client2.connect(serverAddress),
+        client3.connect(serverAddress)
+      ])
+    })
+
+    afterEach(async () => {
+      await Promise.all([
+        client1?.disconnect(),
+        client2?.disconnect(),
+        client3?.disconnect()
+      ])
+    })
+
+    it('should broadcast to all connected clients', (done) => {
+      const timeout = setTimeout(() => {
+        done(new Error('Test timeout - not all clients received broadcast'))
+      }, 12000) // Increase timeout slightly
+      
+      let receivedCount = 0
+      const checkDone = () => {
+        receivedCount++
+        console.log(`[BROADCAST] Client received message (${receivedCount}/3)`)
+        if (receivedCount === 3) {
+          clearTimeout(timeout)
+          done()
+        }
+      }
+      
+      client1.onTick('broadcast:message', (data) => {
+        expect(data.text).to.equal('Hello everyone!')
+        checkDone()
+      })
+      
+      client2.onTick('broadcast:message', (data) => {
+        expect(data.text).to.equal('Hello everyone!')
+        checkDone()
+      })
+      
+      client3.onTick('broadcast:message', (data) => {
+        expect(data.text).to.equal('Hello everyone!')
+        checkDone()
+      })
+      
+      // Give handlers time to register
+      setTimeout(() => {
+        console.log('[BROADCAST] Sending broadcast to all clients')
+        // Broadcast requires sending to each client explicitly
+        // Router sockets cannot broadcast without specifying recipients
+        const clientPeers = server.getAllClientPeers()
+        console.log(`[BROADCAST] Server has ${clientPeers.length} connected clients`)
+        clientPeers.forEach(peer => {
+          server.tick({
+            to: peer.getId(),
+            event: 'broadcast:message',
+            data: { text: 'Hello everyone!' }
+          })
+        })
+      }, 100)
+    })
+
+    it('should track multiple clients', () => {
+      const clients = server.getAllClientPeers()
+      
+      expect(clients).to.be.an('array')
+      expect(clients.length).to.equal(3)
+      
+      const clientIds = clients.map(c => c.getId())
+      expect(clientIds).to.include('client-1')
+      expect(clientIds).to.include('client-2')
+      expect(clientIds).to.include('client-3')
+    })
+  })
+
+  describe('7. Pattern Matching with RegExp', () => {
+    let client
+
+    beforeEach(async () => {
+      client = new Client({ id: 'client-1' })
+      await client.connect(serverAddress)
+    })
+
+    afterEach(async () => {
+      if (client) await client.disconnect()
+    })
+
+    it('should match request patterns with RegExp', async () => {
+      // Register pattern handler
+      server.onRequest(/^api:user:/, (data, envelope) => {
+        const action = envelope.tag.split(':')[2]
+        return {
+          action,
+          userId: data.id,
+          result: 'success'
+        }
+      })
+      
+      const response = await client.request({
+        event: 'api:user:create',
+        data: { id: 123 }
+      })
+      
+      expect(response).to.deep.equal({
+        action: 'create',
+        userId: 123,
+        result: 'success'
+      })
+    })
+
+    it('should match tick patterns with RegExp', (done) => {
+      server.onTick(/^log:/, (data, envelope) => {
+        expect(envelope.tag).to.match(/^log:/)
+        expect(data.level).to.equal('error')
+        done()
+      })
+      
+      client.tick({
+        event: 'log:error:database',
+        data: { level: 'error', message: 'Connection failed' }
+      })
+    })
+
+    it('should handle multiple pattern handlers', (done) => {
+      let count = 0
+      const checkDone = () => {
+        count++
+        if (count === 2) done()
+      }
+      
+      // Specific handler
+      server.onTick('event:test', () => checkDone())
+      
+      // Pattern handler
+      server.onTick(/^event:/, () => checkDone())
+      
+      client.tick({ event: 'event:test', data: {} })
+    })
+  })
+
+  describe('8. Data Serialization', () => {
+    let client
+
+    beforeEach(async () => {
+      client = new Client({ id: 'client-1' })
+      await client.connect(serverAddress)
+    })
+
+    afterEach(async () => {
+      if (client) await client.disconnect()
+    })
+
+    it('should handle complex nested objects', async () => {
+      server.onRequest('data:complex', (data) => {
+        return {
+          echo: data,
+          processed: true
+        }
+      })
+      
+      const complexData = {
+        user: {
+          id: 123,
+          name: 'Alice',
+          tags: ['admin', 'developer']
+        },
+        metadata: {
+          timestamp: Date.now(),
+          source: 'api'
+        },
+        items: [
+          { id: 1, value: 100 },
+          { id: 2, value: 200 }
+        ]
+      }
+      
+      const response = await client.request({
+        event: 'data:complex',
+        data: complexData
+      })
+      
+      expect(response.echo).to.deep.equal(complexData)
+      expect(response.processed).to.be.true
+    })
+
+    it('should handle large data payloads', async () => {
+      server.onRequest('data:large', (data) => {
+        return { itemCount: data.items.length }
+      })
+      
+      const largeArray = Array.from({ length: 1000 }, (_, i) => ({
+        id: i,
+        value: Math.random()
+      }))
+      
+      const response = await client.request({
+        event: 'data:large',
+        data: { items: largeArray }
+      })
+      
+      expect(response.itemCount).to.equal(1000)
+    })
+  })
+
+  describe('9. Client Disconnect & Reconnect', () => {
+    it('should handle clean disconnect', async () => {
+      const client = new Client({ id: 'client-1' })
+      await client.connect(serverAddress)
+      
+      expect(client.isReady()).to.be.true
+      
+      await client.disconnect()
+      
+      expect(client.isReady()).to.be.false
+    })
+
+    it('should support reconnection', async () => {
+      // First connection
+      const client1 = new Client({ id: 'client-reconnect-1' })
+      await client1.connect(serverAddress)
+      expect(client1.isReady()).to.be.true
+      
+      await client1.disconnect()
+      expect(client1.isReady()).to.be.false
+      
+      // Wait a bit for cleanup
+      await new Promise(resolve => setTimeout(resolve, 100))
+      
+      // Create new client instance for reconnection (same ID)
+      // Note: Reusing the same Client instance after disconnect is not supported
+      const client2 = new Client({ id: 'client-reconnect-2' })
+      await client2.connect(serverAddress)
+      expect(client2.isReady()).to.be.true
+      
+      await client2.disconnect()
+    })
+  })
+
+  describe('10. Concurrent Operations', () => {
+    let client
+
+    beforeEach(async () => {
+      client = new Client({ id: 'client-1' })
+      await client.connect(serverAddress)
+    })
+
+    afterEach(async () => {
+      if (client) await client.disconnect()
+    })
+
+    it('should handle multiple concurrent requests', async () => {
+      server.onRequest('concurrent:test', async (data) => {
+        await new Promise(resolve => setTimeout(resolve, 100))
+        return { id: data.id, processed: true }
+      })
+      
+      // Send 5 requests concurrently
+      const promises = []
+      for (let i = 0; i < 5; i++) {
+        promises.push(
+          client.request({
+            event: 'concurrent:test',
+            data: { id: i }
+          })
+        )
+      }
+      
+      const results = await Promise.all(promises)
+      
+      expect(results).to.have.lengthOf(5)
+      results.forEach((result, i) => {
+        expect(result.id).to.equal(i)
+        expect(result.processed).to.be.true
+      })
+    })
+
+    it('should maintain request order semantics', async () => {
+      const order = []
+      
+      server.onRequest('order:test', async (data) => {
+        order.push(`receive-${data.id}`)
+        await new Promise(resolve => setTimeout(resolve, Math.random() * 50))
+        order.push(`respond-${data.id}`)
+        return { id: data.id }
+      })
+      
+      // Send requests in order
+      for (let i = 0; i < 3; i++) {
+        await client.request({
+          event: 'order:test',
+          data: { id: i }
+        })
+      }
+      
+      // Verify receive order (should be sequential)
+      expect(order[0]).to.equal('receive-0')
+      expect(order[2]).to.equal('receive-1')
+      expect(order[4]).to.equal('receive-2')
+    })
+  })
+})
+

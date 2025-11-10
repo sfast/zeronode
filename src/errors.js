@@ -43,6 +43,6 @@ export { ZeronodeError }
 export { ErrorCodes }
 
 export default {
-  ErrorCodes,
-  ZeronodeError
+  ZeronodeError,
+  ErrorCodes
 }
