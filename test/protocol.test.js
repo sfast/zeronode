@@ -5,11 +5,10 @@
  */
 
 import { expect } from 'chai'
-import Protocol from '../src/protocol/protocol.js'
+import Protocol, { ProtocolEvent, ProtocolSystemEvent } from '../src/protocol/protocol.js'
 import { Dealer as DealerSocket, Router as RouterSocket } from '../src/transport/zeromq/index.js'
 import { ProtocolError, ProtocolErrorCode } from '../src/protocol/protocol-errors.js'
 import { EnvelopType } from '../src/protocol/envelope.js'
-import { events } from '../src/enum.js'
 
 describe('Protocol', () => {
   let dealerSocket
@@ -116,7 +115,7 @@ describe('Protocol', () => {
       
       expect(() => {
         offlineProtocol._sendSystemTick({
-          event: events.CLIENT_PING,
+          event: ProtocolSystemEvent.CLIENT_PING,
           data: {}
         })
       }).to.throw(ProtocolError)

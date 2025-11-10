@@ -13,9 +13,8 @@
  */
 
 import { expect } from 'chai'
-import Node from '../src/node.js'
+import Node, { NodeEvent } from '../src/node.js'
 import { NodeError, NodeErrorCode } from '../src/node-errors.js'
-import { events } from '../src/enum.js'
 
 // Helper to wait for event
 function waitForEvent(emitter, event, timeout = 5000) {

@@ -5,9 +5,8 @@
  */
 
 import { expect } from 'chai'
-import Client from '../src/protocol/client.js'
-import Server from '../src/protocol/server.js'
-import { events } from '../src/enum.js'
+import Client, { ClientEvent } from '../src/protocol/client.js'
+import Server, { ServerEvent } from '../src/protocol/server.js'
 
 describe('Client', () => {
   let server

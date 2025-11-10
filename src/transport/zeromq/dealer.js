@@ -22,8 +22,8 @@ let DealerStateType = {
 
 export default class DealerSocket extends Socket {
   constructor ({ id, config } = {}) {
-    // Merge user config with defaults (before using it)
-    config = mergeConfig(config)
+    // Merge user config with defaults and validate (before using it)
+    config = mergeConfig(config, true)
 
     // Create context with configured I/O threads for dealers (clients)
     const context = createContext(config.DEALER_IO_THREADS)

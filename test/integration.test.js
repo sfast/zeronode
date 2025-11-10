@@ -5,9 +5,9 @@
  */
 
 import { expect } from 'chai'
-import Client from '../src/protocol/client.js'
-import Server from '../src/protocol/server.js'
-import { events } from '../src/enum.js'
+import Client, { ClientEvent } from '../src/protocol/client.js'
+import Server, { ServerEvent } from '../src/protocol/server.js'
+import { ProtocolEvent } from '../src/protocol/protocol.js'
 
 describe('Client ↔ Server Integration', function () {
   // Increase timeout for integration tests
@@ -25,10 +25,10 @@ describe('Client ↔ Server Integration', function () {
     })
     
     // Add logging for server events
-    server.on(events.SERVER_READY, () => {
+    server.on(ServerEvent.READY, () => {
       console.log('[SERVER] SERVER_READY event fired')
     })
-    server.on(events.CLIENT_JOINED, ({ clientId }) => {
+    server.on(ServerEvent.CLIENT_JOINED, ({ clientId }) => {
       console.log(`[SERVER] CLIENT_JOINED: ${clientId}`)
     })
     server.on('transport:ready', () => {
@@ -45,6 +45,8 @@ describe('Client ↔ Server Integration', function () {
   afterEach(async () => {
     // Cleanup
     console.log('[TEST] Cleaning up...')
+    // Wait for any pending disconnections to complete
+    await new Promise(resolve => setTimeout(resolve, 200))
     if (server) {
       try {
         await server.unbind()
@@ -64,10 +66,10 @@ describe('Client ↔ Server Integration', function () {
       })
       
       // Add logging for client events
-      client.on(events.TRANSPORT_READY, () => {
+      client.on(ProtocolEvent.TRANSPORT_READY, () => {
         console.log('[CLIENT] TRANSPORT_READY event')
       })
-      client.on(events.CLIENT_READY, ({ serverId }) => {
+      client.on(ClientEvent.READY, ({ serverId }) => {
         console.log(`[CLIENT] CLIENT_READY event, serverId: ${serverId}`)
       })
       client.on('transport:ready', () => {
@@ -116,7 +118,7 @@ describe('Client ↔ Server Integration', function () {
         done(new Error('CLIENT_JOINED event timeout'))
       }, 10000)
       
-      server.once(events.CLIENT_JOINED, ({ clientId, data }) => {
+      server.once(ServerEvent.CLIENT_JOINED, ({ clientId, data }) => {
         clearTimeout(timeoutHandle)
         console.log(`[TEST] CLIENT_JOINED received: ${clientId}`)
         expect(clientId).to.equal('client-1')
@@ -129,7 +131,7 @@ describe('Client ↔ Server Integration', function () {
         options: { role: 'worker' }
       })
       
-      client.on(events.TRANSPORT_READY, () => {
+      client.on(ProtocolEvent.TRANSPORT_READY, () => {
         console.log('[CLIENT] TRANSPORT_READY in CLIENT_JOINED test')
       })
       
@@ -144,7 +146,7 @@ describe('Client ↔ Server Integration', function () {
     it('should emit CLIENT_READY event on client', (done) => {
       const client = new Client({ id: 'client-1' })
       
-      client.once(events.CLIENT_READY, ({ serverId }) => {
+      client.once(ClientEvent.READY, ({ serverId }) => {
         expect(serverId).to.equal('test-server')
         done()
       })
@@ -162,7 +164,11 @@ describe('Client ↔ Server Integration', function () {
     })
 
     afterEach(async () => {
-      if (client) await client.disconnect()
+      if (client) {
+        await client.disconnect()
+        // Wait for disconnect to fully propagate to prevent ZeroMQ crashes
+        await new Promise(resolve => setTimeout(resolve, 100))
+      }
     })
 
     it('should handle basic request/response', async () => {
@@ -244,7 +250,11 @@ describe('Client ↔ Server Integration', function () {
     })
 
     afterEach(async () => {
-      if (client) await client.disconnect()
+      if (client) {
+        await client.disconnect()
+        // Wait for disconnect to fully propagate to prevent ZeroMQ crashes
+        await new Promise(resolve => setTimeout(resolve, 100))
+      }
     })
 
     it('should allow server to request from client', async () => {
@@ -304,7 +314,11 @@ describe('Client ↔ Server Integration', function () {
     })
 
     afterEach(async () => {
-      if (client) await client.disconnect()
+      if (client) {
+        await client.disconnect()
+        // Wait for disconnect to fully propagate to prevent ZeroMQ crashes
+        await new Promise(resolve => setTimeout(resolve, 100))
+      }
     })
 
     it('should send tick from client to server', (done) => {
@@ -357,7 +371,11 @@ describe('Client ↔ Server Integration', function () {
     })
 
     afterEach(async () => {
-      if (client) await client.disconnect()
+      if (client) {
+        await client.disconnect()
+        // Wait for disconnect to fully propagate to prevent ZeroMQ crashes
+        await new Promise(resolve => setTimeout(resolve, 100))
+      }
     })
 
     it('should send tick from server to client', (done) => {
@@ -474,7 +492,11 @@ describe('Client ↔ Server Integration', function () {
     })
 
     afterEach(async () => {
-      if (client) await client.disconnect()
+      if (client) {
+        await client.disconnect()
+        // Wait for disconnect to fully propagate to prevent ZeroMQ crashes
+        await new Promise(resolve => setTimeout(resolve, 100))
+      }
     })
 
     it('should match request patterns with RegExp', async () => {
@@ -539,7 +561,11 @@ describe('Client ↔ Server Integration', function () {
     })
 
     afterEach(async () => {
-      if (client) await client.disconnect()
+      if (client) {
+        await client.disconnect()
+        // Wait for disconnect to fully propagate to prevent ZeroMQ crashes
+        await new Promise(resolve => setTimeout(resolve, 100))
+      }
     })
 
     it('should handle complex nested objects', async () => {
@@ -637,7 +663,11 @@ describe('Client ↔ Server Integration', function () {
     })
 
     afterEach(async () => {
-      if (client) await client.disconnect()
+      if (client) {
+        await client.disconnect()
+        // Wait for disconnect to fully propagate to prevent ZeroMQ crashes
+        await new Promise(resolve => setTimeout(resolve, 100))
+      }
     })
 
     it('should handle multiple concurrent requests', async () => {

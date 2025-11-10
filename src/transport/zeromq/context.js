@@ -3,6 +3,10 @@
  * 
  * Creates ZeroMQ contexts with specified I/O threads.
  * Contexts are cached and reused for efficiency.
+ * 
+ * Note: In ZeroMQ v6, contexts are auto-managed by the library.
+ * No explicit termination is needed - contexts are cleaned up automatically
+ * when they go out of scope and all sockets are closed.
  */
 
 import * as zmq from 'zeromq'
@@ -38,31 +42,6 @@ export function createContext (ioThreads) {
   return context
 }
 
-/**
- * Terminate a context (use when shutting down)
- * 
- * @param {zmq.Context} context - Context to terminate
- */
-export async function terminateContext (context) {
-  if (!context) return
-
-  try {
-    // Remove from cache
-    for (const [key, cachedContext] of contextCache.entries()) {
-      if (cachedContext === context) {
-        contextCache.delete(key)
-        break
-      }
-    }
-
-    // Close the context
-    await context.close()
-  } catch (err) {
-    console.error('Error terminating ZeroMQ context:', err)
-  }
-}
-
 export default {
-  createContext,
-  terminateContext
+  createContext
 }

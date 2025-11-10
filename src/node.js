@@ -20,9 +20,18 @@ import { PatternEmitter } from '@sfast/pattern-emitter-ts'
 
 import { NodeError, NodeErrorCode } from './node-errors.js'
 import NodeUtils from './utils.js'
-import Server from './protocol/server.js'
-import Client from './protocol/client.js'
-import { events } from './enum.js'
+import Server, { ServerEvent } from './protocol/server.js'
+import Client, { ClientEvent } from './protocol/client.js'
+
+// ============================================================================
+// NODE EVENTS (Orchestration Layer - Public API)
+// ============================================================================
+export const NodeEvent = {
+  READY: 'node:ready',             // Node is fully initialized and ready
+  PEER_JOINED: 'node:peer_joined', // New peer discovered (upstream or downstream)
+  PEER_LEFT: 'node:peer_left',     // Peer disconnected
+  STOPPED: 'node:stopped'          // Node stopped
+}
 
 const _private = new WeakMap()
 
@@ -59,13 +68,11 @@ export default class Node extends EventEmitter {
       config,
       logger: config.logger || defaultLogger,
       
-      // Server (created on bind)
+      // Server (created on bind) - Server manages its own state
       nodeServer: null,
-      serverBindAddress: null,         // Store bind address for getAddress()
-      serverInitialized: false,
-      serverBound: false,              // Track if server socket is actually bound
+      bindAddress: bind || null,  // Cache bind address for async initialization window
       
-      // Clients (nodeId → Client)
+      // Clients (nodeId → Client) - Clients manage their own state
       nodeClients: new Map(),
       nodeClientsAddressIndex: new Map(), // addressHash → nodeId
       
@@ -78,11 +85,19 @@ export default class Node extends EventEmitter {
     
     _private.set(this, _scope)
     
+    // Default error handler for NO_NODES_MATCH_FILTER
+    // Users can override by adding their own 'error' listener
+    this.on('error', (err) => {
+      if (err.code === NodeErrorCode.NO_NODES_MATCH_FILTER) {
+        // Only throw if no other error listeners are registered
+        if (this.listenerCount('error') === 1) {
+          throw err
+        }
+      }
+    })
+    
     // Initialize server if bind address provided
     if (bind) {
-      // Store bind address immediately (for getAddress())
-      _scope.serverBindAddress = bind
-      
       // Initialize and bind server asynchronously
       this._initServer(bind)
       
@@ -106,8 +121,9 @@ export default class Node extends EventEmitter {
   }
   
   getAddress () {
-    const { serverBindAddress } = _private.get(this)
-    return serverBindAddress || null
+    const { nodeServer, bindAddress } = _private.get(this)
+    // Prefer server's address (source of truth), fallback to cached bind address
+    return nodeServer?.getAddress() || bindAddress
   }
   
   getOptions () {
@@ -126,7 +142,7 @@ export default class Node extends EventEmitter {
   _initServer (bindAddress) {
     const _scope = _private.get(this)
     
-    if (_scope.serverInitialized) {
+    if (_scope.nodeServer) {
       _scope.logger.warn(`[Node] Server already initialized`)
       return
     }
@@ -144,11 +160,10 @@ export default class Node extends EventEmitter {
     // Apply all registered handlers to server
     this._syncHandlersToTarget(nodeServer)
     
-    // Forward server events to node
+    // Transform and forward server events to node
     this._attachServerEvents(nodeServer)
     
     _scope.nodeServer = nodeServer
-    _scope.serverInitialized = true
     
     _scope.logger.info(`[Node] Server initialized: ${id}`)
   }
@@ -159,23 +174,16 @@ export default class Node extends EventEmitter {
   async bind (address) {
     const _scope = _private.get(this)
     
-    // Check if already bound to this address (idempotent)
-    if (_scope.serverBound && _scope.serverBindAddress === address) {
-      _scope.logger.info(`[Node] Server already bound to ${address}`)
-      return
-    }
+    // Cache the bind address
+    _scope.bindAddress = address
     
     // Initialize server if not already done
-    if (!_scope.serverInitialized) {
+    if (!_scope.nodeServer) {
       this._initServer(address)
     }
     
-    // Store bind address
-    _scope.serverBindAddress = address
-    
-    // Actually bind the server socket
+    // Server handles idempotency and state management
     await _scope.nodeServer.bind(address)
-    _scope.serverBound = true
   }
   
   /**
@@ -192,31 +200,50 @@ export default class Node extends EventEmitter {
   }
   
   /**
-   * Attach server event handlers
+   * Attach server event handlers and transform to Node events
    * @private
    */
   _attachServerEvents (server) {
     const { logger } = _private.get(this)
     
+    // Forward errors
     server.on('error', (err) => {
       logger.error('[Node] Server error:', err)
       this.emit('error', err)
     })
     
-    server.on(events.CLIENT_FAILURE, (clientActor) => {
-      this.emit(events.CLIENT_FAILURE, clientActor)
+    // Transform: Server.CLIENT_JOINED → Node.PEER_JOINED
+    server.on(ServerEvent.CLIENT_JOINED, ({ clientId, data }) => {
+      this.emit(NodeEvent.PEER_JOINED, {
+        peerId: clientId,
+        direction: 'downstream',   // Client connected TO our server
+        peerOptions: data || {}
+      })
     })
     
-    server.on(events.CLIENT_CONNECTED, (clientActor) => {
-      this.emit(events.CLIENT_CONNECTED, clientActor)
+    // Transform: Server.CLIENT_LEFT → Node.PEER_LEFT
+    server.on(ServerEvent.CLIENT_LEFT, ({ clientId }) => {
+      this.emit(NodeEvent.PEER_LEFT, {
+        peerId: clientId,
+        direction: 'downstream'
+      })
     })
     
-    server.on(events.CLIENT_STOP, (clientActor) => {
-      this.emit(events.CLIENT_STOP, clientActor)
+    // Transform: Server.CLIENT_TIMEOUT → Node.PEER_LEFT (ghost = left)
+    server.on(ServerEvent.CLIENT_TIMEOUT, ({ clientId }) => {
+      this.emit(NodeEvent.PEER_LEFT, {
+        peerId: clientId,
+        direction: 'downstream',
+        reason: 'timeout'
+      })
     })
     
-    server.on(events.OPTIONS_SYNC, ({ id, newOptions }) => {
-      this.emit(events.OPTIONS_SYNC, { id, newOptions })
+    // Server ready
+    server.on(ServerEvent.READY, () => {
+      this.emit(NodeEvent.READY, {
+        nodeId: this.getId(),
+        hasServer: true
+      })
     })
   }
   
@@ -300,7 +327,7 @@ export default class Node extends EventEmitter {
     nodeClientsAddressIndex.set(addressHash, remoteNodeId)
     
     // Emit connection event with server peer info
-    this.emit(events.CONNECT_TO_SERVER, serverPeer.toJSON())
+    // Note: PEER_JOINED will be emitted when Client.READY fires
     
     return serverPeer.toJSON()
   }
@@ -331,8 +358,8 @@ export default class Node extends EventEmitter {
     const nodeId = nodeClientsAddressIndex.get(addressHash)
     const client = nodeClients.get(nodeId)
     
-    // Remove event listeners
-    client.removeAllListeners(events.SERVER_FAILURE)
+    // Remove all event listeners
+    client.removeAllListeners()
     
     // Disconnect client
     await client.disconnect()
@@ -348,57 +375,56 @@ export default class Node extends EventEmitter {
   }
   
   /**
-   * Attach client event handlers
+   * Attach client event handlers and transform to Node events
    * @private
    */
   _attachClientEvents (client) {
     const _scope = _private.get(this)
-    const { nodeClients, nodeClientsAddressIndex, logger } = _scope
+    const { logger } = _scope
     
+    // Forward errors
     client.on('error', (err) => {
       logger.error('[Node] Client error:', err)
       this.emit('error', err)
     })
     
-    client.on(events.SERVER_FAILURE, (serverActor) => {
-      this.emit(events.SERVER_FAILURE, serverActor)
+    // Transform: Client.READY → Node.PEER_JOINED
+    client.on(ClientEvent.READY, ({ serverId, serverData }) => {
+      this.emit(NodeEvent.PEER_JOINED, {
+        peerId: serverId,
+        direction: 'upstream',     // We connected TO this server
+        peerOptions: serverData || {}
+      })
     })
     
-    client.on(events.SERVER_STOP, (serverActor) => {
-      this.emit(events.SERVER_STOP, serverActor)
+    // Transform: Client.DISCONNECTED → Node.PEER_LEFT
+    client.on(ClientEvent.DISCONNECTED, ({ serverId }) => {
+      this.emit(NodeEvent.PEER_LEFT, {
+        peerId: serverId,
+        direction: 'upstream',
+        reason: 'disconnected'
+      })
     })
     
-    client.on(events.SERVER_RECONNECT, (serverActor) => {
-      try {
-        // Update indices on reconnect (server ID may have changed)
-        const addressHash = md5(serverActor.address)
-        const oldId = nodeClientsAddressIndex.get(addressHash)
-        
-        if (oldId && oldId !== serverActor.id) {
-          nodeClients.delete(oldId)
-          nodeClientsAddressIndex.set(addressHash, serverActor.id)
-          nodeClients.set(serverActor.id, client)
-        }
-      } catch (err) {
-        logger.error('[Node] Error handling server reconnect:', err)
+    // Transform: Client.FAILED → Node.PEER_LEFT
+    client.on(ClientEvent.FAILED, ({ serverId }) => {
+      this.emit(NodeEvent.PEER_LEFT, {
+        peerId: serverId,
+        direction: 'upstream',
+        reason: 'failed'
+      })
+    })
+    
+    // Transform: Client.STOPPED → Node.PEER_LEFT
+    client.on(ClientEvent.STOPPED, () => {
+      const serverPeer = client.getServerPeerInfo()
+      if (serverPeer) {
+        this.emit(NodeEvent.PEER_LEFT, {
+          peerId: serverPeer.getId(),
+          direction: 'upstream',
+          reason: 'stopped'
+        })
       }
-      
-      this.emit(events.SERVER_RECONNECT, serverActor)
-    })
-    
-    client.on(events.SERVER_RECONNECT_FAILURE, (serverActor) => {
-      try {
-        nodeClients.delete(serverActor.id)
-        nodeClientsAddressIndex.delete(md5(serverActor.address))
-      } catch (err) {
-        logger.error('[Node] Error handling server reconnect failure:', err)
-      }
-      
-      this.emit(events.SERVER_RECONNECT_FAILURE, serverActor)
-    })
-    
-    client.on(events.OPTIONS_SYNC, ({ id, newOptions }) => {
-      this.emit(events.OPTIONS_SYNC, { id, newOptions })
     })
   }
   
@@ -701,14 +727,18 @@ export default class Node extends EventEmitter {
    * Send request to any matching node
    */
   async requestAny ({ event, data, timeout, filter, down = true, up = true } = {}) {
-    const filteredNodes = this._getFilteredNodes({ ...filter, down, up })
+    // Extract options from filter if wrapped
+    const filterOptions = filter?.options || filter
+    const filteredNodes = this._getFilteredNodes({ options: filterOptions, down, up })
     
     if (filteredNodes.length === 0) {
-      throw new NodeError({
+      const error = new NodeError({
         code: NodeErrorCode.NO_NODES_MATCH_FILTER,
         message: 'No nodes match filter criteria',
         context: { filter, down, up, event }
       })
+      this.emit('error', error)
+      return Promise.reject(error)
     }
     
     const targetNode = this._selectNode(filteredNodes, event)
@@ -733,14 +763,18 @@ export default class Node extends EventEmitter {
    * Send tick to any matching node
    */
   tickAny ({ event, data, filter, down = true, up = true } = {}) {
-    const filteredNodes = this._getFilteredNodes({ ...filter, down, up })
+    // Extract options from filter if wrapped
+    const filterOptions = filter?.options || filter
+    const filteredNodes = this._getFilteredNodes({ options: filterOptions, down, up })
     
     if (filteredNodes.length === 0) {
-      throw new NodeError({
+      const error = new NodeError({
         code: NodeErrorCode.NO_NODES_MATCH_FILTER,
         message: 'No nodes match filter criteria',
         context: { filter, down, up, event }
       })
+      this.emit('error', error)
+      return
     }
     
     const targetNode = this._selectNode(filteredNodes, event)
@@ -764,8 +798,10 @@ export default class Node extends EventEmitter {
   /**
    * Send tick to all matching nodes
    */
-  async tickAll ({ event, data, filter, down = true, up = true } = {}) {
-    const filteredNodes = this._getFilteredNodes({ ...filter, down, up })
+  async   tickAll ({ event, data, filter, down = true, up = true } = {}) {
+    // Extract options from filter if wrapped
+    const filterOptions = filter?.options || filter
+    const filteredNodes = this._getFilteredNodes({ options: filterOptions, down, up })
     
     const promises = filteredNodes.map(nodeId => {
       return this.tick({ to: nodeId, event, data })
@@ -820,19 +856,6 @@ export default class Node extends EventEmitter {
     return this._getFilteredNodes({ options, predicate, up, down })
   }
   
-  /**
-   * Set node address (if server exists)
-   */
-  setAddress (bind) {
-    const { nodeServer, logger } = _private.get(this)
-    
-    if (nodeServer) {
-      nodeServer.setAddress(bind)
-    } else {
-      logger.info('[Node] No server available to set address')
-    }
-  }
-  
   // ============================================================================
   // PEER INFO (Compatibility)
   // ============================================================================
@@ -870,7 +893,7 @@ export default class Node extends EventEmitter {
       return null
     }
     
-    const client = nodeServer.getClientById(id)
+    const client = nodeServer.getClientPeerInfo(id)
     return client ? client.toJSON() : null
   }
   

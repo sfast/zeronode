@@ -41,6 +41,20 @@ export const ProtocolEvent = {
 }
 
 // ============================================================================
+// PROTOCOL SYSTEM EVENTS (Internal Message Contract)
+// ============================================================================
+// These are internal protocol messages exchanged between client and server
+// for handshakes, pings, and lifecycle management. They use the '_system:' 
+// prefix to prevent user code from spoofing them.
+
+export const ProtocolSystemEvent = {
+  CLIENT_CONNECTED: '_system:client_connected',  // Client → Server: Handshake request
+  CLIENT_PING: '_system:client_ping',            // Client → Server: Heartbeat
+  CLIENT_STOP: '_system:client_stop',            // Client → Server: Graceful disconnect
+  SERVER_STOP: '_system:server_stop'             // Server → Client: Server shutting down
+}
+
+// ============================================================================
 // PROTOCOL VALIDATION
 // ============================================================================
 

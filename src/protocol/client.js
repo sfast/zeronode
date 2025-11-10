@@ -10,11 +10,20 @@
  * - Handles application-level events
  */
 
-import { events } from '../enum'
-import Globals from '../globals'
-import PeerInfo from './peer'
-import Protocol, { ProtocolEvent } from './protocol'
-import { Dealer as DealerSocket } from '../transport/zeromq'
+import Globals from '../globals.js'
+import PeerInfo from './peer.js'
+import Protocol, { ProtocolEvent, ProtocolSystemEvent } from './protocol.js'
+import { Dealer as DealerSocket } from '../transport/zeromq/index.js'
+
+// ============================================================================
+// CLIENT EVENTS (Public API)
+// ============================================================================
+export const ClientEvent = {
+  READY: 'client:ready',               // Handshake complete, client can send requests
+  DISCONNECTED: 'client:disconnected', // Server disconnected
+  FAILED: 'client:failed',             // Connection permanently failed
+  STOPPED: 'client:stopped'            // Client explicitly stopped
+}
 
 let _private = new WeakMap()
 
@@ -66,9 +75,6 @@ export default class Client extends Protocol {
       
       // Send handshake tick to server (recipient unknown at this point)
       this._sendClientConnected()
-      
-      // Emit transport ready event (low-level, for debugging)
-      this.emit(events.TRANSPORT_READY)
     })
     
     // Transport disconnected - stop ping, mark peer as ghost
@@ -82,7 +88,7 @@ export default class Client extends Protocol {
       this._stopPing()
       
       // Emit application event
-      this.emit(events.SERVER_DISCONNECTED, { serverId: 'server' })
+      this.emit(ClientEvent.DISCONNECTED, { serverId: 'server' })
     })
     
     // Transport permanently closed - reject all, mark failed
@@ -96,7 +102,7 @@ export default class Client extends Protocol {
       this._stopPing()
       
       // Emit application event
-      this.emit(events.SERVER_FAILED, { 
+      this.emit(ClientEvent.FAILED, { 
         serverId: 'server'
       })
     })
@@ -110,7 +116,7 @@ export default class Client extends Protocol {
     // ============================================================================
     // HANDSHAKE RESPONSE - Server welcomes client
     // ============================================================================
-    this.onTick(events.CLIENT_CONNECTED, (data, envelope) => {
+    this.onTick(ProtocolSystemEvent.CLIENT_CONNECTED, (data, envelope) => {
       let { serverPeerInfo } = _private.get(this)
       
       // ✅ Extract server ID from envelope.owner (sender's socket ID)
@@ -136,7 +142,7 @@ export default class Client extends Protocol {
       this._startPing()
       
       // ✅ Emit CLIENT READY - handshake complete, session established
-      this.emit(events.CLIENT_READY, { 
+      this.emit(ClientEvent.READY, { 
         serverId,
         serverData: data
       })
@@ -145,7 +151,7 @@ export default class Client extends Protocol {
     // ============================================================================
     // SERVER LIFECYCLE EVENTS
     // ============================================================================
-    this.onTick(events.SERVER_STOP, () => {
+    this.onTick(ProtocolSystemEvent.SERVER_STOP, () => {
       let { serverPeerInfo } = _private.get(this)
       
       if (serverPeerInfo) {
@@ -154,7 +160,7 @@ export default class Client extends Protocol {
       
       this._stopPing()
       
-      this.emit(events.SERVER_STOP)
+      this.emit(ClientEvent.STOPPED)
     })
   }
   
@@ -187,7 +193,7 @@ export default class Client extends Protocol {
           reject(new Error(`Handshake timeout: server at ${routerAddress} did not respond`))
         }, timeout || 10000)
         
-        this.once(events.CLIENT_READY, ({ serverId }) => {
+        this.once(ClientEvent.READY, ({ serverId }) => {
           clearTimeout(handshakeTimeout)
           resolve(serverId)
         })
@@ -208,7 +214,7 @@ export default class Client extends Protocol {
       try {
         // ✅ Use internal API to send system event (client stop)
         this._sendSystemTick({
-          event: events.CLIENT_STOP,
+          event: ProtocolSystemEvent.CLIENT_STOP,
           data: { clientId: this.getId() }
         })
       } catch (err) {
@@ -266,7 +272,7 @@ export default class Client extends Protocol {
         // ✅ Send ping with explicit recipient using internal API
         this._sendSystemTick({
           to: serverId,  // ✅ Now we know server ID!
-          event: events.CLIENT_PING,
+          event: ProtocolSystemEvent.CLIENT_PING,
           data: { 
             timestamp: Date.now()
             // ❌ Removed: clientId (redundant with envelope.owner)
@@ -297,7 +303,7 @@ export default class Client extends Protocol {
     // ✅ Use internal API to send system event (handshake)
     // Server will respond with _system:client_connected (welcome message)
     this._sendSystemTick({
-      event: events.CLIENT_CONNECTED,  // '_system:client_connected'
+      event: ProtocolSystemEvent.CLIENT_CONNECTED,  // '_system:client_connected'
       data: options || {}
     })
   }

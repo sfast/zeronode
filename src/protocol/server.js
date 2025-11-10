@@ -10,11 +10,22 @@
  * - Handles application-level events
  */
 
-import { events } from '../enum'
-import Globals from '../globals'
-import PeerInfo from './peer'
-import Protocol, { ProtocolEvent } from './protocol'
-import { Router as RouterSocket } from '../transport/zeromq'
+import Globals from '../globals.js'
+import PeerInfo from './peer.js'
+import Protocol, { ProtocolEvent, ProtocolSystemEvent } from './protocol.js'
+import { Router as RouterSocket } from '../transport/zeromq/index.js'
+
+// ============================================================================
+// SERVER EVENTS
+// ============================================================================
+export const ServerEvent = {
+  READY: 'server:ready',               // Server is ready to accept clients
+  NOT_READY: 'server:not_ready',       // Server transport not ready
+  CLOSED: 'server:closed',             // Server closed
+  CLIENT_JOINED: 'server:client_joined',   // New client connected & authenticated
+  CLIENT_LEFT: 'server:client_left',       // Client disconnected
+  CLIENT_TIMEOUT: 'server:client_timeout'  // Client timed out (ghost)
+}
 
 let _private = new WeakMap()
 
@@ -59,19 +70,19 @@ export default class Server extends Protocol {
     // Transport can send/receive - server is ready to accept messages
     this.on(ProtocolEvent.TRANSPORT_READY, () => {
       this._startHealthChecks()
-      this.emit(events.SERVER_READY, { serverId: this.getId() })
+      this.emit(ServerEvent.READY, { serverId: this.getId() })
     })
 
     // Transport disconnected - stop health checks
     this.on(ProtocolEvent.TRANSPORT_NOT_READY, () => {
       this._stopHealthChecks()
-      this.emit(events.SERVER_NOT_READY)
+      this.emit(ServerEvent.NOT_READY)
     })
 
     // Transport permanently closed - cleanup
     this.on(ProtocolEvent.TRANSPORT_CLOSED, () => {
       this._stopHealthChecks()
-      this.emit(events.SERVER_CLOSED)
+      this.emit(ServerEvent.CLOSED)
     })
   }
   
@@ -83,7 +94,7 @@ export default class Server extends Protocol {
     // ============================================================================
     // HANDSHAKE - Client discovery via messages
     // ============================================================================
-    this.onTick(events.CLIENT_CONNECTED, (data, envelope) => {
+    this.onTick(ProtocolSystemEvent.CLIENT_CONNECTED, (data, envelope) => {
       let { clientPeers } = _private.get(this)
       
       const clientId = envelope.owner
@@ -99,7 +110,7 @@ export default class Server extends Protocol {
         clientPeers.set(clientId, peerInfo)
         
         // Emit peer joined event
-        this.emit(events.CLIENT_JOINED, { 
+        this.emit(ServerEvent.CLIENT_JOINED, { 
           clientId,
           data
         })
@@ -115,7 +126,7 @@ export default class Server extends Protocol {
       // ✅ Use internal API to send system event (handshake response)
       this._sendSystemTick({
         to: clientId,
-        event: events.CLIENT_CONNECTED,  // '_system:client_connected'
+        event: ProtocolSystemEvent.CLIENT_CONNECTED,  // '_system:client_connected'
         data: options || {}
       })
     })
@@ -123,7 +134,7 @@ export default class Server extends Protocol {
     // ============================================================================
     // HEARTBEAT - Client ping
     // ============================================================================
-    this.onTick(events.CLIENT_PING, (data, envelope) => {
+    this.onTick(ProtocolSystemEvent.CLIENT_PING, (data, envelope) => {
       let { clientPeers } = _private.get(this)
       
       const clientId = envelope.owner
@@ -138,7 +149,7 @@ export default class Server extends Protocol {
     // ============================================================================
     // CLIENT LIFECYCLE
     // ============================================================================
-    this.onTick(events.CLIENT_STOP, (data, envelope) => {
+    this.onTick(ProtocolSystemEvent.CLIENT_STOP, (data, envelope) => {
       let { clientPeers } = _private.get(this)
       
       const clientId = envelope.owner
@@ -148,7 +159,7 @@ export default class Server extends Protocol {
         peerInfo.setState('STOPPED')
     }
       
-      this.emit(events.CLIENT_STOP, { clientId })
+      this.emit(ServerEvent.CLIENT_LEFT, { clientId })
     })
   }
 
@@ -157,7 +168,14 @@ export default class Server extends Protocol {
   // ============================================================================
   
   async bind (bindAddress) {
-      let _scope = _private.get(this)
+    let _scope = _private.get(this)
+    
+    // Check if already bound to this address (idempotent)
+    const currentAddress = this.getAddress()
+    if (currentAddress === bindAddress) {
+      return // Already bound to this address
+    }
+    
     _scope.bindAddress = bindAddress
     
     // ✅ Use Protocol's socket (via protected method)
@@ -174,7 +192,7 @@ export default class Server extends Protocol {
     if (this.isReady()) {
         try {
           this.tick({
-            event: events.SERVER_STOP,
+            event: ProtocolSystemEvent.SERVER_STOP,
             data: { serverId: this.getId() }
           })
     } catch (err) {
@@ -259,7 +277,7 @@ export default class Server extends Protocol {
         
         // Emit event if state changed
         if (previousState !== 'GHOST') {
-          this.emit(events.CLIENT_GHOST, { 
+          this.emit(ServerEvent.CLIENT_TIMEOUT, { 
             clientId, 
             lastSeen: peerInfo.getLastSeen(),
             timeSinceLastSeen 

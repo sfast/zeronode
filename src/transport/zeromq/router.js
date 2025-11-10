@@ -16,8 +16,8 @@ let _private = new WeakMap()
 
 export default class RouterSocket extends Socket {
   constructor ({ id, config } = {}) {
-    // Merge user config with defaults (before using it)
-    config = mergeConfig(config)
+    // Merge user config with defaults and validate (before using it)
+    config = mergeConfig(config, true)
 
     // Create context with configured I/O threads for routers (servers)
     const context = createContext(config.ROUTER_IO_THREADS)

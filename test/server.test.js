@@ -5,9 +5,9 @@
  */
 
 import { expect } from 'chai'
-import Server from '../src/protocol/server.js'
-import Client from '../src/protocol/client.js'
-import { events } from '../src/enum.js'
+import Server, { ServerEvent } from '../src/protocol/server.js'
+import Client, { ClientEvent } from '../src/protocol/client.js'
+import { ProtocolSystemEvent } from '../src/protocol/protocol.js'
 
 describe('Server', () => {
   let server
@@ -210,12 +210,23 @@ describe('Server', () => {
       await client.connect(serverAddress)
     })
 
+    afterEach(async () => {
+      // Ensure client is cleaned up to prevent ZeroMQ crashes
+      if (client) {
+        try {
+          await client.disconnect()
+        } catch (err) {
+          // Ignore - client might already be disconnected from test
+        }
+      }
+    })
+
     it('should set peer state to STOPPED on CLIENT_STOP event', (done) => {
       const timeoutHandle = setTimeout(() => {
         done(new Error('CLIENT_STOP event timeout'))
       }, 5000)
       
-      server.once(events.CLIENT_STOP, () => {
+      server.once(ServerEvent.CLIENT_LEFT, () => {
         clearTimeout(timeoutHandle)
         const clientPeer = server.getClientPeerInfo('test-client')
         if (clientPeer) {
@@ -232,7 +243,7 @@ describe('Server', () => {
         done(new Error('CLIENT_STOP event timeout'))
       }, 5000)
       
-      server.once(events.CLIENT_STOP, ({ clientId }) => {
+      server.once(ServerEvent.CLIENT_LEFT, ({ clientId }) => {
         clearTimeout(timeoutHandle)
         expect(clientId).to.equal('test-client')
         done()
@@ -246,7 +257,7 @@ describe('Server', () => {
         done(new Error('CLIENT_STOP event timeout'))
       }, 5000)
       
-      server.once(events.CLIENT_STOP, () => {
+      server.once(ServerEvent.CLIENT_LEFT, () => {
         clearTimeout(timeoutHandle)
         const clientPeer = server.getClientPeerInfo('test-client')
         expect(clientPeer).to.not.be.null
@@ -371,7 +382,7 @@ describe('Server', () => {
     it('should emit SERVER_CLOSED when transport closes', (done) => {
       server = new Server({ id: 'test-server' })
       
-      server.once(events.SERVER_CLOSED, () => {
+      server.once(ServerEvent.CLOSED, () => {
         done()
       })
       
@@ -560,7 +571,7 @@ describe('Server', () => {
       
       let serverStopReceived = false
       
-      client.onTick(events.SERVER_STOP, (data) => {
+      client.onTick(ProtocolSystemEvent.SERVER_STOP, (data) => {
         serverStopReceived = true
         expect(data.serverId).to.equal('test-server')
       })
