@@ -7,20 +7,12 @@
 
 import { expect } from 'chai'
 import Node from '../src/node.js'
+import { TIMING, wait, getUniquePorts } from './test-utils.js'
 
-// Helper to wait for async operations
-const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms))
-
-// Port allocation strategy - each test suite gets unique ports
-let basePort = 8000
-
+// Port allocation helper
 function getPortSet() {
-  const ports = {
-    a: basePort++,
-    b: basePort++,
-    c: basePort++
-  }
-  return ports
+  const [a, b, c] = getUniquePorts(3)
+  return { a, b, c }
 }
 
 describe('Node - Advanced Routing & Utilities', () => {
@@ -53,7 +45,7 @@ describe('Node - Advanced Routing & Utilities', () => {
     await nodeC.bind(`tcp://127.0.0.1:${ports.c}`)
     
     // Wait for bind to fully complete
-    await wait(200)
+    await wait(TIMING.BIND_READY)
   })
   
   afterEach(async () => {
@@ -63,7 +55,7 @@ describe('Node - Advanced Routing & Utilities', () => {
     if (nodeA) await nodeA.stop()
     
     // Critical: Wait for ports to be released by OS
-    await wait(300)
+    await wait(TIMING.PORT_RELEASE)
     
     // Clear references
     nodeA = nodeB = nodeC = null
@@ -80,14 +72,14 @@ describe('Node - Advanced Routing & Utilities', () => {
       await nodeB.connect({ address: `tcp://127.0.0.1:${ports.a}` })
       await nodeC.connect({ address: `tcp://127.0.0.1:${ports.a}` })
       // Critical: Wait for server-side peer registration to complete
-      await wait(300)
+      await wait(TIMING.PEER_REGISTRATION)
     })
     
     afterEach(async () => {
       // Disconnect to prevent ZeroMQ crashes during cleanup
       if (nodeB) await nodeB.disconnect(`tcp://127.0.0.1:${ports.a}`).catch(() => {})
       if (nodeC) await nodeC.disconnect(`tcp://127.0.0.1:${ports.a}`).catch(() => {})
-      await wait(100)
+      await wait(TIMING.DISCONNECT_COMPLETE)
     })
     
     it('should send tick to any matching node with filter', (done) => {

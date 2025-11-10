@@ -8,6 +8,7 @@ import { expect } from 'chai'
 import Client, { ClientEvent } from '../src/protocol/client.js'
 import Server, { ServerEvent } from '../src/protocol/server.js'
 import { ProtocolEvent } from '../src/protocol/protocol.js'
+import { TIMING, wait } from './test-utils.js'
 
 describe('Client ↔ Server Integration', function () {
   // Increase timeout for integration tests
@@ -46,7 +47,7 @@ describe('Client ↔ Server Integration', function () {
     // Cleanup
     console.log('[TEST] Cleaning up...')
     // Wait for any pending disconnections to complete
-    await new Promise(resolve => setTimeout(resolve, 200))
+    await wait(TIMING.DISCONNECT_COMPLETE)
     if (server) {
       try {
         await server.unbind()
@@ -167,7 +168,7 @@ describe('Client ↔ Server Integration', function () {
       if (client) {
         await client.disconnect()
         // Wait for disconnect to fully propagate to prevent ZeroMQ crashes
-        await new Promise(resolve => setTimeout(resolve, 100))
+        await wait(TIMING.DISCONNECT_COMPLETE)
       }
     })
 
@@ -253,7 +254,7 @@ describe('Client ↔ Server Integration', function () {
       if (client) {
         await client.disconnect()
         // Wait for disconnect to fully propagate to prevent ZeroMQ crashes
-        await new Promise(resolve => setTimeout(resolve, 100))
+        await wait(TIMING.DISCONNECT_COMPLETE)
       }
     })
 
@@ -317,7 +318,7 @@ describe('Client ↔ Server Integration', function () {
       if (client) {
         await client.disconnect()
         // Wait for disconnect to fully propagate to prevent ZeroMQ crashes
-        await new Promise(resolve => setTimeout(resolve, 100))
+        await wait(TIMING.DISCONNECT_COMPLETE)
       }
     })
 
@@ -374,7 +375,7 @@ describe('Client ↔ Server Integration', function () {
       if (client) {
         await client.disconnect()
         // Wait for disconnect to fully propagate to prevent ZeroMQ crashes
-        await new Promise(resolve => setTimeout(resolve, 100))
+        await wait(TIMING.DISCONNECT_COMPLETE)
       }
     })
 
@@ -495,7 +496,7 @@ describe('Client ↔ Server Integration', function () {
       if (client) {
         await client.disconnect()
         // Wait for disconnect to fully propagate to prevent ZeroMQ crashes
-        await new Promise(resolve => setTimeout(resolve, 100))
+        await wait(TIMING.DISCONNECT_COMPLETE)
       }
     })
 
@@ -564,7 +565,7 @@ describe('Client ↔ Server Integration', function () {
       if (client) {
         await client.disconnect()
         // Wait for disconnect to fully propagate to prevent ZeroMQ crashes
-        await new Promise(resolve => setTimeout(resolve, 100))
+        await wait(TIMING.DISCONNECT_COMPLETE)
       }
     })
 
@@ -642,7 +643,7 @@ describe('Client ↔ Server Integration', function () {
       expect(client1.isReady()).to.be.false
       
       // Wait a bit for cleanup
-      await new Promise(resolve => setTimeout(resolve, 100))
+      await wait(TIMING.SOCKET_CLOSE)
       
       // Create new client instance for reconnection (same ID)
       // Note: Reusing the same Client instance after disconnect is not supported
@@ -666,7 +667,7 @@ describe('Client ↔ Server Integration', function () {
       if (client) {
         await client.disconnect()
         // Wait for disconnect to fully propagate to prevent ZeroMQ crashes
-        await new Promise(resolve => setTimeout(resolve, 100))
+        await wait(TIMING.DISCONNECT_COMPLETE)
       }
     })
 
