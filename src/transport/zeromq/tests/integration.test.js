@@ -15,6 +15,9 @@ import { expect } from 'chai'
 import { Dealer as DealerSocket, Router as RouterSocket, TIMEOUT_INFINITY } from '../index.js'
 import { TransportEvent } from '../../events.js'
 
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
 // Alias for backward compatibility with tests
 const Timeouts = { INFINITY: TIMEOUT_INFINITY }
 
@@ -275,7 +278,7 @@ describe('Integration: Dealer ↔ Router', () => {
       
       await dealer1.connect(routerAddress)
       await dealer2.connect(routerAddress)
-      await new Promise(resolve => setTimeout(resolve, 200))
+      await wait(200)
       
       let dealer1Received = []
       let dealer2Received = []
@@ -291,14 +294,14 @@ describe('Integration: Dealer ↔ Router', () => {
       // Both dealers send init message
       dealer1.sendBuffer(Buffer.from('init'))
       dealer2.sendBuffer(Buffer.from('init'))
-      await new Promise(resolve => setTimeout(resolve, 100))
+      await wait(100)
       
       // Router sends specific messages
       router.sendBuffer(Buffer.from('for-A'), 'dealer-A')
       router.sendBuffer(Buffer.from('for-B'), 'dealer-B')
       router.sendBuffer(Buffer.from('also-for-A'), 'dealer-A')
       
-      await new Promise(resolve => setTimeout(resolve, 200))
+      await wait(200)
       
       expect(dealer1Received).to.include('for-A')
       expect(dealer1Received).to.include('also-for-A')
@@ -307,8 +310,10 @@ describe('Integration: Dealer ↔ Router', () => {
       expect(dealer2Received).to.include('for-B')
       expect(dealer2Received).to.not.include('for-A')
       
+      // Close dealers and wait for cleanup
       await dealer1.close()
       await dealer2.close()
+      await wait(200) // Critical: Wait for dealer disconnect to propagate
     })
   })
 
