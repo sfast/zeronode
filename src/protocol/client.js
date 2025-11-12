@@ -116,9 +116,10 @@ export default class Client extends Protocol {
     // ============================================================================
     // HANDSHAKE RESPONSE - Server welcomes client
     // ============================================================================
-    this.onTick(ProtocolSystemEvent.CLIENT_CONNECTED, (data, envelope) => {
+    this.onTick(ProtocolSystemEvent.CLIENT_CONNECTED, (envelope) => {
       let { serverPeerInfo } = _private.get(this)
       
+      const data = envelope.data      
       // ✅ Extract server ID from envelope.owner (sender's socket ID)
       const serverId = envelope.owner
       

@@ -170,9 +170,15 @@ export default class Node extends EventEmitter {
   
   /**
    * Bind server to address
+   * @returns {string} The bound address
    */
   async bind (address) {
     const _scope = _private.get(this)
+    
+    // Use cached bind address if no address provided
+    if (!address) {
+      address = _scope.bindAddress
+    }
     
     // Cache the bind address
     _scope.bindAddress = address
@@ -184,6 +190,9 @@ export default class Node extends EventEmitter {
     
     // Server handles idempotency and state management
     await _scope.nodeServer.bind(address)
+    
+    // Return the actual bound address (important for port 0)
+    return this.getAddress()
   }
   
   /**
@@ -773,8 +782,8 @@ export default class Node extends EventEmitter {
         message: 'No nodes match filter criteria',
         context: { filter, down, up, event }
       })
-      this.emit('error', error)
-      return
+      // Don't emit - just reject the promise for consistency with requestAny
+      return Promise.reject(error)
     }
     
     const targetNode = this._selectNode(filteredNodes, event)

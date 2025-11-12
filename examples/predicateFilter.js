@@ -12,8 +12,8 @@ import _ from 'underscore'
   let clientNodes = _.map(_.range(10), (index) => {
     let znode = new Node({ options: { index } })
 
-    znode.onTick('foo', (msg) => {
-      console.log(`handling tick on clienNode${index}:`, msg)
+    znode.onTick('foo', (envelope) => {
+      console.log(`handling tick on clienNode${index}:`, envelope.data)
     })
 
     return znode

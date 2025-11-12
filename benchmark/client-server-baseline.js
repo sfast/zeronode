@@ -14,8 +14,7 @@
  */
 
 import { performance } from 'perf_hooks'
-import { Client, Server } from '../src/index.js'
-import { events } from '../src/enum.js'
+import { Client, Server, ClientEvent, ServerEvent } from '../src/index.js'
 
 // Configuration
 const CONFIG = {
@@ -109,10 +108,10 @@ async function benchmarkMessageSize(messageSize, testIndex) {
     }
   })
   
-  // Server: Handle requests (echo back)
-  server.onRequest('ping', (data) => {
+  // Server: Handle requests (echo back with reply callback)
+  server.onRequest('ping', (envelope, reply) => {
     metrics.responded++
-    return data // Echo back
+    reply(envelope.data) // Echo back
   })
   
   try {
@@ -120,22 +119,10 @@ async function benchmarkMessageSize(messageSize, testIndex) {
     await server.bind(ADDRESS)
     console.log(`✅ Server bound to ${ADDRESS}`)
     
-    // Connect client
+    // Connect client (waits for handshake to complete)
     await client.connect(ADDRESS)
     console.log(`✅ Client connected to ${ADDRESS}`)
-    
-    // Wait for handshake to complete
-    await Promise.race([
-      new Promise((resolve) => {
-        client.once(events.CLIENT_READY, ({ serverId }) => {
-          console.log(`✅ Handshake complete (server: ${serverId})`)
-          resolve()
-        })
-      }),
-      new Promise((_, reject) => {
-        setTimeout(() => reject(new Error(`Handshake timeout after ${CONFIG.HANDSHAKE_TIMEOUT}ms`)), CONFIG.HANDSHAKE_TIMEOUT)
-      })
-    ])
+    console.log(`✅ Handshake complete`)
     
     await sleep(500)
     

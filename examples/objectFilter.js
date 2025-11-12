@@ -16,12 +16,12 @@ import { Node } from '../src'
   await znode2.connect({ address: znode1.getAddress() })
   await znode3.connect({ address: znode1.getAddress() })
 
-  znode2.onTick('foo', (msg) => {
-    console.log('handling tick on znode2:', msg)
+  znode2.onTick('foo', (envelope) => {
+    console.log('handling tick on znode2:', envelope.data)
   })
 
-  znode3.onTick('foo', (msg) => {
-    console.log('handling tick on znode3:', msg)
+  znode3.onTick('foo', (envelope) => {
+    console.log('handling tick on znode3:', envelope.data)
   })
 
   znode1.tickAll({

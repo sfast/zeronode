@@ -94,10 +94,11 @@ export default class Server extends Protocol {
     // ============================================================================
     // HANDSHAKE - Client discovery via messages
     // ============================================================================
-    this.onTick(ProtocolSystemEvent.CLIENT_CONNECTED, (data, envelope) => {
+    this.onTick(ProtocolSystemEvent.CLIENT_CONNECTED, (envelope) => {
       let { clientPeers } = _private.get(this)
       
       const clientId = envelope.owner
+      const data = envelope.data
       let peerInfo = clientPeers.get(clientId)
       
       if (!peerInfo) {
@@ -134,7 +135,7 @@ export default class Server extends Protocol {
     // ============================================================================
     // HEARTBEAT - Client ping
     // ============================================================================
-    this.onTick(ProtocolSystemEvent.CLIENT_PING, (data, envelope) => {
+    this.onTick(ProtocolSystemEvent.CLIENT_PING, (envelope) => {
       let { clientPeers } = _private.get(this)
       
       const clientId = envelope.owner
@@ -149,7 +150,7 @@ export default class Server extends Protocol {
     // ============================================================================
     // CLIENT LIFECYCLE
     // ============================================================================
-    this.onTick(ProtocolSystemEvent.CLIENT_STOP, (data, envelope) => {
+    this.onTick(ProtocolSystemEvent.CLIENT_STOP, (envelope) => {
       let { clientPeers } = _private.get(this)
       
       const clientId = envelope.owner
@@ -168,7 +169,7 @@ export default class Server extends Protocol {
   // ============================================================================
   
   async bind (bindAddress) {
-    let _scope = _private.get(this)
+      let _scope = _private.get(this)
     
     // Check if already bound to this address (idempotent)
     const currentAddress = this.getAddress()

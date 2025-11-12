@@ -366,8 +366,8 @@ describe('Node - Orchestration Layer', () => {
       node2 = new Node({ id: 'route-2' })
       
       // Setup node2 handler
-      node2.onRequest('test.request', (data) => {
-        return { echo: data.message, from: 'route-2' }
+      node2.onRequest('test.request', (envelope) => {
+        return { echo: envelope.data.message, from: 'route-2' }
       })
       
       // Bind and connect
@@ -397,9 +397,9 @@ describe('Node - Orchestration Layer', () => {
       let tickData = null
       
       // Setup node2 handler
-      node2.onTick('test.tick', (data) => {
+      node2.onTick('test.tick', (envelope) => {
         tickReceived = true
-        tickData = data
+        tickData = envelope.data
       })
       
       // Bind and connect

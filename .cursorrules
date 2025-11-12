@@ -1,5 +1,23 @@
 # Zeronode - Cursor AI Rules
 
+## Documentation Rule (PRIORITY)
+
+**Rule: All AI-generated documentation MUST be saved to `cursor_docs/` directory.**
+
+- ✅ **Always save to**: `cursor_docs/FILENAME.md`
+- ❌ **Never save to**: Root directory (except README.md)
+- 📝 **File naming**: Use SCREAMING_SNAKE_CASE (e.g., `HANDLER_SIGNATURE_MIGRATION.md`)
+- 📏 **Keep docs concise**: Aim for under 400 lines per document
+- 🎯 **One topic per doc**: Split large topics into focused documents
+
+**Examples:**
+- Architecture analysis → `cursor_docs/ARCHITECTURE_ANALYSIS.md`
+- Performance benchmarks → `cursor_docs/BENCHMARK_RESULTS.md`
+- Test coverage → `cursor_docs/COVERAGE_ANALYSIS.md`
+- Bug fixes → `cursor_docs/BUG_FIX_SUMMARY.md`
+
+---
+
 ## Project Overview
 
 **Zeronode** is a minimal, high-performance Node.js microservices framework built on ZeroMQ.
@@ -253,7 +271,23 @@ describe('Feature', () => {
 - Ensure all new features have corresponding tests
 - Test files should be placed in the 'test/' directory
 
-**Rule: Efficient Test Execution**
+**Rule: Efficient Test Execution (PRIORITY)**
+When fixing or debugging tests, ALWAYS run specific tests first:
+1. **Single test**: `npm test -- --grep "exact test name"`
+2. **Single file**: `npm test -- test/specific-file.test.js`
+3. **Describe block**: `npm test -- --grep "describe block name"`
+4. **Full suite**: `npm test` (only after verifying individual fixes)
+
+Examples:
+```bash
+npm test -- --grep "should handle requestAny with no matching nodes"
+npm test -- test/node-advanced.test.js
+npm test -- --grep "Empty Filter Results"
+```
+
+Benefits: 1-2s vs 60s, isolated failures, faster feedback loop
+
+**Rule: When Editing Tests**
 - When creating or modifying test files, run ONLY those specific test files, not the entire suite
 - Use: `npm test -- test/specific-file.test.js`
 - Only run full test suite when explicitly requested or before committing

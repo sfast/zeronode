@@ -193,7 +193,7 @@ export default class RouterSocket extends Socket {
     
     // 3. Now safe to unbind (listener stopped, no EBUSY)
     try {
-      await socket.unbind(bindAddress)
+    await socket.unbind(bindAddress)
     } catch (err) {
       // Ignore "No such endpoint" errors (already unbound)
       if (err.code !== 'ENOENT') {

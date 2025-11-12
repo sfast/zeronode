@@ -12,22 +12,22 @@ import { Node } from '../src'
   await znode1.bind()
   await znode2.connect({ address: znode1.getAddress() })
 
-  znode1.onRequest('foo', (req) => {
-    console.log('first handler:', req.body)
-    req.body++
-    req.next()
+  znode1.onRequest('foo', (envelope, reply, next) => {
+    console.log('first handler:', envelope.data)
+    envelope.data++
+    next()
   })
 
-  znode1.onRequest('foo', (req) => {
-    console.log('second handler', req.body)
-    req.body++
-    req.next()
+  znode1.onRequest('foo', (envelope, reply, next) => {
+    console.log('second handler', envelope.data)
+    envelope.data++
+    next()
   })
 
-  znode1.onRequest('foo', (req) => {
-    console.log('third handler', req.body)
-    req.body++
-    req.reply(req.body)
+  znode1.onRequest('foo', (envelope, reply) => {
+    console.log('third handler', envelope.data)
+    envelope.data++
+    reply(envelope.data)
   })
 
   let rep = await znode2.request({

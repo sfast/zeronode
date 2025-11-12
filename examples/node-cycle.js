@@ -13,7 +13,7 @@ import _ from 'underscore'
     let znodes = _.map(_.range(NODE_COUNT), (i) => {
       let znode = new Node()
 
-      znode.onTick('foo', (msg) => {
+      znode.onTick('foo', (envelope) => {
         count++
 
         if (count === MESSAGE_COUNT) {

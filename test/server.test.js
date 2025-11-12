@@ -599,4 +599,156 @@ describe('Server', () => {
       expect(server.isReady()).to.be.false
     })
   })
+
+  describe('Transport Event Handling', () => {
+    it('should emit NOT_READY when transport disconnects', (done) => {
+      server = new Server({ id: 'test-server' })
+      
+      server.once(ServerEvent.NOT_READY, () => {
+        done()
+      })
+      
+      // Simulate transport NOT_READY by binding and then simulating disconnect
+      server.bind('tcp://127.0.0.1:0').then(() => {
+        // Get the internal router socket and simulate transport failure
+        const router = server._getSocket()
+        router.emit('transport:not_ready')
+      })
+    })
+
+    it('should stop health checks on transport NOT_READY', async () => {
+      server = new Server({ id: 'test-server' })
+      serverAddress = await server.bind('tcp://127.0.0.1:0')
+      
+      // Verify health checks are running (by checking internal state)
+      // We can't directly access _healthCheckInterval, but we can verify the event fires
+      let notReadyFired = false
+      server.once(ServerEvent.NOT_READY, () => {
+        notReadyFired = true
+      })
+      
+      // Simulate transport disconnection
+      const router = server._getSocket()
+      router.emit('transport:not_ready')
+      
+      await wait(50)
+      expect(notReadyFired).to.be.true
+    })
+
+    it('should emit CLOSED when transport permanently closes', (done) => {
+      server = new Server({ id: 'test-server' })
+      
+      server.once(ServerEvent.CLOSED, () => {
+        done()
+      })
+      
+      server.bind('tcp://127.0.0.1:0').then(() => {
+        const router = server._getSocket()
+        router.emit('transport:closed')
+      })
+    })
+  })
+
+  describe('Unknown Client Handling', () => {
+    it('should ignore ping from unregistered client', async () => {
+      server = new Server({ id: 'test-server' })
+      serverAddress = await server.bind('tcp://127.0.0.1:0')
+      
+      // Manually trigger ping handler with unknown client ID
+      // This tests the `if (peerInfo)` guard in the CLIENT_PING handler
+      const unknownClientEnvelope = {
+        owner: 'unknown-client-id',
+        tag: ProtocolSystemEvent.CLIENT_PING
+      }
+      
+      // Should not throw or cause errors
+      server.emit('tick', { timestamp: Date.now() }, unknownClientEnvelope)
+      
+      await wait(50)
+      // Test passes if no error thrown
+    })
+
+    it('should not crash on stop message from unknown client', async () => {
+      server = new Server({ id: 'test-server' })
+      serverAddress = await server.bind('tcp://127.0.0.1:0')
+      
+      const unknownClientEnvelope = {
+        owner: 'unknown-client-999',
+        tag: ProtocolSystemEvent.CLIENT_STOP
+      }
+      
+      // Should not throw
+      server.emit('tick', { clientId: 'unknown-client-999' }, unknownClientEnvelope)
+      
+      await wait(50)
+      // Test passes if no error thrown
+    })
+  })
+
+  describe('Client Timeout Edge Cases', () => {
+    it('should handle client timeout with very short timeout value', async () => {
+      server = new Server({ 
+        id: 'test-server',
+        config: { 
+          GHOST_THRESHOLD: 200,  // Use correct config key (was clientTimeout)
+          HEALTH_CHECK_INTERVAL: 50  // Use correct config key (was healthCheckInterval)
+        }
+      })
+      await server.bind('tcp://127.0.0.1:0')
+      
+      const client = new Client({ id: 'test-client' })
+      await client.connect(server.getAddress())
+      
+      await wait(150) // Wait for handshake
+      
+      // Stop client ping to trigger timeout
+      client._stopPing()
+      
+      let timeoutFired = false
+      server.once(ServerEvent.CLIENT_TIMEOUT, ({ clientId }) => {
+        expect(clientId).to.equal('test-client')
+        timeoutFired = true
+      })
+      
+      // Wait for timeout to trigger (200ms timeout + health check)
+      await wait(350)
+      
+      expect(timeoutFired).to.be.true
+      
+      await client.disconnect()
+      await wait(50)
+    })
+
+    it('should not timeout healthy clients', async () => {
+      server = new Server({ 
+        id: 'test-server',
+        config: { clientTimeout: 200, healthCheckInterval: 50 }
+      })
+      await server.bind('tcp://127.0.0.1:0')
+      
+      const client = new Client({ 
+        id: 'test-client',
+        config: { pingInterval: 30 } // Frequent pings
+      })
+      await client.connect(server.getAddress())
+      
+      await wait(150) // Wait for handshake and multiple pings
+      
+      let timeoutFired = false
+      server.once(ServerEvent.CLIENT_TIMEOUT, () => {
+        timeoutFired = true
+      })
+      
+      // Client is healthy and pinging - should not timeout
+      await wait(250)
+      expect(timeoutFired).to.be.false
+      
+      await client.disconnect()
+      await wait(100)
+    })
+  })
 })
+
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}

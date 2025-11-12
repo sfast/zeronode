@@ -174,9 +174,9 @@ describe('Client ↔ Server Integration', function () {
 
     it('should handle basic request/response', async () => {
       // Register handler on server
-      server.onRequest('user:get', (data) => {
+      server.onRequest('user:get', (envelope) => {
         return { 
-          id: data.userId, 
+          id: envelope.data.userId, 
           name: 'Alice',
           email: 'alice@example.com'
         }
@@ -196,10 +196,10 @@ describe('Client ↔ Server Integration', function () {
     })
 
     it('should handle async request handlers', async () => {
-      server.onRequest('db:query', async (data) => {
+      server.onRequest('db:query', async (envelope) => {
         // Simulate async DB operation
         await new Promise(resolve => setTimeout(resolve, 100))
-        return { results: [`Data for ${data.table}`] }
+        return { results: [`Data for ${envelope.data.table}`] }
       })
       
       const response = await client.request({
@@ -323,8 +323,8 @@ describe('Client ↔ Server Integration', function () {
     })
 
     it('should send tick from client to server', (done) => {
-      server.onTick('log:event', (data, envelope) => {
-        expect(data).to.deep.equal({
+      server.onTick('log:event', (envelope) => {
+        expect(envelope.data).to.deep.equal({
           level: 'info',
           message: 'User logged in'
         })
@@ -344,7 +344,7 @@ describe('Client ↔ Server Integration', function () {
     it('should not wait for response on tick', async () => {
       let handlerCalled = false
       
-      server.onTick('async:event', async (data) => {
+      server.onTick('async:event', async (envelope) => {
         // Simulate slow handler
         await new Promise(resolve => setTimeout(resolve, 1000))
         handlerCalled = true
@@ -380,8 +380,8 @@ describe('Client ↔ Server Integration', function () {
     })
 
     it('should send tick from server to client', (done) => {
-      client.onTick('notification:new', (data) => {
-        expect(data).to.deep.equal({
+      client.onTick('notification:new', (envelope) => {
+        expect(envelope.data).to.deep.equal({
           type: 'message',
           from: 'Alice',
           text: 'Hello!'
@@ -439,18 +439,18 @@ describe('Client ↔ Server Integration', function () {
         }
       }
       
-      client1.onTick('broadcast:message', (data) => {
-        expect(data.text).to.equal('Hello everyone!')
+      client1.onTick('broadcast:message', (envelope) => {
+        expect(envelope.data.text).to.equal('Hello everyone!')
         checkDone()
       })
       
-      client2.onTick('broadcast:message', (data) => {
-        expect(data.text).to.equal('Hello everyone!')
+      client2.onTick('broadcast:message', (envelope) => {
+        expect(envelope.data.text).to.equal('Hello everyone!')
         checkDone()
       })
       
-      client3.onTick('broadcast:message', (data) => {
-        expect(data.text).to.equal('Hello everyone!')
+      client3.onTick('broadcast:message', (envelope) => {
+        expect(envelope.data.text).to.equal('Hello everyone!')
         checkDone()
       })
       
@@ -502,11 +502,11 @@ describe('Client ↔ Server Integration', function () {
 
     it('should match request patterns with RegExp', async () => {
       // Register pattern handler
-      server.onRequest(/^api:user:/, (data, envelope) => {
+      server.onRequest(/^api:user:/, (envelope, reply) => {
         const action = envelope.tag.split(':')[2]
         return {
           action,
-          userId: data.id,
+          userId: envelope.data.id,
           result: 'success'
         }
       })
@@ -524,9 +524,9 @@ describe('Client ↔ Server Integration', function () {
     })
 
     it('should match tick patterns with RegExp', (done) => {
-      server.onTick(/^log:/, (data, envelope) => {
+      server.onTick(/^log:/, (envelope) => {
         expect(envelope.tag).to.match(/^log:/)
-        expect(data.level).to.equal('error')
+        expect(envelope.data.level).to.equal('error')
         done()
       })
       
@@ -570,9 +570,9 @@ describe('Client ↔ Server Integration', function () {
     })
 
     it('should handle complex nested objects', async () => {
-      server.onRequest('data:complex', (data) => {
+      server.onRequest('data:complex', (envelope) => {
         return {
-          echo: data,
+          echo: envelope.data,
           processed: true
         }
       })
@@ -603,8 +603,8 @@ describe('Client ↔ Server Integration', function () {
     })
 
     it('should handle large data payloads', async () => {
-      server.onRequest('data:large', (data) => {
-        return { itemCount: data.items.length }
+      server.onRequest('data:large', (envelope) => {
+        return { itemCount: envelope.data.items.length }
       })
       
       const largeArray = Array.from({ length: 1000 }, (_, i) => ({
@@ -672,9 +672,9 @@ describe('Client ↔ Server Integration', function () {
     })
 
     it('should handle multiple concurrent requests', async () => {
-      server.onRequest('concurrent:test', async (data) => {
+      server.onRequest('concurrent:test', async (envelope) => {
         await new Promise(resolve => setTimeout(resolve, 100))
-        return { id: data.id, processed: true }
+        return { id: envelope.data.id, processed: true }
       })
       
       // Send 5 requests concurrently
@@ -700,11 +700,11 @@ describe('Client ↔ Server Integration', function () {
     it('should maintain request order semantics', async () => {
       const order = []
       
-      server.onRequest('order:test', async (data) => {
-        order.push(`receive-${data.id}`)
+      server.onRequest('order:test', async (envelope) => {
+        order.push(`receive-${envelope.data.id}`)
         await new Promise(resolve => setTimeout(resolve, Math.random() * 50))
-        order.push(`respond-${data.id}`)
-        return { id: data.id }
+        order.push(`respond-${envelope.data.id}`)
+        return { id: envelope.data.id }
       })
       
       // Send requests in order

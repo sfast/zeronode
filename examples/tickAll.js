@@ -20,17 +20,17 @@ import { Node } from '../src'
   await znode3.connect({ address: znode2.getAddress() })
   await znode4.connect({ address: znode2.getAddress() })
 
-  znode1.onTick('foo', (msg) => {
-    console.log('handling tick on znode1:', msg)
+  znode1.onTick('foo', (envelope) => {
+    console.log('handling tick on znode1:', envelope.data)
   })
-  znode2.onTick('foo', (msg) => {
-    console.log('handling tick on znode2:', msg)
+  znode2.onTick('foo', (envelope) => {
+    console.log('handling tick on znode2:', envelope.data)
   })
-  znode3.onTick('foo', (msg) => {
-    console.log('handling tick on znode3:', msg)
+  znode3.onTick('foo', (envelope) => {
+    console.log('handling tick on znode3:', envelope.data)
   })
-  znode4.onTick('foo', (msg) => {
-    console.log('handling tick on znode4:', msg)
+  znode4.onTick('foo', (envelope) => {
+    console.log('handling tick on znode4:', envelope.data)
   })
 
 

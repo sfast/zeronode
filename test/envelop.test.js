@@ -360,6 +360,174 @@ describe('Envelope', () => {
       expect(result.valid).to.be.false
       expect(result.error).to.be.a('string')
     })
+
+    it('should detect invalid type (type = 0)', () => {
+      const buffer = Buffer.alloc(100)
+      buffer.writeUInt8(0, 0) // Type 0 (invalid, should be 1-4)
+      
+      const envelope = new Envelope(buffer)
+      const result = envelope.validate()
+      
+      expect(result.valid).to.be.false
+      expect(result.error).to.include('Invalid envelope type')
+    })
+
+    it('should detect invalid type (type = 5)', () => {
+      const buffer = Buffer.alloc(100)
+      buffer.writeUInt8(5, 0) // Type 5 (invalid, should be 1-4)
+      
+      const envelope = new Envelope(buffer)
+      const result = envelope.validate()
+      
+      expect(result.valid).to.be.false
+      expect(result.error).to.include('Invalid envelope type')
+    })
+
+    it('should detect size mismatch (truncated envelope)', () => {
+      // Create a valid envelope first
+      const validBuffer = Envelope.createBuffer({
+        type: EnvelopType.TICK,
+        id: 1n,
+        owner: 'sender',
+        recipient: 'receiver',
+        tag: 'test',
+        data: { foo: 'bar' }
+      })
+      
+      // Truncate it to cause size mismatch
+      const truncatedBuffer = validBuffer.subarray(0, 20)
+      const envelope = new Envelope(truncatedBuffer)
+      
+      const result = envelope.validate()
+      expect(result.valid).to.be.false
+      expect(result.error).to.be.a('string')
+    })
+
+    it('should handle malformed buffer in validate catch block', () => {
+      // Create a buffer too small to even parse basic fields
+      const tinyBuffer = Buffer.alloc(5)
+      
+      // Constructor will throw for buffer < 18 bytes, so we catch that
+      expect(() => {
+        new Envelope(tinyBuffer)
+      }).to.throw('Envelope buffer too small')
+    })
+  })
+
+  describe('getBuffer()', () => {
+    it('should return the raw buffer', () => {
+      const buffer = Envelope.createBuffer({
+        type: EnvelopType.REQUEST,
+        id: 123n,
+        owner: 'client',
+        recipient: 'server',
+        tag: 'test:method',
+        data: { key: 'value' }
+      })
+      
+      const envelope = new Envelope(buffer)
+      const returnedBuffer = envelope.getBuffer()
+      
+      expect(returnedBuffer).to.equal(buffer)
+      expect(Buffer.isBuffer(returnedBuffer)).to.be.true
+    })
+
+    it('should return the same buffer reference', () => {
+      const buffer = Envelope.createBuffer({
+        type: EnvelopType.TICK,
+        id: 1n,
+        owner: 'sender',
+        recipient: '',
+        tag: 'event',
+        data: null
+      })
+      
+      const envelope = new Envelope(buffer)
+      const buf1 = envelope.getBuffer()
+      const buf2 = envelope.getBuffer()
+      
+      expect(buf1).to.equal(buf2) // Same reference
+    })
+  })
+
+  describe('toObject()', () => {
+    it('should convert envelope to plain object with all fields', () => {
+      const buffer = Envelope.createBuffer({
+        type: EnvelopType.REQUEST,
+        id: 999n,
+        owner: 'test-client',
+        recipient: 'test-server',
+        tag: 'user:create',
+        data: { name: 'Alice', age: 30 }
+      })
+      
+      const envelope = new Envelope(buffer)
+      const obj = envelope.toObject()
+      
+      expect(obj).to.be.an('object')
+      expect(obj.type).to.equal(EnvelopType.REQUEST)
+      expect(obj.id).to.equal(999n)
+      expect(obj.owner).to.equal('test-client')
+      expect(obj.recipient).to.equal('test-server')
+      expect(obj.tag).to.equal('user:create')
+      expect(obj.data).to.deep.equal({ name: 'Alice', age: 30 })
+    })
+
+    it('should handle envelope with null data', () => {
+      const buffer = Envelope.createBuffer({
+        type: EnvelopType.TICK,
+        id: 1n,
+        owner: 'sender',
+        recipient: 'receiver',
+        tag: 'ping',
+        data: null
+      })
+      
+      const envelope = new Envelope(buffer)
+      const obj = envelope.toObject()
+      
+      expect(obj.data).to.be.null
+    })
+
+    it('should handle envelope with empty strings', () => {
+      const buffer = Envelope.createBuffer({
+        type: EnvelopType.RESPONSE,
+        id: 1n,
+        owner: 'server',
+        recipient: '',  // Empty recipient
+        tag: '',        // Empty tag
+        data: {}
+      })
+      
+      const envelope = new Envelope(buffer)
+      const obj = envelope.toObject()
+      
+      expect(obj.recipient).to.equal('')
+      expect(obj.tag).to.equal('')
+      expect(obj.data).to.deep.equal({})
+    })
+
+    it('should handle envelope with complex nested data', () => {
+      const complexData = {
+        users: [{ id: 1, name: 'Alice' }, { id: 2, name: 'Bob' }],
+        meta: { count: 2, timestamp: 1234567890 }
+      }
+      
+      const buffer = Envelope.createBuffer({
+        type: EnvelopType.RESPONSE,
+        id: 42n,
+        owner: 'api-server',
+        recipient: 'web-client',
+        tag: 'users:list',
+        data: complexData
+      })
+      
+      const envelope = new Envelope(buffer)
+      const obj = envelope.toObject()
+      
+      expect(obj.data).to.deep.equal(complexData)
+      expect(obj.data.users).to.have.lengthOf(2)
+    })
   })
 
   describe('Round-trip serialization', () => {

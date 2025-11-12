@@ -14,10 +14,8 @@
  */
 
 import { performance } from 'perf_hooks'
-import RouterSocket from '../src/sockets/router.js'
-import DealerSocket from '../src/sockets/dealer.js'
-import { Timeouts } from '../src/sockets/enum.js'
-import { TransportEvent } from '../src/transport-events.js'
+import { Router as RouterSocket, Dealer as DealerSocket } from '../src/transport/zeromq/index.js'
+import { TransportEvent } from '../src/transport/events.js'
 
 // Configuration
 const CONFIG = {
@@ -90,7 +88,7 @@ async function benchmarkMessageSize(messageSize) {
       ZMQ_SNDHWM: 10000,
       ZMQ_RCVHWM: 10000,
       CONNECTION_TIMEOUT: 5000,
-      RECONNECTION_TIMEOUT: Timeouts.INFINITY
+      RECONNECTION_TIMEOUT: -1  // Infinity (was Timeouts.INFINITY)
     }
   })
   

@@ -39,13 +39,10 @@ describe('Node - Advanced Routing & Utilities', () => {
       options: { role: 'worker', priority: 3 }
     })
     
-    // Explicitly bind nodes sequentially to avoid port conflicts
+    // Bind nodes sequentially (bind() completes when socket is listening)
     await nodeA.bind(`tcp://127.0.0.1:${ports.a}`)
     await nodeB.bind(`tcp://127.0.0.1:${ports.b}`)
     await nodeC.bind(`tcp://127.0.0.1:${ports.c}`)
-    
-    // Wait for bind to fully complete
-    await wait(TIMING.BIND_READY)
   })
   
   afterEach(async () => {
@@ -68,11 +65,12 @@ describe('Node - Advanced Routing & Utilities', () => {
   describe('tickAny() - Advanced Routing', () => {
     beforeEach(async () => {
       // For downstream routing: workers connect TO master (nodeA)
-      // This makes nodeB and nodeC downstream from nodeA's perspective
+      // connect() completes when handshake is done and peer is registered
       await nodeB.connect({ address: `tcp://127.0.0.1:${ports.a}` })
       await nodeC.connect({ address: `tcp://127.0.0.1:${ports.a}` })
-      // Critical: Wait for server-side peer registration to complete
-      await wait(TIMING.PEER_REGISTRATION)
+      
+      // Small wait for ZMQ internal state to stabilize
+      await wait(TIMING.RACE_CONDITION_BUFFER)
     })
     
     afterEach(async () => {
@@ -104,18 +102,15 @@ describe('Node - Advanced Routing & Utilities', () => {
       })
     })
     
-    it('should emit error when no nodes match', (done) => {
-      // Node emits error event, default handler throws
-      nodeA.once('error', (err) => {
-        expect(err.code).to.equal('NO_NODES_MATCH_FILTER')
-        expect(err.message).to.match(/No nodes match filter criteria/)
-        done()
-      })
-      
-      nodeA.tickAny({
+    it('should emit error when no nodes match', async () => {
+      // tickAny now rejects when no nodes match (consistent with requestAny)
+      const error = await nodeA.tickAny({
         event: 'test',
         filter: { role: 'nonexistent' }
-      })
+      }).catch(e => e)
+      
+      expect(error.code).to.equal('NO_NODES_MATCH_FILTER')
+      expect(error.message).to.match(/No nodes match filter criteria/)
     })
     
     it('should support down and up filtering', (done) => {
@@ -150,8 +145,8 @@ describe('Node - Advanced Routing & Utilities', () => {
     })
     
     it('should send tick to any downstream node', (done) => {
-      nodeB.onTick('test:down', (data) => {
-        expect(data.message).to.equal('downstream')
+      nodeB.onTick('test:down', (envelope) => {
+        expect(envelope.data.message).to.equal('downstream')
         done()
       })
       
@@ -184,8 +179,8 @@ describe('Node - Advanced Routing & Utilities', () => {
     })
     
     it('should send tick to any upstream node', (done) => {
-      nodeA.onTick('test:up', (data) => {
-        expect(data.message).to.equal('upstream')
+      nodeA.onTick('test:up', (envelope) => {
+        expect(envelope.data.message).to.equal('upstream')
         done()
       })
       
@@ -240,14 +235,15 @@ describe('Node - Advanced Routing & Utilities', () => {
   // ============================================================================
   
   describe('_selectNode() - Edge Cases', () => {
-    it('should return null for empty nodeIds array', () => {
-      // This is tested indirectly through tickAny with no matches
-      expect(() => {
-        nodeA.tickAny({
-          event: 'test',
-          filter: { nonexistent: 'value' }
-        })
-      }).to.throw(/No nodes match filter criteria/)
+    it('should return null for empty nodeIds array', async () => {
+      // _selectNode returns null for empty arrays, tickAny rejects with error
+      const error = await nodeA.tickAny({
+        event: 'test',
+        filter: { nonexistent: 'value' }
+      }).catch(e => e)
+      
+      expect(error).to.be.an('error')
+      expect(error.message).to.match(/No nodes match filter criteria/)
     })
   })
   
@@ -425,4 +421,186 @@ describe('Node - Advanced Routing & Utilities', () => {
     })
   })
 })
+
+// ==============================================================================
+// ADDITIONAL NODE TESTS (Isolated - No Shared Setup)
+// ==============================================================================
+
+describe('Node - Additional Coverage', () => {
+  let testNodes = []
+  
+  // Generic cleanup for all tests in this suite
+  afterEach(async () => {
+    // Stop all nodes in reverse order
+    for (let i = testNodes.length - 1; i >= 0; i--) {
+      if (testNodes[i]) {
+        await testNodes[i].stop().catch(() => {})
+      }
+    }
+    
+    // Wait for ports to be released
+    await wait(TIMING.PORT_RELEASE)
+    
+    // Clear array
+    testNodes = []
+  })
+  
+  describe('offTick() - Advanced Cases', () => {
+    it('should remove all listeners when handler not provided', async () => {
+      const [portA] = getUniquePorts(1)
+      const nodeA = new Node({ id: 'node-A' })
+      const nodeB = new Node({ id: 'node-B' })
+      testNodes.push(nodeA, nodeB)
+      
+      // Setup: bind() returns address when complete
+      const addressA = await nodeA.bind(`tcp://127.0.0.1:${portA}`)
+      await nodeB.connect({ address: addressA })
+      
+      // Register multiple handlers for same pattern
+      const handler1 = () => {}
+      const handler2 = () => {}
+      nodeA.onTick('test:event', handler1)
+      nodeA.onTick('test:event', handler2)
+      
+      // Remove all handlers for pattern (no handler specified)
+      nodeA.offTick('test:event')
+      
+      // Verify handlers were removed (no error on duplicate removal)
+      nodeA.offTick('test:event', handler1) // Should not throw
+    })
+
+    it('should remove handlers from multiple clients', async () => {
+      const [portA] = getUniquePorts(1)
+      const nodeA = new Node({ id: 'node-A' })
+      const nodeB = new Node({ id: 'node-B' })
+      const nodeC = new Node({ id: 'node-C' })
+      testNodes.push(nodeA, nodeB, nodeC)
+      
+      // Setup: bind returns address, connect waits for handshake
+      const addressA = await nodeA.bind(`tcp://127.0.0.1:${portA}`)
+      await nodeB.connect({ address: addressA })
+      await nodeC.connect({ address: addressA })
+      
+      const handler = () => {}
+      nodeA.onTick('test:multi', handler)
+      
+      // offTick should propagate to all connected clients
+      nodeA.offTick('test:multi', handler)
+      
+      // Clean up: disconnect clients from server (pass address string)
+      await nodeB.disconnect(addressA)
+      await nodeC.disconnect(addressA)
+      await nodeA.unbind()
+      await wait(TIMING.DISCONNECT_COMPLETE)  // Wait for graceful disconnect to complete
+    })
+  })
+
+  describe('tickUpAll()', () => {
+    it('should send tick to upstream nodes only', async () => {
+      const [portA, portB] = getUniquePorts(2)
+      const nodeA = new Node({ id: 'node-A' })
+      const nodeB = new Node({ id: 'node-B' })
+      const nodeC = new Node({ id: 'node-C' })
+      testNodes.push(nodeA, nodeB, nodeC)
+      
+      // Topology: B ← A → C (B=upstream, C=downstream from A's perspective)
+      const addressB = await nodeB.bind(`tcp://127.0.0.1:${portB}`)
+      const addressA = await nodeA.bind(`tcp://127.0.0.1:${portA}`)
+      
+      await nodeA.connect({ address: addressB }) // A → B (upstream)
+      await nodeC.connect({ address: addressA }) // C → A (A is downstream)
+      
+      let receivedB = false
+      let receivedC = false
+      
+      nodeB.onTick('upstream:test', () => { receivedB = true })
+      nodeC.onTick('upstream:test', () => { receivedC = true })
+      
+      // tickUpAll should only send to upstream (B), not downstream (C)
+      nodeA.tickUpAll({ event: 'upstream:test' })
+      await wait(TIMING.MESSAGE_PROPAGATION)
+      
+      expect(receivedB).to.be.true
+      expect(receivedC).to.be.false
+    })
+  })
+
+  describe('Empty Filter Results', () => {
+    it('should handle requestAny with no matching nodes', async () => {
+      const [portA] = getUniquePorts(1)
+      const nodeA = new Node({ id: 'node-A' })
+      const nodeB = new Node({ id: 'node-B', options: { type: 'worker' } })
+      testNodes.push(nodeA, nodeB)
+      
+      // Setup
+      const addressA = await nodeA.bind(`tcp://127.0.0.1:${portA}`)
+      await nodeB.connect({ address: addressA })
+      
+      nodeB.onRequest('test:request', () => ({ result: 'ok' }))
+      
+      // Filter that matches no nodes (nodeB has type: 'worker', but we filter for type: 'manager')
+      const error = await nodeA.requestAny({
+        event: 'test:request',
+        data: {},
+        filter: { options: { type: 'manager' } } // No node has this type
+      }).catch(e => e)
+      
+      expect(error).to.be.an('error')
+      expect(error.code).to.equal('NO_NODES_MATCH_FILTER')
+    })
+
+    it('should handle tickAny with no matching nodes', async () => {
+      const [portA] = getUniquePorts(1)
+      const nodeA = new Node({ id: 'node-A' })
+      const nodeB = new Node({ id: 'node-B', options: { region: 'us' } })
+      testNodes.push(nodeA, nodeB)
+      
+      // Setup
+      const addressA = await nodeA.bind(`tcp://127.0.0.1:${portA}`)
+      await nodeB.connect({ address: addressA })
+      
+      let received = false
+      nodeB.onTick('test:tick', () => { received = true })
+      
+      // Filter that matches no nodes - tickAny rejects like requestAny
+      const error = await nodeA.tickAny({
+        event: 'test:tick',
+        data: {},
+        filter: { options: { region: 'eu' } } // No node has this region
+      }).catch(e => e)
+      
+      expect(error).to.be.an('error')
+      expect(error.code).to.equal('NO_NODES_MATCH_FILTER')
+      expect(received).to.be.false
+    })
+
+    it('should handle tickAll with filter that matches no nodes', async () => {
+      const [portA] = getUniquePorts(1)
+      const nodeA = new Node({ id: 'node-A' })
+      const nodeB = new Node({ id: 'node-B', options: { env: 'prod' } })
+      testNodes.push(nodeA, nodeB)
+      
+      // Setup
+      const addressA = await nodeA.bind(`tcp://127.0.0.1:${portA}`)
+      await nodeB.connect({ address: addressA })
+      
+      let received = false
+      nodeB.onTick('test:broadcast', () => { received = true })
+      
+      // Filter that matches no nodes - tickAll doesn't throw, just sends to 0 nodes
+      const result = await nodeA.tickAll({
+        event: 'test:broadcast',
+        data: {},
+        filter: { options: { env: 'staging' } } // No node has this env
+      })
+      
+      await wait(TIMING.MESSAGE_PROPAGATION)
+      
+      expect(result).to.be.an('array')
+      expect(result).to.have.lengthOf(0) // No nodes matched
+      expect(received).to.be.false
+    })
+  })  
+})
+
 

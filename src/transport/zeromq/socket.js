@@ -46,7 +46,7 @@ class Socket extends EventEmitter {
     // ** setting the logger as soon as possible
     this.setLogger(config.logger || console)
 
-    this._startMessageListener()
+    this.startMessageListener()
   }
 
   /**
@@ -89,6 +89,7 @@ class Socket extends EventEmitter {
 
   setOffline () {
     let _scope = _private.get(this)
+    this.stopMessageListener()
     _scope.online = false
   }
 
@@ -121,15 +122,15 @@ class Socket extends EventEmitter {
    * Processes ZeroMQ frames and emits TransportEvent.MESSAGE
    * @private
    */
-  async _startMessageListener () {
+  async startMessageListener () {
     try {
       let { socket } = _private.get(this)
 
       for await (const frames of socket) {
         // Check if we should stop listening (graceful shutdown)
         // Note: Must check _private on each iteration, not cache it
-        let _scope = _private.get(this)
-        if (_scope && _scope.shouldStopListening) {
+        let { shouldStopListening } = _private.get(this)
+        if (shouldStopListening) {
           break
         }
         
@@ -183,6 +184,18 @@ class Socket extends EventEmitter {
     }
   }
 
+  /**
+   * Stop the message listener gracefully before unbind/disconnect operations
+   * Sets a flag that the async iterator checks on next iteration
+   * This prevents EBUSY errors without closing the socket prematurely
+   */
+  stopMessageListener () {
+      let _scope = _private.get(this)
+      if (_scope) {
+        _scope.shouldStopListening = true
+      }
+    }
+
   // Pure transport: send buffer without protocol awareness
   sendBuffer (buffer, recipient) {
     let { socket } = _private.get(this)
@@ -223,33 +236,11 @@ class Socket extends EventEmitter {
     
     // Unsubscribe from all ZeroMQ socket events
     if (socket && !socket.closed && socket.events && typeof socket.events.removeAllListeners === 'function') {
-      try {
         socket.events.removeAllListeners()
-      } catch (err) {
-        // Emit transport error if listener cleanup fails during close
-        const transportError = new TransportError({
-          code: TransportErrorCode.CLOSE_FAILED,
-          message: `Failed to detach socket listeners: ${err.message}`,
-          transportId: this.getId(),
-          cause: err
-        })
-        
-        this.emit('error', transportError)
-      }
     }
   }
 
-  /**
-   * Stop the message listener gracefully before unbind/disconnect operations
-   * Sets a flag that the async iterator checks on next iteration
-   * This prevents EBUSY errors without closing the socket prematurely
-   */
-  stopMessageListener () {
-    let _scope = _private.get(this)
-    if (_scope) {
-      _scope.shouldStopListening = true
-    }
-  }
+
 
   /**
    * Close the socket (base implementation)
@@ -261,15 +252,29 @@ class Socket extends EventEmitter {
    * then do their cleanup (unbind/disconnect), then call super.close()
    */
   close (closeSocket = false) {
-    this.stopMessageListener()
-    this.setOffline()
-    this.detachSocketEventListeners()
-   
-    
-    let { socket } = _private.get(this)
-    if (socket && !socket.closed && closeSocket) {
-      socket.close()
+    try {
+      this.stopMessageListener()
+      this.setOffline()
+      this.detachSocketEventListeners()
+     
+      
+      let { socket } = _private.get(this)
+      if (socket && !socket.closed && closeSocket) {
+        socket.close()
+      }
+
+    } catch (err) {
+      // Emit transport error if listener cleanup fails during close
+      const transportError = new TransportError({
+        code: TransportErrorCode.CLOSE_FAILED,
+        message: `Failed to close socket: ${err.message}`,
+        transportId: this.getId(),
+        cause: err
+      })
+
+      this.emit('error', transportError)
     }
+
   }
 }
 

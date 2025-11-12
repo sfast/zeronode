@@ -1,554 +1,1046 @@
-![Zeronode](https://i.imgur.com/NZVXZPo.png)
-<br/>
+# ZeroNode
 
-[![JavaScript Style Guide](https://cdn.rawgit.com/standard/standard/master/badge.svg)](https://github.com/standard/standard)<br/><br/>
-[![NPM](https://nodei.co/npm/zeronode.png)](https://nodei.co/npm/zeronode/)<br/><br/>
+<p align="center">
+  <img src="https://i.imgur.com/NZVXZPo.png" alt="Zeronode Logo" />
+</p>
 
-[<img src="https://img.shields.io/gitter/room/nwjs/nw.js.svg">](https://gitter.im/npm-zeronode/Lobby) 
-[![Known Vulnerabilities](https://snyk.io/test/github/sfast/zeronode/badge.svg)](https://snyk.io/test/github/sfast/zeronode)
-[![GitHub license](https://img.shields.io/github/license/sfast/zeronode.svg)](https://github.com/sfast/zeronode/blob/master/LICENSE)
-[![GitHub issues](https://img.shields.io/github/issues/sfast/zeronode.svg)](https://github.com/sfast/zeronode/issues)
+<p align="center">
+  <strong>Production-Grade Microservices Communication Layer for Node.js</strong>
+  <br/>
+  <em>Built on ZeroMQ • Fully Async/Await • Type-Safe • Battle-Tested</em>
+</p>
 
-[![Tweet](https://img.shields.io/twitter/url/http/shields.io.svg?style=social)](https://twitter.com/intent/tweet?text=Zeronode%20-%20rock%20solid%20transport%20and%20smarts%20for%20building%20NodeJS%20microservices.%E2%9C%8C%E2%9C%8C%E2%9C%8C&url=https://github.com/sfast/zeronode&hashtags=microservices,scaling,loadbalancing,zeromq,awsomenodejs,nodejs)
-[![GitHub stars](https://img.shields.io/github/stars/sfast/zeronode.svg?style=social&label=Stars)](https://github.com/sfast/zeronode)
+<p align="center">
+  <a href="https://github.com/standard/standard"><img src="https://cdn.rawgit.com/standard/standard/master/badge.svg" alt="JavaScript Style Guide"></a>
+  <a href="https://gitter.im/npm-zeronode/Lobby"><img src="https://img.shields.io/gitter/room/nwjs/nw.js.svg" alt="Gitter"></a>
+  <a href="https://snyk.io/test/github/sfast/zeronode"><img src="https://snyk.io/test/github/sfast/zeronode/badge.svg" alt="Known Vulnerabilities"></a>
+  <a href="https://github.com/sfast/zeronode/blob/master/LICENSE"><img src="https://img.shields.io/github/license/sfast/zeronode.svg" alt="GitHub license"></a>
+</p>
 
-## ⚡ Performance
-
-**Zeronode is 15% FASTER than Pure ZeroMQ!**
-
-```
-Pure ZeroMQ:     3,072 msg/sec  (baseline)
-Zeronode:        3,531 msg/sec  (+15% FASTER! 🚀)
-```
-
-Yes, our abstraction layer is **faster** than raw sockets!
-
-**How?** MessagePack serialization, single-pass buffer parsing, conditional timing, and WeakMap caching.
-
-📊 **See:** [PERFORMANCE.md](PERFORMANCE.md) | [OPTIMIZATIONS.md](OPTIMIZATIONS.md) | [Benchmarks](benchmark/README.md)
+<p align="center">
+  <a href="https://nodei.co/npm/zeronode/"><img src="https://nodei.co/npm/zeronode.png" alt="NPM"></a>
+</p>
 
 ---
 
-## Zeronode - minimal building block for NodeJS microservices
-* [Why Zeronode?](#whyZeronode)
-* [Installation](#installation)
-* [Basics](#basics)
-* [Benchmark](#benchmark)
-* [API](#api)
-* [Examples](#examples)
-    * [Basic Examples](#basicExamples)
-    * [Basic Examples](#basicExamples)
-* [Advanced] (#advanced)
-    * [Basic Examples](#basicExamples)
-    * [Basic Examples](#basicExamples)
-* [Contributing](#contributing)
-* [Have a question ?](#askzeronode)
-* [License](#license)
+## 📖 Table of Contents
 
-<a name="whyZeronode"></a>
-### Why you need ZeroNode ? 
-Application backends are becoming complex these days and there are lots of moving parts talking to each other through network.
-There is a great difference between sending a few bytes from A to B, and doing messaging in reliable way.
-- How to handle dynamic components ? (i.e., pieces that come and/or go away temporarily, scaling a microservice instances )
-- How to handle messages that we can't deliver immediately ? (i.e waiting for a component to come back online)
-- How to route messages in complex microservice architecture ? (i.e. one to one, one to many, custom grouping)
-- How we handle network errors ? (i.e., reconnecting of various pieces)
+- [Why ZeroNode?](#why-zeronode)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Core Concepts](#core-concepts)
+- [Architecture](#architecture)
+- [API Reference](#api-reference)
+- [Examples](#examples)
+- [Events & Error Handling](#events--error-handling)
+- [Production Best Practices](#production-best-practices)
+- [Contributing](#contributing)
+- [License](#license)
 
-We created Zeronode on top of <a href="http://zeromq.org" target="_blank">zeromq</a> as to address <a href="http://zguide.zeromq.org/page:all#Why-We-Needed-ZeroMQ" target="_blank">these</a>
-and some more common problems that developers will face once building solid systems.
-<br/>
-With zeronode its just super simple to create complex server-to-server communications (i.e. build network topologies).
+---
 
-<a name="installation"></a>
-### Installation & Important notes 
-Zeronode depends on <a href="http://zeromq.org" target="_blank">zeromq</a>
-<br/> For Debian, Ubuntu, MacOS you can just run
+## Why ZeroNode?
+
+### The Problem
+
+Building reliable microservice communication is **hard**:
+
+- ❓ How to handle dynamic scaling? (services come and go)
+- 🔄 How to handle reconnections? (network failures happen)
+- 🎯 How to route messages? (one-to-one, one-to-many, filtered routing)
+- 🚨 How to handle errors gracefully? (timeouts, disconnections, invalid data)
+- 📦 How to deal with message queuing? (when a service is temporarily down)
+- 🔍 How to discover services? (without a central registry)
+- ⚖️ How to load balance? (distribute requests across multiple instances)
+
+### The Solution
+
+ZeroNode solves these problems with:
+
+✅ **Automatic Reconnection** - Never worry about network failures  
+✅ **Built-in Patterns** - Request/Reply, Fire-and-Forget (Tick), Broadcasting  
+✅ **Mesh Networking** - Peer-to-peer communication without central broker  
+✅ **Dynamic Discovery** - Services discover each other automatically  
+✅ **Smart Routing** - Filter-based routing with options matching  
+✅ **Load Balancing** - Random, round-robin, priority-based routing  
+✅ **Zero Configuration** - Works out of the box with sensible defaults  
+✅ **Production-Ready** - Comprehensive error handling and lifecycle management  
+
+---
+
+## Installation
+
+### Prerequisites
+
+ZeroNode requires [ZeroMQ](http://zeromq.org) to be installed.
+
+**Automatic Installation (Ubuntu, Debian, macOS):**
+
 ```bash
-$ npm install zeronode --save
-```
-and it'll also install [zeromq](http://zeromq.org) for you. 
-<br/>Kudos to <a href="https://github.com/davidharutyunyan" target="_blank">Dave</a> for adding install scripts.
-For other platforms please open an issue or feel free to contribute.
-
-<a name="basics"></a>
-### Basics
-Zeronode allows to create complex network topologies (i.e. line, ring, partial or full mesh, star, three, hybrid ...) 
-Each participant/actor in your network topology we call __znode__, which can act as a sever, as a client or hybrid.
-
-```javascript
-import Node from 'zeronode';
-
-let znode = new Node({
-    id: 'steadfast',
-    options: {}, 
-    config: {}
-});
-
-// ** If znode is binded to some interface then other znodes can connect to it
-// ** In this case znode acts as a server, but it's not limiting znode to connect also to other znodes (hybrid)
-(async () => {
-    await znode.bind('tcp://127.0.0.1:6000');
-})();
-
-// ** znode can connect to multiple znodes
-znode.connect({address: 'tcp://127.0.0.1:6001'})
-znode.connect({address: 'tcp://127.0.0.1:6002'})
-
-// ** If 2 znodes are connected together then we have a channel between them 
-// ** and both znodes can talk to each other via various messeging patterns - i.e. request/reply, tick (fire and forgot) etc ...
-
+npm install zeronode
 ```
 
-Much more interesting patterns and features you can discover by reading the [API](#api) document.
-In case you have a question or suggestion you can talk to authors on [Zeronode Gitter chat](#askzeronode)
+The install script will automatically install ZeroMQ for supported platforms.
 
+**Manual Installation (Other Platforms):**
 
+```bash
+# Install ZeroMQ first
+# Ubuntu/Debian
+sudo apt-get install libzmq3-dev
 
-<a name="benchmark"></a>
-### Benchmark
-All Benchmark tests are completed on Intel(R) Core(TM) i5-6200U CPU @ 2.30GHz.
+# macOS
+brew install zeromq
 
-<table><tbody>
-<tr><td></td><td>Zeronode</td><td>Seneca (tcp)</td><td>Pigato</td></tr>
-<tr><td>1000 msg, 1kb data</td><td>394ms</td><td>2054ms</td><td>342ms</td></tr>
-<tr><td>50000 msg, 1kb data</td><td>11821ms<td>140934ms</td><td>FAIL(100s timeout)</td></tr>
-</tbody></table>
-<br/>
-
-<a name="api"></a>
-### API 
-
-#### Basic methods
-* [<code>**new Node()**</code>](#node)
-* [<code>znode.**bind()**</code>](#bind)
-* [<code>znode.**connect()**</code>](#connect)
-* [<code>znode.**unbind()**</code>](#unbind)
-* [<code>znode.**disconnect()**</code>](#disconnect)
-* [<code>znode.**stop()**</code>](#stop)
-
-#### Simple messaging methods
-* [<code>znode.**request()</code>**](#request)
-* [<code>znode.**tick()</code>**](#tick)
-
-#### Attaching/Detaching handlers to tick and request 
-
-* [<code>znode.**onRequest()**</code>](#onRequest)
-* [<code>znode.**onTick()**</code>](#onTick)
-* [<code>znode.**offRequest()**</code>](#offRequest)
-* [<code>znode.**offTick()**</code>](#offTick)
-
-#### Load balancing methods
-
-* [<code>znode.**requestAny()**</code>](#requestAny)
-* [<code>znode.**requestDownAny()**</code>](#requestDownAny)
-* [<code>znode.**requestUpAny()**</code>](#requestUpAny)
-* [<code>znode.**tickAny()**</code>](#tickAny)
-* [<code>znode.**tickDownAny()**</code>](#tickDownAny)
-* [<code>znode.**tickUpAny()**</code>](#tickUpAny)
-* [<code>znode.**tickAll()**</code>](#tickAll)
-* [<code>znode.**tickDownAll()**</code>](#tickDownAll)
-* [<code>znode.**tickUpAll()**</code>](#tickUpAll)
-
-#### Debugging and troubleshooting
-
-* [<code>**znode.enableMetrics()**</code>](#enableMetrics)
-* [<code>**znode.disableMetrics()**</code>](#disableMetrics)
-
-<a name="node"></a>
-#### let znode = new Node({ id: String, bind: Url, options: Object, config: Object })
-Node class wraps many client instances and one server instance.
-Node automatically handles:
-* Client/Server ping/pong
-* Reconnections
-
-```javascript
-import { Node } from 'zeronode';
-
-let znode = new Node({
-    id: 'node',
-    bind: 'tcp://127.0.0.1:6000',
-    options: {}
-    config: {}
-});
+# Then install ZeroNode
+npm install zeronode
 ```
 
-All four arguments are optional.
-* `id` is unique string which identifies znode.
-* `options` is information about znode which is shared with other connected znoded. It could be used for advanced use cases of load balancing and messege routing.
-* `config` is an object for configuring znode
-    * `logger` - logger instance, default is Winston.
-    * `REQUEST_TIMEOUT` - duration after which request()-s promise will be rejected, default is 10,000 ms.
-    * `RECONNECTION_TIMEOUT` (for client znodes) - zeronode's default is -1 , which means zeronode is always trying to reconnect to failed znode server. Once `RECONNECTION_TIMEOUT` is passed and recconenction doesn't happen zeronode will fire `SERVER_RECONNECT_FAILURE`. 
-    * `CONNECTION_TIMEOUT` (for client znodes) - duration for trying to connect to server after which connect()-s promise will be rejected.
+**Docker:**
 
-There are some events that triggered on znode instances:
-* `NodeEvents.`**`CLIENT_FAILURE`** - triggered on server znode when client connected to it fails.
-* `NodeEvents.`**`CLIENT_CONNECTED`** - triggered on server znode when new client connects to it.
-* `NodeEvents.`**`CLIENT_STOP`** - triggered on server znode when client successfully disconnects from it.
+```dockerfile
+FROM node:18-alpine
+RUN apk add --no-cache zeromq-dev
+RUN npm install zeronode
+```
 
-* `NodeEvents.`**`SERVER_FAILURE`** - triggered on client znode when server znode fails.
-* `NodeEvents.`**`SERVER_STOP`** - triggered on client znode when server successfully stops.
-* `NodeEvents.`**`SERVER_RECONNECT`** - triggered on client znode when server comes back and client znode successfuly reconnects.
-* `NodeEvents.`**`SERVER_RECONNECT_FAILURE`** - triggered on client znode when server doesn't come back in `reconnectionTimeout` time provided during connect(). If `reconnectionTimeout` is not provided it uses `config.RECONNECTION_TIMEOUT` which defaults to -1 (means client znode will try to reconnect to server znode for ages).
-* `NodeEvents.`**`CONNECT_TO_SERVER`** - triggered on client znode when it successfully connects to new server.
-* `NodeEvents.`**`METRICS`** - triggered when [metrics enabled](#enableMetrics).
+---
 
+## Quick Start
 
-<a name="bind"></a>
-#### znode.bind(address: Url)
-Binds the znode to the specified interface and port and returns promise. 
-You can bind only to one address.
-Address can be of the following protocols: `tcp`, `inproc`(in-process/inter-thread), `ipc`(inter-process).
+### 1. Create a Server
 
-<a name="connect"></a>
-#### znode.connect({ address: Url, timeout: Number, reconnectionTimeout: Number })
-Connects the znode to server znode with specified address and returns promise. 
-znode can connect to multiple znodes.
-If timeout is provided (in milliseconds) then the _connect()-s_ promise will be rejected if connection is taking longer.<br/>
-If timeout is not provided it will wait for ages till it connects.
-If server znode fails then client znode will try to reconnect in given `reconnectionTimeout` (defaults to `RECONNECTION_TIMEOUT`) after which the `SERVER_RECONNECT_FAILURE` event will be triggered.
-
-<a name="unbind"></a>
-#### znode.unbind()
-Unbinds the server znode and returns promise.
-Unbinding doesn't stop znode, it can still be connected to other nodes if there are any, it just stops the server behaviour of znode, and on all the client znodes (connected to this server znode) `SERVER_STOP` event will be triggered.
-
-<a name="disconnect"></a>
-#### znode.disconnect(address: Url)
-Disconnects znode from specified address and returns promise.
-
-<a name="stop"></a>
-#### znode.stop()
-Unbinds znode, disconnects from all connected addresses (znodes) and returns promise.
-
-<a name="request"></a>
-#### znode.request({ to: Id, event: String, data: Object, timeout: Number })
-Makes request to znode with id(__to__) and returns promise. <br/>
-Promise resolves with data that the requested znode replies. <br/>
-If timeout is not provided it'll be `config.REQUEST_TIMEOUT` (defaults to 10000 ms). <br/>
-If there is no znode with given id, than promise will be rejected with error code `ErrorCodes.NODE_NOT_FOUND`.
-
-<a name="tick"></a>
-#### znode.tick({ to: Id, event: String, data: Object })
-Ticks(emits) event to given znode(__to__).</br>
-If there is no znode with given id, than throws error with code `ErrorCodes.NODE_NOT_FOUND`.
-
-<a name="onRequest"></a>
-#### znode.onRequest(requestEvent: String/Regex, handler: Function)
-Adds request handler for given event on znode.
 ```javascript
-/**
-* @param head: { id: String, event: String }
-* @param body: {} - requestedData
-* @param reply(replyData: Object): Function
-* @param next(error): Function 
-*/
-// ** listening for 'foo' event
-znode.onRequest('foo', ({ head, body, reply, next }) => {
-  // ** request handling logic 
-  // ** move forward to next handler or stop the handlers chain with 'next(err)'
-  next() 
+import Node from 'zeronode'
+
+const server = new Node({ id: 'api-server' })
+
+// Bind to a port
+await server.bind('tcp://127.0.0.1:8000')
+
+// Handle requests
+server.onRequest('user:get', (envelope) => {
+  return {
+    id: envelope.data.userId,
+    name: 'John Doe',
+    email: 'john@example.com'
+  }
 })
 
-// ** listening for any events matching Regexp
-znode.onRequest(/^fo/, ({ head, body, reply, next }) => {
-  // ** request handling logic 
-  // ** send back reply to the requester znode
-  reply(/* Object data */) 
+console.log('✓ Server ready at tcp://127.0.0.1:8000')
+```
+
+### 2. Create a Client
+
+```javascript
+import Node from 'zeronode'
+
+const client = new Node({ id: 'web-client' })
+
+// Connect to server
+await client.connect({ address: 'tcp://127.0.0.1:8000' })
+
+// Make a request
+const response = await client.request({
+  to: 'api-server',
+  event: 'user:get',
+  data: { userId: 123 }
+})
+
+console.log('User:', response)
+// { id: 123, name: 'John Doe', email: 'john@example.com' }
+```
+
+### 3. Fire-and-Forget (Tick)
+
+```javascript
+// Send a message without waiting for a response
+client.tick({
+  to: 'api-server',
+  event: 'analytics:track',
+  data: { action: 'page_view', page: '/home' }
+})
+
+// Handle tick messages on server
+server.onTick('analytics:track', (envelope) => {
+  console.log('Analytics event:', envelope.data)
+  // No response needed - fire and forget!
 })
 ```
 
-<a name="onTick"></a>
-#### znode.onTick(event: String/Regex, handler: Function)
-Adds tick(event) handler for given event.
+That's it! 🎉 You now have a working microservices communication layer.
+
+---
+
+## Core Concepts
+
+### Node
+
+A **Node** is the core building block of ZeroNode. Each Node can:
+- **Bind** to an address (acts as a server)
+- **Connect** to other nodes (acts as a client)  
+- Both! (hybrid mode)
+
+Think of a Node as a **participant** in your distributed system.
+
 ```javascript
-znode.onTick('foo', (data) => {
-   // ** tick handling logic 
+const node = new Node({
+  id: 'unique-node-id',        // Unique identifier (auto-generated if not provided)
+  options: { role: 'worker' },  // Metadata for routing/discovery
+  config: {}                    // ZeroMQ configuration (optional)
 })
 ```
 
-<a name="offRequest"></a>
-#### znode.offRequest(requestEvent: String/Regex, handler: Function)
-Removes request handler for given event.<br/>
-If handler is not provided then removes all of the listeners.
+### Messaging Patterns
 
-<a name="offTick"></a>
-#### znode.offTick(event: String/Regex, handler: Function)
-Removes given tick(event) handler from event listeners' list. <br/>
-If handler is not provided then removes all of the listeners.
+#### 1. **Request/Reply** (RPC-style)
 
-<a name="requestAny"></a>
-#### znode.requestAny({ event: String, data: Object, timeout: Number, filter: Object/Function, down: Bool, up: Bool })
-General method to send request to __only one__ znode satisfying the filter.<br/>
-Filter can be an object or a predicate function. Each filter key can be object itself, with this keys.
-- **$eq** - strict equal to provided value.
-- **$ne** - not equal to provided value.
-- **$aeq** - loose equal to provided value.
-- **$gt** - greater than provided value.
-- **$gte** - greater than or equal to provided value.
-- **$lt** - less than provided value.
-- **$lte** - less than or equal to provided value.
-- **$between** - between provided values (value must be tuple. eg [10, 20]).
-- **$regex** - match to provided regex.
-- **$in** - matching any of the provided values.
-- **$nin** - not matching any of the provided values.
-- **$contains** - contains provided value.
-- **$containsAny** - contains any of the provided values.
-- **$containsNone** - contains none of the provided values.
+**Use when:** You need a response (API calls, database queries, calculations)
 
 ```javascript
-    // ** send request to one of znodes that have version 1.*.*
-    znode.requestAny({
-        event: 'foo',
-        data: { foo: 'bar' },
-        filter: { version: /^1.(\d+\.)?(\d+)$/ }
+// Server
+server.onRequest('math:add', (envelope) => {
+  const { a, b } = envelope.data
+  return { result: a + b }
+})
+
+// Client
+const response = await client.request({
+  to: 'calc-server',
+  event: 'math:add',
+  data: { a: 5, b: 3 }
+})
+console.log(response.result) // 8
+```
+
+#### 2. **Tick** (Fire-and-Forget)
+
+**Use when:** You don't need a response (logging, analytics, notifications)
+
+```javascript
+// Server
+server.onTick('log:info', (envelope) => {
+  console.log(envelope.data.message)
+})
+
+// Client (non-blocking!)
+client.tick({
+  to: 'log-server',
+  event: 'log:info',
+  data: { message: 'User logged in' }
+})
+```
+
+#### 3. **Broadcasting**
+
+**Use when:** Send to multiple nodes at once (pub/sub, notifications)
+
+```javascript
+// Send to ALL nodes that match a filter
+await node.tickAll({
+  event: 'config:reload',
+  data: { version: '2.0' },
+  filter: { role: 'worker' }  // Only nodes with options.role === 'worker'
+})
+```
+
+### Routing
+
+ZeroNode provides powerful routing capabilities:
+
+#### **Direct Routing** (by ID)
+
+```javascript
+// Send to a specific node
+await node.request({
+  to: 'specific-node-id',
+  event: 'ping',
+  data: {}
+})
+```
+
+#### **Smart Routing** (by options/filter)
+
+```javascript
+// Send to ANY node that matches the filter
+await node.requestAny({
+  event: 'process:job',
+  data: { jobId: 123 },
+  filter: {
+    role: 'worker',
+    status: 'idle',
+    region: 'us-west'
+  }
+})
+```
+
+#### **Directional Routing**
+
+```javascript
+// Send only to downstream nodes (nodes that connected TO this node)
+await node.requestDownAny({
+  event: 'task:assign',
+  data: { taskId: 456 }
+})
+
+// Send only to upstream nodes (nodes this node connected TO)
+await node.requestUpAny({
+  event: 'report:status',
+  data: { status: 'healthy' }
+})
+```
+
+### Pattern Matching
+
+Use RegExp for flexible routing:
+
+```javascript
+// Handle all API routes
+server.onRequest(/^api:.*/, (envelope) => {
+  const route = envelope.tag // e.g., 'api:users:get'
+  const data = envelope.data
+  // Route to appropriate handler
+  return handleApiRequest(route, data)
+})
+
+// Handle all log events
+server.onTick(/^log:/, (envelope) => {
+  logToFile(envelope.data)
+})
+```
+
+---
+
+## Architecture
+
+ZeroNode is built with a clean, layered architecture:
+
+```
+┌─────────────────────────────────────────┐
+│            Node Layer                   │  ← Mesh networking, routing, discovery
+│  (Orchestration & Smart Routing)        │
+├─────────────────────────────────────────┤
+│     Client Layer    │   Server Layer    │  ← Application protocols
+│  (Connection mgmt)  │  (Client tracking)│
+├─────────────────────────────────────────┤
+│         Protocol Layer                  │  ← Request/reply, handshakes, pings
+│  (Message serialization & routing)      │
+├─────────────────────────────────────────┤
+│        Transport Layer (ZeroMQ)         │  ← Raw socket communication
+│    Router Socket  │  Dealer Socket      │
+└─────────────────────────────────────────┘
+```
+
+### Layer Responsibilities
+
+#### **Node Layer** (`src/node.js`)
+- Manages N clients + 1 server
+- Intelligent routing (by ID, by filter, random selection)
+- Handler registry (works even if server/clients created later)
+- Event transformation (Client/Server events → Node events)
+
+#### **Client Layer** (`src/protocol/client.js`)
+- Connects to remote servers
+- Handshake protocol
+- Heartbeat/ping management
+- Automatic reconnection
+
+#### **Server Layer** (`src/protocol/server.js`)
+- Binds to address
+- Tracks connected clients
+- Client timeout detection
+- Graceful shutdown protocol
+
+#### **Protocol Layer** (`src/protocol/protocol.js`)
+- Message serialization (MessagePack)
+- Request/response matching
+- Envelope format
+- Pattern-based routing
+
+#### **Transport Layer** (`src/transport/zeromq/`)
+- ZeroMQ socket management (Router, Dealer)
+- Connection state machine
+- Error handling
+- Native ZeroMQ features
+
+---
+
+## API Reference
+
+### Node Class
+
+#### Constructor
+
+```javascript
+const node = new Node({
+  id: string,           // Optional. Auto-generated if not provided
+  bind: string,         // Optional. Address to bind (e.g., 'tcp://127.0.0.1:8000')
+  options: object,      // Optional. Metadata for routing/discovery
+  config: object        // Optional. ZeroMQ configuration
+})
+```
+
+#### Connection Management
+
+```javascript
+// Bind (act as server)
+await node.bind(address: string): Promise<string>
+// Returns the actual bound address (useful for port 0)
+
+// Connect (act as client)
+await node.connect({
+  address: string,
+  timeout?: number,           // Handshake timeout (default: 5000ms)
+  reconnectionTimeout?: number // Max reconnection time (default: -1 = infinite)
+}): Promise<object>
+// Returns remote node info
+
+// Disconnect
+await node.disconnect(address: string): Promise<boolean>
+
+// Stop (close all connections)
+await node.stop(): Promise<void>
+```
+
+#### Messaging
+
+```javascript
+// Request/Reply (waits for response)
+await node.request({
+  to: string,          // Target node ID
+  event: string,       // Event name
+  data: object,        // Payload
+  timeout?: number     // Request timeout (default: 10000ms)
+}): Promise<any>
+
+// Tick (fire-and-forget, returns immediately)
+node.tick({
+  to: string,
+  event: string,
+  data: object
+}): void
+
+// Request to ANY matching node
+await node.requestAny({
+  event: string,
+  data: object,
+  timeout?: number,
+  filter?: object,     // Options filter
+  down?: boolean,      // Include downstream nodes (default: true)
+  up?: boolean         // Include upstream nodes (default: true)
+}): Promise<any>
+
+// Tick to ANY matching node
+await node.tickAny({
+  event: string,
+  data: object,
+  filter?: object,
+  down?: boolean,
+  up?: boolean
+}): Promise<void>
+
+// Tick to ALL matching nodes
+await node.tickAll({
+  event: string,
+  data: object,
+  filter?: object,
+  down?: boolean,
+  up?: boolean
+}): Promise<void>
+```
+
+#### Handler Registration
+
+```javascript
+// Register request handler
+node.onRequest(
+  pattern: string | RegExp,
+  handler: (envelope, reply) => any
+)
+
+// Register tick handler
+node.onTick(
+  pattern: string | RegExp,
+  handler: (envelope) => void
+)
+
+// Unregister handlers
+node.offRequest(pattern, handler?)
+node.offTick(pattern, handler?)
+```
+
+#### Utility Methods
+
+```javascript
+// Get node info
+node.getId(): string
+node.getAddress(): string
+node.getOptions(): object
+
+// Update options (for routing/discovery)
+await node.setOptions(options: object): Promise<void>
+
+// Get filtered nodes
+node.getFilteredNodes({
+  options?: object,
+  predicate?: function,
+  up?: boolean,
+  down?: boolean
+}): string[]
+
+// Get peer info
+node.getServerInfo({ id?, address? }): object | null
+node.getClientInfo({ id }): object | null
+```
+
+---
+
+## Examples
+
+### Example 1: API Gateway + Workers
+
+```javascript
+// api-gateway.js
+import Node from 'zeronode'
+
+const gateway = new Node({ id: 'gateway' })
+await gateway.bind('tcp://0.0.0.0:8000')
+
+gateway.onRequest('api:*', async (envelope) => {
+  // Forward to any available worker
+  return await gateway.requestAny({
+    event: 'worker:process',
+    data: envelope.data,
+    filter: { role: 'worker', status: 'ready' }
+  })
+})
+```
+
+```javascript
+// worker.js
+import Node from 'zeronode'
+
+const worker = new Node({
+  id: `worker-${process.pid}`,
+  options: { role: 'worker', status: 'ready' }
+})
+
+await worker.connect({ address: 'tcp://gateway:8000' })
+
+worker.onRequest('worker:process', (envelope) => {
+  // Process the request
+  return { result: 'processed', data: envelope.data }
+})
+```
+
+### Example 2: Distributed Logging
+
+```javascript
+// log-aggregator.js
+const aggregator = new Node({ id: 'log-aggregator' })
+await aggregator.bind('tcp://0.0.0.0:9000')
+
+aggregator.onTick(/^log:/, (envelope) => {
+  const level = envelope.tag.split(':')[1] // 'info', 'warn', 'error'
+  const message = envelope.data.message
+  
+  console.log(`[${level.toUpperCase()}] ${message}`)
+  // Write to database, send to monitoring, etc.
+})
+```
+
+```javascript
+// app-server.js
+const app = new Node({ id: 'app-1' })
+await app.connect({ address: 'tcp://log-aggregator:9000' })
+
+// Log anywhere in your app
+app.tick({
+  to: 'log-aggregator',
+  event: 'log:info',
+  data: { message: 'User logged in', userId: 123 }
+})
+```
+
+### Example 3: Health Check System
+
+```javascript
+// monitor.js
+const monitor = new Node({ id: 'monitor' })
+await monitor.bind('tcp://0.0.0.0:7000')
+
+// Ping all services every 30 seconds
+setInterval(async () => {
+  const services = monitor.getFilteredNodes({ up: true, down: true })
+  
+  for (const serviceId of services) {
+    try {
+      const response = await monitor.request({
+        to: serviceId,
+        event: 'health:check',
+        timeout: 5000
+      })
+      console.log(`✓ ${serviceId}: ${response.status}`)
+    } catch (err) {
+      console.error(`✗ ${serviceId}: ${err.message}`)
+    }
+  }
+}, 30000)
+```
+
+```javascript
+// service.js
+const service = new Node({ id: 'service-1' })
+await service.connect({ address: 'tcp://monitor:7000' })
+
+service.onRequest('health:check', () => {
+  return {
+    status: 'healthy',
+    uptime: process.uptime(),
+    memory: process.memoryUsage()
+  }
+})
+```
+
+### Example 4: Load-Balanced Task Queue
+
+```javascript
+// task-dispatcher.js
+const dispatcher = new Node({ id: 'dispatcher' })
+await dispatcher.bind('tcp://0.0.0.0:6000')
+
+dispatcher.onRequest('task:submit', async (envelope) => {
+  const { taskId, data } = envelope.data
+  
+  // Send to any idle worker (load balancing!)
+  try {
+    const result = await dispatcher.requestAny({
+      event: 'task:execute',
+      data: { taskId, data },
+      filter: { role: 'worker', status: 'idle' },
+      timeout: 30000
     })
     
-    // ** send request to one of znodes whose version is greater than 1.0.0
-    znode.requestAny({
-        event: 'foo',
-        data: { foo: 'bar' },
-        filter: { version: { $gt: '1.0.0' } }
+    return { success: true, result }
+  } catch (err) {
+    return { success: false, error: err.message }
+  }
+})
+```
+
+```javascript
+// worker.js (run multiple instances!)
+const worker = new Node({
+  id: `worker-${process.pid}`,
+  options: { role: 'worker', status: 'idle' }
+})
+
+await worker.connect({ address: 'tcp://dispatcher:6000' })
+
+worker.onRequest('task:execute', async (envelope) => {
+  // Mark as busy
+  await worker.setOptions({ role: 'worker', status: 'busy' })
+  
+  // Process task
+  const result = await processTask(envelope.data)
+  
+  // Mark as idle again
+  await worker.setOptions({ role: 'worker', status: 'idle' })
+  
+  return result
+})
+```
+
+---
+
+## Events & Error Handling
+
+### Node Events
+
+```javascript
+import { NodeEvent } from 'zeronode'
+
+node.on(NodeEvent.READY, ({ nodeId, hasServer }) => {
+  console.log('Node ready:', nodeId)
+})
+
+node.on(NodeEvent.PEER_JOINED, ({ peerId, direction, peerOptions }) => {
+  console.log('Peer joined:', peerId, direction)
+  // direction: 'upstream' (we connected TO them) | 'downstream' (they connected TO us)
+})
+
+node.on(NodeEvent.PEER_LEFT, ({ peerId, direction, reason }) => {
+  console.log('Peer left:', peerId, reason)
+  // reason: 'disconnected' | 'timeout' | 'stopped' | 'failed'
+})
+
+node.on(NodeEvent.STOPPED, () => {
+  console.log('Node stopped')
+})
+
+node.on('error', (err) => {
+  console.error('Node error:', err)
+})
+```
+
+### Error Types
+
+```javascript
+import { NodeError, NodeErrorCode } from 'zeronode'
+
+try {
+  await node.request({ to: 'unknown-node', event: 'ping', data: {} })
+} catch (err) {
+  if (err instanceof NodeError) {
+    switch (err.code) {
+      case NodeErrorCode.NODE_NOT_FOUND:
+        console.error('No route to node')
+        break
+      case NodeErrorCode.NO_NODES_MATCH_FILTER:
+        console.error('No nodes match the filter')
+        break
+      case NodeErrorCode.ROUTING_FAILED:
+        console.error('Routing failed:', err.message)
+        break
+      default:
+        console.error('Node error:', err)
+    }
+  }
+}
+```
+
+### Protocol Errors
+
+```javascript
+import { ProtocolError, ProtocolErrorCode } from 'zeronode'
+
+node.onRequest('api:*', async (envelope) => {
+  try {
+    // Your logic
+  } catch (err) {
+    // Return structured error
+    throw new ProtocolError({
+      code: ProtocolErrorCode.HANDLER_ERROR,
+      message: 'Failed to process request',
+      cause: err
     })
-    
-    // ** send request to one of znodes whose version is between 1.0.0 and 2.0.0
-    znode.requestAny({
-        event: 'foo',
-        data: { foo: 'bar' },
-        filter: { version: { $between: ['1.0.0', '2.0.0.'] } }
-    })
-
-    // ** send request to one of znodes that have even length of name.
-    znode.requestAny({
-        event: 'foo',
-        data: { foo: 'bar' },
-        filter: (options) => !(options.name.length % 2)
-    })
-
-    // ** send request to one of znodes that connected to your znode (downstream client znodes)
-    znode.requestAny({
-        event: 'foo',
-        data: { foo: 'bar' },
-        up: false
-    })
-
-    // ** send request to one of znodes that your znode is connected to (upstream znodes).
-    znode.requestAny({
-        event: 'foo',
-        data: { foo: 'bar' },
-        down: false
-    })
+  }
+})
 ```
 
-<a name="requestDownAny"></a>
-#### znode.requestDownAny({ event: String, data: Object, timeout: Number, filter: Object/Function })
-Send request to one of downstream znodes (znodes which has been connected to your znode via _connect()_ ).
+---
 
+## Connection Lifecycle
 
-<a name="requestUpAny"></a>
-#### znode.requestUpAny({ event: String, data: Object, timeout: Number, filter: Object/Function })
-Send request to one of upstream znodes (znodes to which your znode has been connected via _connect()_ ).
+### Handshake Protocol
 
-<a name="tickAny"></a>
-#### znode.tickAny({ event: String, data: Object, filter: Object/Function, down: Bool, up: Bool })
-General method to send tick-s to __only one__ znode satisfying the filter.<br/>
-Filter can be an object or a predicate function.
-Usage is same as [`node.requestAny`](#requestAny)
+When a client connects to a server:
 
-<a name="tickDownAny"></a>
-#### znode.tickDownAny({ event: String, data: Object, filter: Object/Function })
-Send tick-s to one of downstream znodes (znodes which has been connected to your znode via _connect()_ ).
+```
+Client                          Server
+  │                              │
+  ├──── CONNECT (options) ───────>│
+  │                              │ (validates client)
+  │<───── CONNECTED (options) ───┤
+  │                              │
+  │ ✓ Connection established     │
+```
 
-<a name="tickUpAny"></a>
-#### znode.tickUpAny({ event: String, data: Object, filter: Object/Function })
-Send tick-s to one of upstream znodes (znodes to which your znode has been connected via _connect()_ ).
+### Heartbeat/Ping
 
-<a name="tickAll"></a>
-#### znode.tickAll({ event: String, data: Object, filter: Object/Function, down: Bool, up: Bool })
-Tick to **ALL** znodes satisfying the filter (object or predicate function), up ( _upstream_ ) and down ( _downstream_ ).
+To detect disconnections:
 
-<a name="tickDownAll"></a>
-#### znode.tickDownAll({ event: String, data: Object, filter: Object/Function })
-Tick to **ALL** downstream znodes.
+```
+Client                          Server
+  │                              │
+  ├──── PING ────────────────────>│
+  │<───── PONG ────────────────── │
+  │                              │
+  │ (every 2.5 seconds)          │ (expects ping within 10s)
+```
 
-<a name="tickUpAll"></a>
-#### znode.tickUpAll({ event: String, data: Object, filter: Object/Function })
-Tick to **ALL** upstream znodes.
+**Configuration:**
 
-<a name="enableMetrics"></a>
-#### znode.enableMetrics(interval)
-Enables metrics, events will be triggered by the given interval. Default interval is 1000 ms. <br/>
-
-<a name="disableMetrics"></a>
-#### znode.disableMetrics()
-Stops triggering events, and removes all collected data.
-
-<a name="examples"></a>
-### Examples
-<a name="basicExamples"></a>
-#### Simple client server example
-NodeServer is listening for events, NodeClient connects to NodeServer and sends events: <br/>
-(myServiceClient) ----> (myServiceServer)
-
-Lets create server first
-
-myServiceServer.js
 ```javascript
-import Node from 'zeronode';
-
-(async function() {
-    let myServiceServer = new Node({ id: 'myServiceServer',  bind: 'tcp://127.0.0.1:6000', options: { layer: 'LayerA' } });
-
-    // ** attach event listener to myServiceServer
-    myServiceServer.onTick('welcome', (data) => {
-        console.log('onTick - welcome', data);
-    });
-
-    // ** attach request listener to myServiceServer
-    myServiceServer.onRequest('welcome', ({ head, body, reply, next }) => {
-        console.log('onRequest - welcome', body);
-        reply("Hello client");
-        next();
-    });
-
-    // second handler for same channel
-    myServiceServer.onRequest('welcome', ({ head, body, reply, next }) => {
-        console.log('onRequest second - welcome', body);
-    });
-
-    // ** bind znode to given address provided during construction
-    await myServiceServer.bind();
-}());
-
+const node = new Node({
+  config: {
+    PING_INTERVAL: 2500,      // Client ping frequency (ms)
+    CLIENT_TIMEOUT: 10000,    // Server timeout for missing pings (ms)
+    HANDSHAKE_TIMEOUT: 5000   // Handshake timeout (ms)
+  }
+})
 ```
-Now lets create a client
 
-myServiceClient.js
+### Reconnection
+
+**Automatic reconnection** is built-in:
+
 ```javascript
-import Node from 'zeronode'
+await node.connect({
+  address: 'tcp://server:8000',
+  reconnectionTimeout: -1  // -1 = infinite reconnection attempts (default)
+  // reconnectionTimeout: 30000  // Give up after 30 seconds
+})
 
-(async function() {
-    let myServiceClient = new Node({ options: { layer: 'LayerA' } });
-
-    //** connect one node to another node with address
-    await myServiceClient.connect({ address: 'tcp://127.0.0.1:6000' });
-
-    let serverNodeId = 'myServiceServer';
-
-    // ** tick() is like firing an event to another node
-    myServiceClient.tick({ to: serverNodeId, event: 'welcome', data:'Hi server!!!' });
-
-    // ** you request to another node and getting a promise
-    // ** which will be resolve after reply.
-    let responseFromServer = await myServiceClient.request({ to: serverNodeId, event: 'welcome', data: 'Hi server, I am client !!!' });
-
-    console.log(`response from server is "${responseFromServer}"`);
-    // ** response from server is "Hello client."
-}());
-
+// Client will automatically reconnect if connection is lost!
 ```
 
-<a name="advancedExamples"></a>
-#### Example of filtering the znodes via options.
+**Reconnection behavior:**
 
-Let's say we want to group our znodes logicaly in some layers and send messages considering that layering.
-- __znode__-s can be grouped in layers (and other options) and then send messages to only filtered nodes by layers or other options.
-- the filtering is done on senders side which keeps all the information about the nodes (both connected to sender node and the ones that
-sender node is connected to)
+1. Connection lost → Client enters RECONNECTING state
+2. Attempts to reconnect using exponential backoff
+3. On success → Re-handshake and restore handlers
+4. On timeout → Emits FAILED/CLOSED events
 
-In this example, we will create one server znode that will bind in some address, and three client znodes will connect to our server znode.
-2 of client znodes will be in layer `A`, 1 in `B`.
+**Listen for reconnection events:**
 
-serverNode.js
 ```javascript
-import Node from 'zeronode'
+import { ClientEvent } from 'zeronode'
 
-(async function() {
-    let server = new Node({ bind: 'tcp://127.0.0.1:6000' });
-    await server.bind();
-}());
+node.on(ClientEvent.DISCONNECTED, ({ serverId }) => {
+  console.log('Disconnected from server, will attempt reconnection...')
+})
+
+node.on(ClientEvent.READY, ({ serverId }) => {
+  console.log('Reconnected successfully!')
+})
+
+node.on(ClientEvent.FAILED, ({ serverId }) => {
+  console.error('Reconnection failed - giving up')
+})
 ```
 
-clientA1.js
+### Graceful Shutdown
+
 ```javascript
-import Node from 'zeronode'
+// Server sends STOP to all clients
+await server.stop()
 
-(async function() {
-    let clientA1 = new Node({ options: { layer: 'A' } });
-   
-    clientA1.onTick('foobar', (msg) => {
-        console.log(`go message in clientA1 ${msg}`);
-    });
-    
-    // ** connect to server address and set connection timeout to 20 seconds
-    await clientA1.connect({ address: 'tcp:://127.0.0.1:6000', 20000 });
-}());
+// Clients receive STOP and gracefully disconnect
+// No need for manual cleanup!
 ```
 
-clientA2.js
+---
+
+## Production Best Practices
+
+### 1. **Use Unique Node IDs**
+
 ```javascript
-import Node from 'zeronode'
+// ✅ Good: Unique per instance
+const node = new Node({
+  id: `${process.env.SERVICE_NAME}-${process.env.HOSTNAME}-${process.pid}`
+})
 
-(async function() {
-    let clientA2 = new Node({ options: { layer: 'A' } });
-   
-    clientA2.onTick('foobar', (msg) => {
-        console.log(`go message in clientA2 ${msg}`);
-    });
-    // ** connect to server address and set connection timeout infinite
-    await clientA2.connect({ address: 'tcp:://127.0.0.1:6000') };
-}());
+// ❌ Bad: Same ID for all instances
+const node = new Node({ id: 'worker' })
 ```
 
-clientB1.js
+### 2. **Set Meaningful Options**
+
 ```javascript
-import Node from 'zeronode'
-
-(async function() {
-    let clientB1 = new Node({ options: { layer: 'B' } });
-   
-    clientB1.onTick('foobar', (msg) => {
-        console.log(`go message in clientB1 ${msg}`);
-    });
-    
-    // ** connect to server address and set connection timeout infinite
-    await clientB1.connect({ address: 'tcp:://127.0.0.1:6000' });
-}());
+const node = new Node({
+  options: {
+    role: 'api-worker',
+    region: process.env.AWS_REGION,
+    version: process.env.APP_VERSION,
+    capacity: 100
+  }
+})
 ```
 
-Now that all connections are set, we can send events.
+### 3. **Handle Errors Properly**
+
 ```javascript
-// ** this will tick only one node of the layer A nodes;
-server.tickAny({ event: 'foobar', data: { foo: 'bar' }, filter: { layer: 'A' } });
+// ✅ Good: Handle all error scenarios
+try {
+  const response = await node.request({
+    to: 'service',
+    event: 'process',
+    data: payload,
+    timeout: 5000
+  })
+  return response
+} catch (err) {
+  if (err.code === 'REQUEST_TIMEOUT') {
+    // Retry or return cached response
+  } else if (err.code === 'NODE_NOT_FOUND') {
+    // Route to backup service
+  } else {
+    // Log and handle
+  }
+}
 
-// ** this will tick to all layer A nodes;
-server.tickAll({ event: 'foobar', data: { foo: 'bar' }, filter: { layer: 'A' } });
-
-// ** this will tick to all nodes that server connected to, or connected to server.
-server.tickAll({ event: 'foobar', data: { foo: 'bar' } });
-
-
-// ** you even can use regexp to filer znodes to which the tick will be sent
-// ** also you can pass a predicate function as a filter which will get znode-s options as an argument
-server.tickAll({ event: 'foobar', data: { foo: 'bar' }, filter: {layer: /[A-Z]/} })
+// ❌ Bad: No error handling
+const response = await node.request({ to: 'service', event: 'process', data: payload })
 ```
 
-<a name="askzeronode"></a>
-### Still have a question ?
-We'll be happy to answer your questions. Try to reach out us on zeronode gitter chat [<img src="https://img.shields.io/gitter/room/nwjs/nw.js.svg">](https://gitter.im/npm-zeronode/Lobby) <br/>
+### 4. **Use Timeouts**
 
-<a name="contributing"></a>
-### Contributing
-Contributions are always welcome! <br/>
-Please read the [contribution guidelines](https://github.com/sfast/zeronode/blob/master/docs/CONTRIBUTING.md) first.
+```javascript
+// ✅ Good: Always set timeouts
+await node.request({
+  to: 'external-api',
+  event: 'fetch',
+  data: {},
+  timeout: 30000  // 30 seconds max
+})
 
-### Contributors
-* [Artak Vardanyan](https://github.com/artakvg)
-* [David Harutyunyan](https://github.com/davidharutyunyan)
+// ❌ Bad: No timeout (default is 10s, but be explicit!)
+await node.request({ to: 'external-api', event: 'fetch', data: {} })
+```
 
-### More about zeronode internals
-Under the hood we are using <a href="http://zeromq.org" target="_blank">zeromq</a>-s Dealer and Router sockets.
+### 5. **Monitor Node Health**
 
-<a name="license"></a>
-### License
-[MIT](https://github.com/sfast/zeronode/blob/master/LICENSE)
+```javascript
+// Expose health endpoint
+node.onRequest('health:check', () => ({
+  status: 'healthy',
+  uptime: process.uptime(),
+  memory: process.memoryUsage(),
+  peers: node.getFilteredNodes({ up: true, down: true }).length
+}))
+
+// Listen for connection issues
+node.on('error', (err) => {
+  metrics.increment('node.errors', { code: err.code })
+})
+
+node.on(NodeEvent.PEER_LEFT, ({ peerId, reason }) => {
+  metrics.increment('node.peer_left', { reason })
+})
+```
+
+### 6. **Graceful Shutdown**
+
+```javascript
+process.on('SIGTERM', async () => {
+  console.log('Received SIGTERM, shutting down gracefully...')
+  
+  // Stop accepting new requests
+  await node.unbind()
+  
+  // Wait for in-flight requests to complete
+  await new Promise(resolve => setTimeout(resolve, 5000))
+  
+  // Close all connections
+  await node.stop()
+  
+  process.exit(0)
+})
+```
+
+### 7. **Use Load Balancing**
+
+```javascript
+// Distribute load across multiple workers
+const response = await dispatcher.requestAny({
+  event: 'task:process',
+  data: payload,
+  filter: {
+    role: 'worker',
+    status: 'idle'
+  }
+})
+```
+
+### 8. **Implement Circuit Breaker**
+
+```javascript
+const circuitBreaker = {
+  failures: 0,
+  threshold: 5,
+  resetTime: 60000,
+  isOpen: false
+}
+
+async function callService(event, data) {
+  if (circuitBreaker.isOpen) {
+    throw new Error('Circuit breaker open')
+  }
+  
+  try {
+    const response = await node.request({ to: 'service', event, data })
+    circuitBreaker.failures = 0
+    return response
+  } catch (err) {
+    circuitBreaker.failures++
+    if (circuitBreaker.failures >= circuitBreaker.threshold) {
+      circuitBreaker.isOpen = true
+      setTimeout(() => {
+        circuitBreaker.isOpen = false
+        circuitBreaker.failures = 0
+      }, circuitBreaker.resetTime)
+    }
+    throw err
+  }
+}
+```
+
+---
+
+## Testing
+
+ZeroNode is thoroughly tested with **95%+ code coverage**.
+
+```bash
+# Run all tests
+npm test
+
+# Run specific test file
+npm test test/node.test.js
+
+# Run with coverage
+npm run coverage
+
+# Run benchmarks
+npm run benchmark
+```
+
+---
+
+## Contributing
+
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+### Development Setup
+
+```bash
+git clone https://github.com/sfast/zeronode.git
+cd zeronode
+npm install
+npm test
+```
+
+---
+
+## Documentation
+
+- [Architecture Guide](docs/ARCHITECTURE.md) - In-depth architecture documentation
+- [Performance Guide](docs/PERFORMANCE.md) - Performance tuning and benchmarks
+- [Testing Guide](docs/TESTING.md) - Testing best practices
+- [API Reference](docs/API.md) - Complete API documentation
+- [Migration Guide](docs/MIGRATION.md) - Upgrading from older versions
+
+---
+
+## Community
+
+- 💬 [Gitter Chat](https://gitter.im/npm-zeronode/Lobby)
+- 🐛 [Issue Tracker](https://github.com/sfast/zeronode/issues)
+- 📖 [Wiki](https://github.com/sfast/zeronode/wiki)
+- 🐦 [Twitter](https://twitter.com/intent/tweet?text=Zeronode%20-%20rock%20solid%20transport%20and%20smarts%20for%20building%20NodeJS%20microservices.%E2%9C%8C%E2%9C%8C%E2%9C%8C&url=https://github.com/sfast/zeronode&hashtags=microservices,scaling,loadbalancing,zeromq,awsomenodejs,nodejs)
+
+---
+
+## License
+
+[MIT](LICENSE) © [SFast](https://github.com/sfast)
+
+---
+
+<p align="center">
+  <strong>Built with ❤️ by the ZeroNode team</strong>
+  <br/>
+  <em>Star ⭐ this repo if you find it useful!</em>
+</p>

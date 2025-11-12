@@ -78,10 +78,9 @@ async function benchmarkMessageSize(messageSize) {
   })
   
   // Handle server requests
-  serverNode.onRequest('echo', (request) => {
-    const { body, reply } = request
+  serverNode.onRequest('echo', (envelope, reply) => {
     metrics.received++
-    reply({ success: true, data: body.data, timestamp: Date.now() })
+    reply({ success: true, data: envelope.data, timestamp: Date.now() })
   })
   
   await serverNode.bind()
@@ -127,39 +126,22 @@ async function benchmarkMessageSize(messageSize) {
   
   metrics.startTime = performance.now()
   
-  // Send messages with latency tracking
-  const BATCH_SIZE = 50
-  const numBatches = Math.ceil(CONFIG.NUM_MESSAGES / BATCH_SIZE)
-  
-  for (let batch = 0; batch < numBatches; batch++) {
-    const promises = []
-    const batchSize = Math.min(BATCH_SIZE, CONFIG.NUM_MESSAGES - batch * BATCH_SIZE)
+  // Send messages sequentially with latency tracking (same as client-server benchmark)
+  for (let i = 0; i < CONFIG.NUM_MESSAGES; i++) {
+    const sendTime = performance.now()
     
-    for (let i = 0; i < batchSize; i++) {
-      const sendTime = performance.now()
-      
-      const promise = clientNode.request({
+    try {
+      await clientNode.request({
         to: 'benchmark-server',
         event: 'echo',
-        data: { ...testMsg, index: batch * BATCH_SIZE + i }
+        data: testMsg
       })
-        .then(() => {
-          const latency = performance.now() - sendTime
-          metrics.latencies.push(latency)
-          metrics.sent++
-        })
-        .catch((err) => {
-          console.error('Request failed:', err.message)
-        })
       
-      promises.push(promise)
-    }
-    
-    await Promise.all(promises)
-    
-    // Small delay between batches
-    if (batch % 10 === 0 && batch > 0) {
-      await sleep(10)
+      const latency = performance.now() - sendTime
+      metrics.latencies.push(latency)
+      metrics.sent++
+    } catch (err) {
+      console.error(`Request ${i} failed:`, err.message)
     }
   }
   
@@ -186,10 +168,10 @@ async function benchmarkMessageSize(messageSize) {
   if (latencyStats) {
     console.log(`\n   📈 Latency Statistics (ms):`)
     console.log(`      Min:              ${formatNumber(latencyStats.min)}`)
-    console.log(`      Mean:             ${formatNumber(latencyStats.mean)}`)
+    console.log(`      Mean:             ${formatNumber(latencyStats.mean)}  ← Throughput based on this (sequential)`)
     console.log(`      Median:           ${formatNumber(latencyStats.median)}`)
-    console.log(`      95th percentile:  ${formatNumber(latencyStats.p95)}`)
-    console.log(`      99th percentile:  ${formatNumber(latencyStats.p99)}`)
+    console.log(`      95th percentile:  ${formatNumber(latencyStats.p95)}  ← For SLA validation`)
+    console.log(`      99th percentile:  ${formatNumber(latencyStats.p99)}  ← For capacity planning`)
     console.log(`      Max:              ${formatNumber(latencyStats.max)}`)
   }
   
@@ -212,6 +194,7 @@ async function benchmarkMessageSize(messageSize) {
 
 async function runBenchmarks() {
   console.log('🚀 Zeronode Node Throughput Benchmark')
+  console.log('   (Sequential requests - apples-to-apples with Client-Server)')
   console.log('═'.repeat(80))
   console.log(`Server Address:          ${CONFIG.SERVER_ADDRESS}`)
   console.log(`Messages per test:       ${formatNumber(CONFIG.NUM_MESSAGES)}`)
@@ -252,6 +235,12 @@ async function runBenchmarks() {
   }
   
   console.log('└──────────────┴───────────────┴──────────────┴─────────────┘')
+  console.log('\n📝 Notes:')
+  console.log('   • This tests Node orchestration layer (Node + Client + Server + Protocol)')
+  console.log('   • Sequential requests (same methodology as client-server benchmark)')
+  console.log('   • Node adds only O(1) routing lookup overhead (~0.01ms)')
+  console.log('   • Compare with benchmark/client-server-baseline.js for direct comparison')
+  console.log('   • For high-throughput scenarios, use concurrent requests (pipelining)')
   console.log('\n' + '═'.repeat(80) + '\n')
   
   process.exit(0)

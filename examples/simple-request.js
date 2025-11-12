@@ -12,8 +12,8 @@ import { Node } from '../src'
   await znode1.bind()
   await znode2.connect({ address: znode1.getAddress() })
 
-  znode1.onRequest('foo', ({ body, reply }) => {
-    console.log(body)
+  znode1.onRequest('foo', (envelope, reply) => {
+    console.log(envelope.data)
     reply('reply from znode1.')
   })
 

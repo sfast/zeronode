@@ -1,235 +1,422 @@
-# Test Coverage Analysis & Recommendations
+# Test Coverage Analysis & Improvement Plan
 
-## Current Coverage Status
-- **Overall**: 72.86% statements | 50.74% branches | 70.03% functions | 72.9% lines
-- **Thresholds**: 88% statements | 72% branches | 91% functions | 89% lines
+## Current Coverage Summary
+
+```
+Overall: 93.45%
+├─ Statements:   93.45% (4541/4859)
+├─ Branches:     87.29% (529/606)
+├─ Functions:    96.37% (186/193)
+└─ Lines:        93.45% (4541/4859)
+```
 
 ---
 
-## 📊 Highest-Impact Testing Opportunities
+## 🎯 Priority Areas for Coverage Improvement
 
-### 🥇 **1. Config Validation (`src/transport/zeromq/config.js`)**
-**Coverage**: 15.62% | **Uncovered Lines**: 185, 199-274 (90 lines)
-**Impact**: ⭐⭐⭐⭐⭐ (Highest)
+### 1. **client.js** - 84.59% Coverage (HIGHEST PRIORITY)
+**Target: 95%+ | Gain: ~40 statements**
 
-**Uncovered Code**:
-- `validateConfig()` function (lines 220-274) - **54 lines**
-- `createDealerConfig()` (lines 198-200)
-- `createRouterConfig()` (lines 209-211)
-- `mergeConfig()` validation call (line 185)
+#### Uncovered Scenarios:
 
-**Test Recommendations**:
+**A. Error Handling During Disconnect (Lines 221-222)**
 ```javascript
-describe('ZMQ Configuration', () => {
-  describe('validateConfig()', () => {
-    it('should validate DEALER_IO_THREADS range (1-16)')
-    it('should throw on invalid DEALER_IO_THREADS')
-    it('should validate ROUTER_IO_THREADS range (1-16)')
-    it('should throw on invalid ROUTER_IO_THREADS')
-    it('should validate DEBUG as boolean')
-    it('should validate ZMQ_LINGER (-1 or >= 0)')
-    it('should validate HWM values (> 0)')
-    it('should validate reconnection intervals (> 0)')
-    it('should validate timeouts (-1 or >= 0)')
-  })
+} catch (err) {
+  // Ignore if offline
+}
+```
+**Test Needed:** Client disconnect while already offline/errored
+
+**B. Ping Interval Guard (Lines 256-257)**
+```javascript
+if (_scope.pingInterval) {
+  return
+}
+```
+**Test Needed:** Call `_startPing()` multiple times (idempotency test)
+
+**C. Ping Logic Edge Cases (Lines 263-281)**
+```javascript
+if (this.isReady()) {
+  const { serverPeerInfo } = _private.get(this)
+  const serverId = serverPeerInfo?.getId()
   
-  describe('createDealerConfig()', () => {
-    it('should create dealer config with defaults')
-    it('should merge user config with defaults')
+  if (!serverId) {
+    this.logger?.warn('Cannot send ping: server ID unknown')
+    return
+  }
+  // ... send ping
+}
+```
+**Tests Needed:**
+- Ping when client not ready (should skip)
+- Ping when server ID not yet known (edge case during handshake)
+- Ping with logger set (verify warning logged)
+
+**D. Send Guard (Lines 298-299)**
+```javascript
+if (!socket.isOnline()) {
+  return
+}
+```
+**Test Needed:** Call `_sendClientConnected()` when socket offline
+
+---
+
+### 2. **socket.js** - 83.74% Coverage (SECOND PRIORITY)
+**Target: 95%+ | Gain: ~40 statements**
+
+#### Uncovered Scenarios:
+
+**A. Malformed Message Handling (Lines 149-161)**
+```javascript
+// Unexpected message format - emit error but continue processing
+const transportError = new TransportError({
+  code: TransportErrorCode.RECEIVE_FAILED,
+  message: `Unexpected message format: received ${frames.length} frames...`,
+  ...
+})
+this.emit('error', transportError)
+continue
+```
+**Test Needed:** Send message with unexpected frame count (1 frame, 4+ frames)
+
+**B. EAGAIN Error Handling (Lines 170-171)**
+```javascript
+if (err.code === 'EAGAIN') {
+  return  // Normal closure, nothing to report
+}
+```
+**Test Needed:** Close socket during receive (should handle EAGAIN gracefully)
+
+**C. Send Error Handling (Lines 203-210)**
+```javascript
+} catch (err) {
+  throw new TransportError({
+    code: TransportErrorCode.SEND_FAILED,
+    message: `Failed to send on transport...`,
+    ...
   })
-  
-  describe('createRouterConfig()', () => {
-    it('should create router config with defaults')
-    it('should merge user config with defaults')
-  })
-  
-  describe('mergeConfig() with validation', () => {
-    it('should validate merged config when validate=true')
+}
+```
+**Test Needed:** Send when HWM reached, or socket in error state
+
+**D. Socket Error Event (Lines 226-239)**
+```javascript
+socket.events.on('error', (err) => {
+  const transportError = new TransportError({ ... })
+  this.emit('error', transportError)
+})
+```
+**Test Needed:** Trigger ZeroMQ socket error event
+
+---
+
+### 3. **envelope.js** - 88.35% Coverage
+**Target: 95%+ | Gain: ~30 statements**
+
+#### Uncovered Scenarios:
+
+**A. getBuffer() Method (Lines 726-727)**
+```javascript
+getBuffer () {
+  return this._buffer
+}
+```
+**Test Needed:** Call `getBuffer()` on parsed envelope
+
+**B. toObject() Method (Lines 733-742)**
+```javascript
+toObject () {
+  return {
+    type: this.type,
+    timestamp: this.timestamp,
+    ...
+  }
+}
+```
+**Test Needed:** Call `toObject()` and verify all fields
+
+**C. validate() Invalid Type (Lines 762-766)**
+```javascript
+if (type < 1 || type > 4) {
+  return { valid: false, error: `Invalid envelope type: ${type}...` }
+}
+```
+**Test Needed:** Create envelope with invalid type (0, 5, etc.)
+
+**D. validate() Error Catch (Lines 770-771)**
+```javascript
+} catch (err) {
+  return { valid: false, error: err.message }
+}
+```
+**Test Needed:** Create envelope with malformed buffer (truncated, corrupted)
+
+---
+
+### 4. **node.js** - 93.27% Coverage
+**Target: 97%+ | Gain: ~20 statements**
+
+#### Uncovered Scenarios:
+
+**A. offTick() - Remove All Listeners (Line 511)**
+```javascript
+handlerRegistry.tick.removeAllListeners(pattern)
+```
+**Test Needed:** Call `node.offTick(pattern)` without handler (removes all)
+
+**B. offTick() - Client Cleanup (Line 520)**
+```javascript
+nodeClients.forEach(client => {
+  client.offTick(pattern, handler)
+})
+```
+**Test Needed:** offTick when multiple clients are connected
+
+**C. Empty NodeIds Handling (Lines 566-570, 667-668)**
+```javascript
+if (!nodeIds || nodeIds.length === 0) {
+  return null
+}
+```
+**Tests Needed:**
+- `requestAny()` with filter that matches no nodes
+- `tickAny()` with filter that matches no nodes  
+- `_selectNode()` with empty array
+
+**D. tickUpAll() Method (Lines 824-825)**
+```javascript
+tickUpAll ({ event, data, filter } = {}) {
+  return this.tickAll({ event, data, filter, down: false, up: true })
+}
+```
+**Test Needed:** Call `tickUpAll()` with upstream nodes
+
+---
+
+### 5. **server.js** - 95.84% Coverage
+**Target: 98%+ | Gain: ~10 statements**
+
+#### Uncovered Scenarios:
+
+**A. Transport Not Ready Event (Lines 78-79)**
+```javascript
+this.on(ProtocolEvent.TRANSPORT_NOT_READY, () => {
+  this._stopHealthChecks()
+  this.emit(ServerEvent.NOT_READY)
+})
+```
+**Test Needed:** Simulate transport disconnect/failure
+
+**B. Ping for Unknown Client (Lines 143-146)**
+```javascript
+if (peerInfo) {
+  peerInfo.updateLastSeen()
+  peerInfo.setState('HEALTHY')
+}
+```
+**Test Needed:** Receive ping from unregistered client (shouldn't crash)
+
+**C. Client Timeout Check (Line 254)**
+```javascript
+if (now - lastSeen > timeout) {
+  // ... emit timeout
+}
+```
+**Test Needed:** Mock time to trigger client timeout
+
+---
+
+### 6. **router.js** - 93.79% Coverage
+**Target: 98%+ | Gain: ~10 statements**
+
+#### Uncovered Scenarios:
+
+**A. Unbind Error Handling (Lines 198-210)**
+```javascript
+} catch (err) {
+  if (err.code !== 'ENOENT') {
+    const transportError = new TransportError({
+      code: TransportErrorCode.UNBIND_FAILED,
+      ...
+    })
+    this.emit('error', transportError)
+    return
+  }
+}
+```
+**Test Needed:** Unbind with ZeroMQ error (non-ENOENT)
+
+**B. Socket Events Guard (Lines 246-248)**
+```javascript
+if (socket.events) {
+  socket.events.on('listening', ...)
+}
+```
+**Test Needed:** Router with socket that has no `events` property (edge case)
+
+---
+
+### 7. **protocol.js** - 92.81% Coverage
+**Target: 97%+ | Gain: ~20 statements**
+
+#### Uncovered Scenarios:
+
+**A. Message Envelope Parsing Errors (Lines 409-415)**
+```javascript
+} catch (err) {
+  // Invalid envelope - ignore but log
+  this.logger?.warn(...)
+  return
+}
+```
+**Test Needed:** Send malformed/corrupted message to protocol layer
+
+**B. setTickTimeout() Edge Cases (Lines 454-455, 505-512)**
+**Tests Needed:**
+- Set tick timeout to non-integer
+- Set very large/small timeout values
+
+**C. Error Event Handler (Lines 555-556)**
+**Test Needed:** Trigger transport error event propagation
+
+---
+
+## 📊 Projected Impact
+
+| File | Current | Target | Gain | Effort |
+|------|---------|--------|------|--------|
+| **client.js** | 84.59% | 95%+ | +10% | Medium |
+| **socket.js** | 83.74% | 95%+ | +11% | High |
+| **envelope.js** | 88.35% | 95%+ | +7% | Low |
+| **node.js** | 93.27% | 97%+ | +4% | Low |
+| **server.js** | 95.84% | 98%+ | +2% | Low |
+| **router.js** | 93.79% | 98%+ | +4% | Medium |
+| **protocol.js** | 92.81% | 97%+ | +4% | Medium |
+
+**Overall Projected Coverage: 96-97%** (from current 93.45%)
+
+---
+
+## 🚀 Recommended Implementation Order
+
+### Phase 1: Quick Wins (1-2 hours)
+**Target: 94.5% → 95.5%**
+
+1. **envelope.js** - Add utility method tests
+   - `getBuffer()`, `toObject()`, `validate()` edge cases
+   - **Effort: Low | Impact: +7%**
+
+2. **node.js** - Add routing edge case tests
+   - `offTick()` variants, `tickUpAll()`, empty filter results
+   - **Effort: Low | Impact: +4%**
+
+3. **server.js** - Add transport event tests
+   - NOT_READY event, unknown client ping
+   - **Effort: Low | Impact: +2%**
+
+### Phase 2: Error Handling (2-3 hours)
+**Target: 95.5% → 96.5%**
+
+4. **client.js** - Add client lifecycle edge cases
+   - Disconnect while offline, ping edge cases, offline send
+   - **Effort: Medium | Impact: +10%**
+
+5. **router.js** - Add error scenarios
+   - Unbind failures, socket events guard
+   - **Effort: Medium | Impact: +4%**
+
+6. **protocol.js** - Add message parsing errors
+   - Malformed envelopes, timeout edge cases
+   - **Effort: Medium | Impact: +4%**
+
+### Phase 3: Advanced Scenarios (3-4 hours)
+**Target: 96.5% → 97%+**
+
+7. **socket.js** - Add transport-level error tests
+   - Malformed messages, EAGAIN, HWM errors, socket errors
+   - **Effort: High | Impact: +11%**
+   - **Note:** Requires careful ZeroMQ mock/integration setup
+
+---
+
+## 🔍 Key Testing Patterns
+
+### Pattern 1: Error Path Testing
+```javascript
+describe('Error Scenarios', () => {
+  it('should handle offline disconnect gracefully', async () => {
+    await client.disconnect()
+    await client.disconnect() // Should not throw
   })
 })
 ```
 
-**Estimated Coverage Gain**: +6-8% overall
-
----
-
-### 🥈 **2. Utils Query Operators (`src/utils.js`)**
-**Coverage**: 39.02% | **Uncovered Lines**: 5-7, 21, 34, 41-77 (40+ lines)
-**Impact**: ⭐⭐⭐⭐ (High)
-
-**Uncovered Code**:
-- `checkNodeReducer()` edge cases (lines 5-7)
-- Many query operators not tested (lines 41-77):
-  - `$gt`, `$gte`, `$lt`, `$lte` (numeric comparisons)
-  - `$between` (range checking)
-  - `$regex` (pattern matching)
-  - `$in`, `$nin` (array membership)
-  - `$contains`, `$containsAny`, `$containsNone` (substring/array operations)
-
-**Test Recommendations**:
+### Pattern 2: Edge Case Testing
 ```javascript
-describe('optionsPredicateBuilder - Advanced Operators', () => {
-  describe('Numeric Comparisons', () => {
-    it('$gt should match greater than')
-    it('$gte should match greater than or equal')
-    it('$lt should match less than')
-    it('$lte should match less than or equal')
-  })
+it('should handle empty filter results', async () => {
+  const error = await node.requestAny({
+    event: 'test',
+    filter: (node) => false // Matches nothing
+  }).catch(e => e)
   
-  describe('Range & Pattern Matching', () => {
-    it('$between should match values in range [min, max]')
-    it('$regex should match regex patterns')
-  })
+  expect(error.code).to.equal(NodeErrorCode.NO_NODES_MATCH_FILTER)
+})
+```
+
+### Pattern 3: State Transition Testing
+```javascript
+it('should not restart ping if already running', async () => {
+  client._startPing()
+  const interval1 = client._private.get(client).pingInterval
   
-  describe('Array Operations', () => {
-    it('$in should match values in array')
-    it('$nin should match values NOT in array')
-    it('$contains should match substring in string')
-    it('$containsAny should match if ANY value exists')
-    it('$containsNone should match if NO values exist')
-  })
-})
-
-describe('checkNodeReducer', () => {
-  it('should handle nodes with empty options')
-  it('should handle predicate returning false')
-  it('should work with custom predicate functions')
-})
-```
-
-**Estimated Coverage Gain**: +3-5% overall
-
----
-
-### 🥉 **3. Transport Error Helpers (`src/transport/errors.js`)**
-**Coverage**: 66.66% | **Uncovered Lines**: 88-142 (55 lines)
-**Impact**: ⭐⭐⭐⭐ (High)
-
-**Uncovered Code**:
-- `toJSON()` method (lines 87-103)
-- `isCode()` method (lines 111-113)
-- `isConnectionError()` method (lines 120-123)
-- `isBindError()` method (lines 130-134)
-- `isSendError()` method (lines 141-143)
-
-**Test Recommendations**:
-```javascript
-describe('TransportError', () => {
-  describe('toJSON()', () => {
-    it('should serialize error to JSON')
-    it('should include cause details when present')
-    it('should include context when present')
-    it('should handle errors without cause')
-  })
+  client._startPing() // Should be no-op
+  const interval2 = client._private.get(client).pingInterval
   
-  describe('Helper Methods', () => {
-    it('isCode() should check error code')
-    it('isConnectionError() should identify connection errors')
-    it('isBindError() should identify bind errors')
-    it('isSendError() should identify send errors')
-  })
+  expect(interval1).to.equal(interval2)
 })
 ```
 
-**Estimated Coverage Gain**: +2-3% overall
-
----
-
-### 4. **Peer State Transitions (`src/protocol/peer.js`)**
-**Coverage**: 54.16% | **Uncovered Lines**: 97-128, 136-142, 159-163, 175-176
-**Impact**: ⭐⭐⭐ (Medium)
-
-**Uncovered Code**:
-- Some state transition edge cases
-- `mergeOptions()` not mutating original
-
-**Test Recommendations**:
+### Pattern 4: Malformed Input Testing
 ```javascript
-describe('PeerInfo - Additional Edge Cases', () => {
-  it('should not mutate original options in mergeOptions()')
-  it('should handle state transitions from all states')
-  it('should preserve STOPPED state on setOffline()')
+it('should validate envelope with invalid type', () => {
+  const buffer = Buffer.alloc(100)
+  buffer.writeUInt8(99, 0) // Invalid type
+  
+  const envelope = Envelope.fromBuffer(buffer)
+  const result = envelope.validate()
+  
+  expect(result.valid).to.be.false
+  expect(result.error).to.include('Invalid envelope type')
 })
 ```
 
-**Estimated Coverage Gain**: +1-2% overall
+---
+
+## 💡 Notes
+
+1. **Don't Chase 100%**: Some uncovered lines are legitimate edge cases (EAGAIN, race conditions) that are hard to test reliably.
+
+2. **Focus on Meaningful Tests**: Each test should verify actual behavior, not just execute code for coverage sake.
+
+3. **Use TIMING Constants**: For any new async tests, use `TIMING.*` from `test-utils.js` to prevent flakiness.
+
+4. **Integration > Unit**: For transport layer (socket.js, router.js), integration tests are more valuable than mocked unit tests.
+
+5. **Error Serialization**: Always test error `.toJSON()` methods to ensure proper logging/debugging.
 
 ---
 
-### 5. **Context Error Handling (`src/transport/zeromq/context.js`)**
-**Coverage**: 40% | **Uncovered Lines**: 47-61
-**Impact**: ⭐⭐ (Low)
+## 📋 Implementation Checklist
 
-**Uncovered Code**:
-- `terminateContext()` error handling path (lines 60-61)
+- [ ] Phase 1: Quick Wins (envelope, node, server)
+- [ ] Phase 2: Error Handling (client, router, protocol)
+- [ ] Phase 3: Advanced Scenarios (socket)
+- [ ] Run full test suite after each phase
+- [ ] Update coverage report
+- [ ] Document any intentionally uncovered code
 
-**Test Recommendations**:
-```javascript
-describe('Context Management', () => {
-  it('should handle terminateContext() errors gracefully')
-  it('should remove from cache on terminate')
-})
-```
-
-**Estimated Coverage Gain**: +0.5% overall
-
----
-
-### 6. **Globals (`src/globals.js`)**
-**Coverage**: 0% | **Impact**: ⭐ (Negligible)
-
-**Reason**: Just constant exports, no logic to test. Low priority.
-
----
-
-## 🎯 **Recommended Testing Priority**
-
-### **Phase 1: Quick Wins (Highest ROI)**
-1. ✅ **Config validation tests** → +6-8% coverage
-2. ✅ **Transport error helper tests** → +2-3% coverage
-
-**Estimated Gain**: +8-11% overall coverage
-
-### **Phase 2: Medium Effort**
-3. ✅ **Utils query operators** → +3-5% coverage
-4. ✅ **Peer edge cases** → +1-2% coverage
-
-**Estimated Gain**: +4-7% overall coverage
-
-### **Phase 3: Optional**
-5. ✅ **Context error handling** → +0.5% coverage
-
----
-
-## 📈 **Projected Coverage After Phase 1 + 2**
-
-- **Current**: 72.86%
-- **After Phase 1**: ~81-84%
-- **After Phase 2**: ~85-91% ✅ (meets threshold!)
-
----
-
-## 🔍 **Coverage Gaps in Current Tests**
-
-### Files with Good Coverage (No Action Needed)
-- ✅ `enum.js` - 100%
-- ✅ `events.js` - 100%
-- ✅ `envelope.js` - 75.49% (acceptable)
-- ✅ `protocol.js` - 77.77% (acceptable)
-- ✅ `dealer.js` - 83.83% (good)
-- ✅ `router.js` - 82.08% (good)
-- ✅ `socket.js` - 75.32% (acceptable)
-- ✅ `server.js` - 89.53% (excellent)
-
----
-
-## 📝 **Summary**
-
-**Focus on these 3 test files to maximize coverage:**
-
-1. `test/transport/zeromq/config.test.js` - **NEW**
-2. `test/utils-operators.test.js` - **NEW** (or extend existing)
-3. `test/transport/errors.test.js` - **NEW**
-
-**Expected Outcome**: Achieve 85-91% overall coverage with ~50-80 new test cases.
+**Estimated Total Time: 6-9 hours**  
+**Expected Final Coverage: 96-97%**
 

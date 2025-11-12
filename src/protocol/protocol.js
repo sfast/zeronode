@@ -340,7 +340,11 @@ export default class Protocol extends EventEmitter {
   
   offTick (pattern, handler) {
     let { tickEmitter } = _private.get(this)
-    tickEmitter.off(pattern, handler)
+    if (handler) {
+      tickEmitter.off(pattern, handler)
+    } else {
+      tickEmitter.removeAllListeners(pattern)
+    }
   }
   
   // ============================================================================
@@ -469,59 +473,272 @@ export default class Protocol extends EventEmitter {
     // Use Envelope for zero-copy reading (all fields lazy including data)
     const envelope = new Envelope(buffer)
     
-    // Execute handler and send response
+    // Get matching handlers
     const handlers = requestEmitter.getMatchingListeners(envelope.tag)
     
     if (handlers.length === 0) {
       // No handler - send error response
-      const errorBuffer = Envelope.createBuffer({
-        type: EnvelopType.ERROR,
-        id: envelope.id,
-        data: { message: `No handler for request: ${envelope.tag}` },
-        owner: socket.getId(),
-        recipient: envelope.owner
-      }, config.BUFFER_STRATEGY)
-      socket.sendBuffer(errorBuffer, envelope.owner)
+      this._sendErrorResponse(envelope, `No handler for request: ${envelope.tag}`)
       return
     }
     
-    // Call handler (assume first handler)
-    const handler = handlers[0]
+    // ============================================================================
+    // PERFORMANCE OPTIMIZATION: Fast path for single handler (90% of requests)
+    // ============================================================================
+    if (handlers.length === 1) {
+      this._executeSingleHandler(handlers[0], envelope)
+      return
+    }
     
-    try {
-      const result = handler(envelope.data, envelope)  // Lazy: data deserialized only if accessed
+    // ============================================================================
+    // MIDDLEWARE CHAIN: Multiple handlers (10% of requests)
+    // ============================================================================
+    this._executeMiddlewareChain(handlers, envelope)
+  }
+  
+  /**
+   * Execute single handler (fast path - no middleware overhead)
+   * @private
+   */
+  _executeSingleHandler (handler, envelope) {
+    let { socket, config } = _private.get(this)
+    let replyCalled = false
+    
+    // Reply function
+    const reply = (responseData) => {
+      if (replyCalled) return
+      replyCalled = true
       
-      // Handle async/sync responses
-      Promise.resolve(result).then((responseData) => {
-        const responseBuffer = Envelope.createBuffer({
-          type: EnvelopType.RESPONSE,
-          id: envelope.id,
-          data: responseData,
-          owner: socket.getId(),
-          recipient: envelope.owner
-        }, config.BUFFER_STRATEGY)
-        socket.sendBuffer(responseBuffer, envelope.owner)
-      }).catch((err) => {
-        const errorBuffer = Envelope.createBuffer({
-          type: EnvelopType.ERROR,
-          id: envelope.id,
-          data: { message: err.message || 'Handler error' },
-          owner: socket.getId(),
-          recipient: envelope.owner
-        }, config.BUFFER_STRATEGY)
-        socket.sendBuffer(errorBuffer, envelope.owner)
-      })
-    } catch (err) {
-      // Sync error
+      const responseBuffer = Envelope.createBuffer({
+        type: EnvelopType.RESPONSE,
+        id: envelope.id,
+        data: responseData,
+        owner: socket.getId(),
+        recipient: envelope.owner
+      }, config.BUFFER_STRATEGY)
+      socket.sendBuffer(responseBuffer, envelope.owner)
+    }
+    
+    // Reply error function
+    reply.error = (error) => {
+      if (replyCalled) return
+      replyCalled = true
+      
+      const errorData = typeof error === 'object' && error !== null
+        ? {
+            message: error.message || 'Handler error',
+            code: error.code || 'HANDLER_ERROR',
+            stack: config.DEBUG ? error.stack : undefined
+          }
+        : { message: String(error), code: 'HANDLER_ERROR' }
+      
       const errorBuffer = Envelope.createBuffer({
         type: EnvelopType.ERROR,
         id: envelope.id,
-        data: { message: err.message || 'Handler error' },
+        data: errorData,
         owner: socket.getId(),
         recipient: envelope.owner
       }, config.BUFFER_STRATEGY)
       socket.sendBuffer(errorBuffer, envelope.owner)
     }
+    
+    try {
+      const result = handler(envelope, reply)
+      
+      if (result !== undefined && !replyCalled) {
+        Promise.resolve(result)
+          .then((responseData) => reply(responseData))
+          .catch((err) => reply.error(err))
+      }
+    } catch (err) {
+      reply.error(err)
+    }
+  }
+  
+  /**
+   * Execute middleware chain (inline, closure-based - zero allocation overhead)
+   * @private
+   */
+  _executeMiddlewareChain (handlers, envelope) {
+    let { socket, config } = _private.get(this)
+    let currentIndex = -1
+    let replyCalled = false
+    
+    // Reply function
+    const reply = (responseData) => {
+      if (replyCalled) {
+        socket.logger?.warn('[Protocol] Reply already called, ignoring duplicate')
+        return
+      }
+      replyCalled = true
+      
+      const responseBuffer = Envelope.createBuffer({
+        type: EnvelopType.RESPONSE,
+        id: envelope.id,
+        data: responseData,
+        owner: socket.getId(),
+        recipient: envelope.owner
+      }, config.BUFFER_STRATEGY)
+      socket.sendBuffer(responseBuffer, envelope.owner)
+    }
+    
+    // Reply error function
+    reply.error = (error) => {
+      if (replyCalled) {
+        socket.logger?.warn('[Protocol] Reply already called, ignoring duplicate')
+        return
+      }
+      replyCalled = true
+      
+      const errorData = typeof error === 'object' && error !== null
+        ? {
+            message: error.message || 'Handler error',
+            code: error.code || 'HANDLER_ERROR',
+            stack: config.DEBUG ? error.stack : undefined
+          }
+        : { message: String(error), code: 'HANDLER_ERROR' }
+      
+      const errorBuffer = Envelope.createBuffer({
+        type: EnvelopType.ERROR,
+        id: envelope.id,
+        data: errorData,
+        owner: socket.getId(),
+        recipient: envelope.owner
+      }, config.BUFFER_STRATEGY)
+      socket.sendBuffer(errorBuffer, envelope.owner)
+    }
+    
+    // Handle error - find error handler or send error response
+    const handleError = (error) => {
+      if (replyCalled) return
+      
+      // Find next error handler (4 params)
+      for (let i = currentIndex + 1; i < handlers.length; i++) {
+        if (handlers[i].length === 4) {
+          currentIndex = i
+          try {
+            handlers[i](error, envelope, reply, next)
+          } catch (err) {
+            reply.error(err)
+          }
+          return
+        }
+      }
+      
+      // No error handler found - send error response
+      reply.error(error)
+    }
+    
+    // Execute handler
+    const executeHandler = (handler) => {
+      try {
+        const arity = handler.length
+        
+        // Skip error handlers (only called via next(error))
+        if (arity === 4) {
+          next()
+          return
+        }
+        
+        let result
+        
+        if (arity === 3) {
+          // Manual control: (envelope, reply, next)
+          result = handler(envelope, reply, next)
+        } else {
+          // Auto-continue: (envelope, reply)
+          result = handler(envelope, reply)
+        }
+        
+        // Debug log for async handlers
+        if (config.DEBUG) {
+          socket.logger?.debug('[Middleware] Handler executed', {
+            arity,
+            resultType: result === undefined ? 'undefined' : (result && result.then ? 'Promise' : typeof result),
+            replyCalled,
+            handlerIndex: currentIndex,
+            totalHandlers: handlers.length
+          })
+        }
+        
+        // Handle return values
+        // Special case: If result is a Promise and handler is 2-param (auto-continue),
+        // we need to check if the promise resolves to undefined (meaning no response)
+        if (result !== undefined && !replyCalled) {
+          // Check if it's a promise
+          if (result && typeof result.then === 'function') {
+            Promise.resolve(result)
+              .then((responseData) => {
+                if (!replyCalled) {
+                  // If async function returned undefined and it's a 2-param handler,
+                  // continue to next handler instead of sending undefined response
+                  if (responseData === undefined && arity !== 3) {
+                    if (config.DEBUG) {
+                      socket.logger?.debug('[Middleware] Async 2-param handler returned undefined, auto-continuing')
+                    }
+                    setImmediate(next)
+                  } else {
+                    // Send the response data
+                    reply(responseData)
+                  }
+                }
+              })
+              .catch((err) => handleError(err))
+          } else {
+            // Synchronous return value - send immediately
+            reply(result)
+          }
+        } else if (arity !== 3 && !replyCalled) {
+          // Auto-continue for 2-param handlers that returned undefined
+          setImmediate(next)
+        }
+        // For 3-param handlers, wait for explicit next() call
+        
+      } catch (err) {
+        handleError(err)
+      }
+    }
+    
+    // Next function
+    const next = (error) => {
+      if (replyCalled) return
+      
+      if (error) {
+        handleError(error)
+        return
+      }
+      
+      currentIndex++
+      
+      if (currentIndex >= handlers.length) {
+        if (!replyCalled) {
+          reply.error(new Error('No handler sent a response'))
+        }
+        return
+      }
+      
+      executeHandler(handlers[currentIndex])
+    }
+    
+    // Start the chain
+    next()
+  }
+  
+  /**
+   * Helper: Send error response
+   * @private
+   */
+  _sendErrorResponse (envelope, message) {
+    let { socket, config } = _private.get(this)
+    
+    const errorBuffer = Envelope.createBuffer({
+      type: EnvelopType.ERROR,
+      id: envelope.id,
+      data: { message, code: 'NO_HANDLER' },
+      owner: socket.getId(),
+      recipient: envelope.owner
+    }, config.BUFFER_STRATEGY)
+    socket.sendBuffer(errorBuffer, envelope.owner)
   }
   
   _handleTick (buffer) {
@@ -538,8 +755,9 @@ export default class Protocol extends EventEmitter {
     // Users cannot send system events through public API - it throws INVALID_EVENT
     
     // Execute tick handler (fire-and-forget)
-    // envelope.data is lazily deserialized only if handler accesses it
-    tickEmitter.emit(envelope.tag, envelope.data, envelope)
+    // Handler signature: (envelope)
+    // - envelope: full envelope object with envelope.data, envelope.tag, etc.
+    tickEmitter.emit(envelope.tag, envelope)
   }
   
   // ============================================================================

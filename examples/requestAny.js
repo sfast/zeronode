@@ -15,13 +15,13 @@ import { Node } from '../src'
   await znode2.connect({ address: znode1.getAddress() })
   await znode3.connect({ address: znode1.getAddress() })
 
-  znode2.onRequest('foo', ({ body, reply }) => {
-    console.log(body)
+  znode2.onRequest('foo', (envelope, reply) => {
+    console.log(envelope.data)
     reply('reply from znode2.')
   })
 
-  znode3.onRequest('foo', ({ body, reply }) => {
-    console.log(body)
+  znode3.onRequest('foo', (envelope, reply) => {
+    console.log(envelope.data)
     reply('reply from znode3.')
   })
 
