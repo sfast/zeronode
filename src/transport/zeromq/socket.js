@@ -89,7 +89,6 @@ class Socket extends EventEmitter {
 
   setOffline () {
     let _scope = _private.get(this)
-    this.stopMessageListener()
     _scope.online = false
   }
 
@@ -167,6 +166,7 @@ class Socket extends EventEmitter {
       // Socket closed or error occurred
       // EAGAIN: Socket closed normally (expected during shutdown)
       if (err.code === 'EAGAIN') {
+        this.debugMode() && this.logger?.warn(`Socket message listener error: ${err.message} - EAGAIN expected during shutdown`) 
         return  // Normal closure, nothing to report
       }
       
@@ -261,6 +261,8 @@ class Socket extends EventEmitter {
         socket.close()
       }
 
+      this.debug && this.logger?.info(`Emitted '${TransportEvent.CLOSED}' on socket '${this.getId()}'`)
+      this.emit(TransportEvent.CLOSED)
     } catch (err) {
       // Emit transport error if listener cleanup fails during close
       const transportError = new TransportError({

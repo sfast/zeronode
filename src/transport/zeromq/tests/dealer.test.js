@@ -14,12 +14,7 @@
 import { expect } from 'chai'
 import { Dealer as DealerSocket } from '../index.js'
 
-// Dealer states
-const DealerStateType = {
-  CONNECTED: 'connected',
-  DISCONNECTED: 'disconnected',
-  RECONNECTING: 'reconnecting'
-}
+// Dealer no longer tracks separate state; Socket.isOnline() is the source of truth
 
 describe('DealerSocket (Professional Refactor)', () => {
   
@@ -33,7 +28,7 @@ describe('DealerSocket (Professional Refactor)', () => {
       
       expect(dealer.getId()).to.equal('my-dealer-123')
       expect(dealer.isOnline()).to.be.false
-      expect(dealer.getState()).to.equal(DealerStateType.DISCONNECTED)
+      expect(dealer.isOnline()).to.be.false
     })
 
     it('should auto-generate ID if not provided', () => {
@@ -107,22 +102,19 @@ describe('DealerSocket (Professional Refactor)', () => {
   // STATE MANAGEMENT
   // ============================================================================
   
-  describe('State Management', () => {
+  describe('Online/Offline Management', () => {
     let dealer
 
     beforeEach(() => {
       dealer = new DealerSocket({ id: 'test-dealer' })
     })
 
-    it('should start in DISCONNECTED state', () => {
-      expect(dealer.getState()).to.equal(DealerStateType.DISCONNECTED)
+    it('should start offline', () => {
       expect(dealer.isOnline()).to.be.false
     })
 
-    it('should transition to CONNECTED when setOnline() called', () => {
+    it('should become online when setOnline() called', () => {
       dealer.setOnline()
-      
-      expect(dealer.getState()).to.equal(DealerStateType.CONNECTED)
       expect(dealer.isOnline()).to.be.true
     })
 
@@ -132,18 +124,6 @@ describe('DealerSocket (Professional Refactor)', () => {
       
       dealer.setOffline()
       expect(dealer.isOnline()).to.be.false
-    })
-
-    it('should maintain state independently from online status', () => {
-      // Can be offline but in RECONNECTING state
-      dealer.setOffline()
-      let scope = dealer._private?.get(dealer)
-      if (scope) {
-        scope.state = DealerStateType.RECONNECTING
-      }
-      
-      expect(dealer.isOnline()).to.be.false
-      // State tracking is internal - we test via integration
     })
   })
 
@@ -249,7 +229,7 @@ describe('DealerSocket (Professional Refactor)', () => {
         await dealer.connect()
         expect.fail('Should have thrown')
       } catch (err) {
-        expect(err.message).to.include('Router address is required')
+        expect(err.message).to.include('Router address must be a non-empty string')
       }
     })
 

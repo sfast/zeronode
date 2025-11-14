@@ -190,29 +190,26 @@ export default class Server extends Protocol {
   async unbind () {
     this._stopHealthChecks()
     
-    // Notify all clients
-    if (this.isOnline()) {
-        try {
-          this.tick({
-            event: ProtocolSystemEvent.SERVER_STOP,
-            data: { serverId: this.getId() }
-          })
-    } catch (err) {
-        // Ignore if offline
+    // Notify all clients individually with system event before unbind
+    try {
+      let { clientPeers } = _private.get(this)
+      for (const clientId of clientPeers.keys()) {
+        this._sendSystemTick({
+          to: clientId,
+          event: ProtocolSystemEvent.SERVER_STOP,
+          data: { serverId: this.getId() }
+        })
       }
+    } catch (err) {
+      this.debugMode() && this.logger?.error('Error sending server stop: ', err)
     }
     
-    // ✅ Use Protocol's socket (via protected method)
-    const socket = this._getSocket()
-    await socket.unbind()
+    await super.unbind()
   }
   
   async close () {
     await this.unbind()
-    
-    // ✅ Use Protocol's socket (via protected method)
-    const socket = this._getSocket()
-    await socket.close()
+    await super.close(true)
   }
   
   getAddress () {

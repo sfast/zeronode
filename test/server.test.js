@@ -379,15 +379,15 @@ describe('Server', () => {
       expect(address).to.include('tcp://')
     })
 
-    it('should emit SERVER_CLOSED when transport closes', (done) => {
+    it('should emit SERVER_NOT_READY when transport unbinds/closes', (done) => {
       server = new Server({ id: 'test-server' })
       
-      server.once(ServerEvent.CLOSED, () => {
+      server.once(ServerEvent.NOT_READY, () => {
         done()
       })
       
       server.bind('tcp://127.0.0.1:0').then(() => {
-        server.close().catch(done)
+        server.unbind().catch(done)
       }).catch(done)
     })
   })

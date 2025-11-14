@@ -16,6 +16,22 @@ import { expect } from 'chai'
 import { Router as RouterSocket, Dealer as DealerSocket, TIMEOUT_INFINITY, ZMQConfigDefaults } from '../index.js'
 import { TransportEvent } from '../../events.js'
 
+// Helper: Wait for dealer to be ready after connect()
+async function waitForReady(socket, timeoutMs = 5000) {
+  if (socket.isOnline()) return
+  
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`Socket did not become ready within ${timeoutMs}ms`))
+    }, timeoutMs)
+    
+    socket.once(TransportEvent.READY, () => {
+      clearTimeout(timer)
+      resolve()
+    })
+  })
+}
+
 describe('ZeroMQ Transport Reconnection', () => {
   
   // ============================================================================
@@ -42,6 +58,7 @@ describe('ZeroMQ Transport Reconnection', () => {
       })
       
       await dealer.connect(routerAddress)
+      await waitForReady(dealer)
       expect(dealer.isOnline()).to.be.true
       
       // Track events
@@ -87,6 +104,7 @@ describe('ZeroMQ Transport Reconnection', () => {
       })
       
       await dealer.connect(routerAddress)
+      await waitForReady(dealer)
       expect(dealer.isOnline()).to.be.true
       
       // Track reconnection count
@@ -250,82 +268,6 @@ describe('ZeroMQ Transport Reconnection', () => {
       await dealer.close()
       await router.close()
     })
-
-    it('should emit CLOSED event when RECONNECTION_TIMEOUT expires', async function() {
-      this.timeout(5000)
-      
-      const routerAddress = 'tcp://127.0.0.1:7005'
-      let router = new RouterSocket({ id: 'router-timeout' })
-      await router.bind(routerAddress)
-      
-      const dealer = new DealerSocket({ 
-        id: 'dealer-timeout',
-        config: {
-          ZMQ_RECONNECT_IVL: 50,
-          RECONNECTION_TIMEOUT: 1000  // Give up after 1 second
-        }
-      })
-      
-      await dealer.connect(routerAddress)
-      
-      // Track CLOSED event
-      let closedEventFired = false
-      dealer.once(TransportEvent.CLOSED, () => {
-        closedEventFired = true
-      })
-      
-      // Kill router and wait for timeout
-      await router.close()
-      await new Promise(resolve => setTimeout(resolve, 1500))  // Wait past timeout
-      
-      // Should have given up
-      expect(closedEventFired).to.be.true
-      
-      await dealer.close()
-      // Router already closed above
-    })
-
-    it('should not emit CLOSED if reconnection succeeds before timeout', async function() {
-      this.timeout(5000)
-      
-      const routerAddress = 'tcp://127.0.0.1:7006'
-      let router = new RouterSocket({ id: 'router-race' })
-      await router.bind(routerAddress)
-      
-      const dealer = new DealerSocket({ 
-        id: 'dealer-race',
-        config: {
-          ZMQ_RECONNECT_IVL: 50,
-          RECONNECTION_TIMEOUT: 2000  // 2 second grace period
-        }
-      })
-      
-      await dealer.connect(routerAddress)
-      
-      let closedEventFired = false
-      dealer.once(TransportEvent.CLOSED, () => {
-        closedEventFired = true
-      })
-      
-      // Kill router
-      await router.close()
-      await new Promise(resolve => setTimeout(resolve, 200))
-      
-      // Restart within grace period
-      router = new RouterSocket({ id: 'router-race-2' })
-      await router.bind(routerAddress)
-      await new Promise(resolve => setTimeout(resolve, 500))
-      
-      // Should have reconnected
-      expect(dealer.isOnline()).to.be.true
-      
-      // Wait to ensure timeout doesn't fire
-      await new Promise(resolve => setTimeout(resolve, 1500))
-      expect(closedEventFired).to.be.false
-      
-      await dealer.close()
-      await router.close()
-    })
   })
 
   // ============================================================================
@@ -333,7 +275,7 @@ describe('ZeroMQ Transport Reconnection', () => {
   // ============================================================================
   
   describe('State Management', () => {
-    it('should track state transitions: CONNECTED → RECONNECTING → CONNECTED', async function() {
+    it('should track transitions via events: READY → NOT_READY → READY', async function() {
       this.timeout(5000)
       
       const routerAddress = 'tcp://127.0.0.1:7007'
@@ -349,17 +291,16 @@ describe('ZeroMQ Transport Reconnection', () => {
       })
       
       await dealer.connect(routerAddress)
+      await waitForReady(dealer)
       
-      // Initial state: CONNECTED
-      expect(dealer.getState()).to.equal('connected')
+      // Initial: READY received implies online
       expect(dealer.isOnline()).to.be.true
       
       // Kill router
       await router.close()
       await new Promise(resolve => setTimeout(resolve, 300))
       
-      // Should be RECONNECTING
-      expect(dealer.getState()).to.equal('reconnecting')
+      // After router close, dealer should be offline (NOT_READY path)
       expect(dealer.isOnline()).to.be.false
       
       // Restart router
@@ -367,8 +308,7 @@ describe('ZeroMQ Transport Reconnection', () => {
       await router.bind(routerAddress)
       await new Promise(resolve => setTimeout(resolve, 500))
       
-      // Should be CONNECTED again
-      expect(dealer.getState()).to.equal('connected')
+      // After router restarts, dealer should come online again
       expect(dealer.isOnline()).to.be.true
       
       await dealer.close()
@@ -391,6 +331,7 @@ describe('ZeroMQ Transport Reconnection', () => {
       })
       
       await dealer.connect(routerAddress)
+      await waitForReady(dealer)
       
       // Can send when online
       expect(() => {
@@ -448,6 +389,7 @@ describe('ZeroMQ Transport Reconnection', () => {
       
       // Connect
       await dealer.connect(routerAddress)
+      await waitForReady(dealer)
       await new Promise(resolve => setTimeout(resolve, 100))
       
       // Expected: [READY]
@@ -470,40 +412,6 @@ describe('ZeroMQ Transport Reconnection', () => {
       
       await dealer.close()
       await router.close()
-    })
-
-    it('should emit CLOSED only when reconnection timeout expires', async function() {
-      this.timeout(5000)
-      
-      const routerAddress = 'tcp://127.0.0.1:7010'
-      let router = new RouterSocket({ id: 'router-closed' })
-      await router.bind(routerAddress)
-      
-      const dealer = new DealerSocket({ 
-        id: 'dealer-closed',
-        config: {
-          ZMQ_RECONNECT_IVL: 50,
-          RECONNECTION_TIMEOUT: 1000
-        }
-      })
-      
-      const events = []
-      dealer.on(TransportEvent.READY, () => events.push('READY'))
-      dealer.on(TransportEvent.NOT_READY, () => events.push('NOT_READY'))
-      dealer.on(TransportEvent.CLOSED, () => events.push('CLOSED'))
-      
-      await dealer.connect(routerAddress)
-      await new Promise(resolve => setTimeout(resolve, 100))
-      
-      // Kill router and wait for timeout
-      await router.close()
-      await new Promise(resolve => setTimeout(resolve, 1500))
-      
-      // Expected: [READY, NOT_READY, CLOSED]
-      expect(events).to.deep.equal(['READY', 'NOT_READY', 'CLOSED'])
-      
-      await dealer.close()
-      // Router already closed above
     })
   })
 

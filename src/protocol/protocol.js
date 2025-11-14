@@ -808,9 +808,22 @@ export default class Protocol extends EventEmitter {
    */
   async disconnect () {
     let { socket } = _private.get(this)
-    this._detachSocketEventHandlers(socket)
-
     await socket.disconnect();
+  }
+
+  /**
+   * Unbind protocol from transport events without closing or rejecting pending.
+   * - Idempotent: safe to call multiple times
+   * - Does NOT set closed flag
+   * - Does NOT reject pending requests
+   * - Does NOT close underlying transport
+   */
+
+  async unbind () {
+    let { socket } = _private.get(this)
+    // Keep socket event handlers attached so further transport events (e.g., CLOSED)
+    // still propagate through Protocol to consumers. Just unbind transport here.
+    await socket.unbind();
   }
 
   /**
@@ -820,8 +833,7 @@ export default class Protocol extends EventEmitter {
    * - Rejects and clears pending requests
    * - Optionally closes the underlying transport
    * 
-   * @param {Object} [options]
-   * @param {boolean} [options.closeTransport=true] - Whether to close the socket
+   * @param {boolean} [closeTransport=false] - Whether to close the socket
    */
   async close (closeTransport = false) {
     let _scope = _private.get(this)

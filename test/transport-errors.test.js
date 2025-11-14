@@ -22,7 +22,6 @@ describe('Transport Errors', () => {
       expect(TransportErrorCode).to.have.property('SEND_FAILED')
       expect(TransportErrorCode).to.have.property('RECEIVE_FAILED')
       expect(TransportErrorCode).to.have.property('INVALID_ADDRESS')
-      expect(TransportErrorCode).to.have.property('ADDRESS_REQUIRED')
       expect(TransportErrorCode).to.have.property('CLOSE_FAILED')
     })
 

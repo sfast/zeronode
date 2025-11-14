@@ -31,7 +31,7 @@ export const TransportErrorCode = {
   
   // Address errors
   INVALID_ADDRESS: 'TRANSPORT_INVALID_ADDRESS',           // Invalid address format
-  ADDRESS_REQUIRED: 'TRANSPORT_ADDRESS_REQUIRED',         // Address not provided
+  // ADDRESS_REQUIRED: 'TRANSPORT_ADDRESS_REQUIRED',         // Address not provided
   
   // Lifecycle errors
   CLOSE_FAILED: 'TRANSPORT_CLOSE_FAILED'                  // Failed to close cleanly

@@ -108,6 +108,7 @@ export const ZMQConfigDefaults = {
    * ZMQ_RECONNECT_IVL: Initial reconnection interval in milliseconds
    * How often ZeroMQ tries to reconnect after losing connection
    * Default: 100ms (fast reconnection)
+   * -1 means no reconnection
    */
   ZMQ_RECONNECT_IVL: 100,
   

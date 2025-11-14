@@ -236,12 +236,11 @@ export default class Client extends Protocol {
     const socket = this._getSocket()
     
     try {
-      // Connect transport
-      await socket.connect(serverAddress, timeout)
-
-      _scope.serverPeerInfo.setState('CONNECTED')
+      // Issue connect (non-blocking - returns immediately)
+      // ZeroMQ will connect in background and emit TRANSPORT_READY when ready
+      await socket.connect(serverAddress)
       
-      // Wait for handshake to complete (CLIENT_READY event)
+      // Wait for handshake to complete (includes implicit transport ready wait)
       await new Promise((resolve, reject) => {
         // Use provided timeout, then config, then global default, finally 10s
         const config = this.getConfig()
@@ -268,18 +267,17 @@ export default class Client extends Protocol {
     
     this._stopPing()
     
-    // Notify server
-    if (this.isReady()) {
-      try {
-        // ✅ Use internal API to send system event (client stop)
-        this._sendSystemTick({
-          event: ProtocolSystemEvent.CLIENT_STOP,
-          data: { clientId: this.getId() }
-        })
-      } catch (err) {
-        this.debugMode() && this.logger?.error('Error sending client stop: ', err)
-      }
+    // Try to notify server
+    try {
+      // ✅ Use internal API to send system event (client stop)
+      this._sendSystemTick({
+        event: ProtocolSystemEvent.CLIENT_STOP,
+        data: { clientId: this.getId() }
+      })
+    } catch (err) {
+      this.debugMode() && this.logger?.error('Error sending client stop: ', err)
     }
+    
 
     // disconnect from transport and detach listeners
     await super.disconnect();

@@ -73,8 +73,8 @@ export default class RouterSocket extends Socket {
     // Validate address format
     if (typeof bindAddress !== 'string' || !bindAddress.length) {
       throw new TransportError({
-        code: TransportErrorCode.ADDRESS_REQUIRED,
-        message: 'Bind address must be a non-empty string',
+        code: TransportErrorCode.INVALID_ADDRESS,
+        message: 'Address must be a non-empty string',
         transportId: this.getId()
       })
     }
@@ -118,19 +118,8 @@ export default class RouterSocket extends Socket {
       })
     }
 
-    // Set address
-    if (bindAddress) {
-      this.setAddress(bindAddress)
-    }
-
-    // Validate: Must have address
-    if (!this.getAddress()) {
-      throw new TransportError({ 
-        code: TransportErrorCode.ADDRESS_REQUIRED,
-        message: 'Bind address is required',
-        transportId: this.getId()
-      })
-    }
+    // Set address and validate
+    this.setAddress(bindAddress)
 
     // Bind sequence: attach listeners BEFORE bind to catch events
     try {
@@ -215,6 +204,10 @@ export default class RouterSocket extends Socket {
     // 5. Set offline and clear bind address
     this.setOffline()
     _scope.bindAddress = null
+    
+    // 6. Emit NOT_READY to signal unbind
+    this.debug && this.logger.info(`Emitted '${TransportEvent.NOT_READY}' on socket '${this.getId()}'`)
+    this.emit(TransportEvent.NOT_READY)
   }
 
   /**
@@ -226,11 +219,7 @@ export default class RouterSocket extends Socket {
    */
   async close () {
     await this.unbind()
-    
-    // Emit TransportEvent.CLOSED when explicitly closed
-    // (Unlike Dealer, Router doesn't have reconnection noise)
     super.close(true)
-    this.emit(TransportEvent.CLOSED)
   }
 
   /**
@@ -238,16 +227,7 @@ export default class RouterSocket extends Socket {
    * Only listens to events relevant for Router (server) sockets
    */
   attachSocketEventListeners () {
-    let { socket } = _private.get(this)
-    
-    if (socket.events) {
-      // Map ZeroMQ listening → TransportEvent.READY
-      socket.events.on('listening', (fd, endpoint) => {
-        this.setOnline()
-        this.debug && this.logger.info(`Emitted '${TransportEvent.READY}' on socket '${this.getId()}'`)
-        this.emit(TransportEvent.READY, { fd, endpoint })
-      })
-    }
+    // No additional Router-specific event listeners needed
   }
 
   // ZeroMQ Router-specific: message format for routing

@@ -1,6 +1,6 @@
 /**
  * DealerSocket - Thin wrapper around ZeroMQ Dealer
- * Handles: connect/disconnect with automatic reconnection
+ * Handles: connect/disconnect
  * 
  * Uses 1 I/O thread by default (sufficient for most client use cases)
  */
@@ -13,12 +13,6 @@ import { createContext } from './context.js'
 import { mergeConfig, TIMEOUT_INFINITY } from './config.js'
 
 let _private = new WeakMap()
-
-let DealerStateType = {
-  CONNECTED: 'connected',
-  DISCONNECTED: 'disconnected',
-  RECONNECTING: 'reconnecting'
-}
 
 export default class DealerSocket extends Socket {
   constructor ({ id, config } = {}) {
@@ -42,10 +36,8 @@ export default class DealerSocket extends Socket {
 
     let _scope = {
       socket,
-      state: DealerStateType.DISCONNECTED,
       routerAddress: null,
-      reconnectionTimeout: null,
-      connectionTimeout: null
+      eventsAttached: false
     }
 
     _private.set(this, _scope)
@@ -60,11 +52,7 @@ export default class DealerSocket extends Socket {
   static _configureDealerOptions (socket, config) {
     // Reconnection interval: How often ZeroMQ attempts to reconnect
     socket.reconnectInterval = config.ZMQ_RECONNECT_IVL
-
-    // Reconnection interval max: Maximum reconnection interval (exponential backoff)
-    if (config.ZMQ_RECONNECT_IVL_MAX > 0) {
-      socket.reconnectMaxInterval = config.ZMQ_RECONNECT_IVL_MAX
-    }
+    socket.reconnectMaxInterval = config.ZMQ_RECONNECT_IVL_MAX
   }
 
   getAddress () {
@@ -97,32 +85,18 @@ export default class DealerSocket extends Socket {
     _scope.routerAddress = routerAddress
   }
   
-  getState () {
-    let { state } = _private.get(this)
-    return state
-  }
-
-  setOnline () {
-    let _scope = _private.get(this)
-    super.setOnline()
-    _scope.state = DealerStateType.CONNECTED
-  }
-
   /**
-   * Connect to router with automatic reconnection
-   * Professional implementation:
-   * - Validates not already connected
-   * - Sets up event listeners for connection lifecycle
-   * - Handles connection timeout
-   * - Automatic reconnection on disconnect
-   * - Reconnection timeout with failure handling
+   * Connect to router with automatic reconnection (handled by ZeroMQ)
+   * 
+   * ZeroMQ connect() is non-blocking - returns immediately.
+   * Actual connection happens asynchronously in background.
+   * Listen to READY event to know when connected.
    * 
    * @param {string} routerAddress - Address to connect to (e.g., 'tcp://127.0.0.1:5000')
-   * @param {number} timeout - Connection timeout in ms (default: from config or 30000)
-   * @returns {Promise<void>} Resolves when connected
-   * @throws {TransportError} If already connected or connection fails
+   * @returns {Promise<void>} Resolves immediately after issuing connect
+   * @throws {TransportError} If already connected
    */
-  async connect (routerAddress, timeout) {
+  async connect (routerAddress) {
     let _scope = _private.get(this)
     let { socket } = _scope
 
@@ -136,156 +110,42 @@ export default class DealerSocket extends Socket {
       })
     }
 
-    // Set address
-    if (routerAddress) {
-      this.setAddress(routerAddress)
-    }
+    this.setAddress(routerAddress)
 
-    // Validate: Must have address
-    if (!this.getAddress()) {
-      throw new TransportError({ 
-        code: TransportErrorCode.ADDRESS_REQUIRED,
-        message: 'Router address is required',
-        transportId: this.getId()
-      })
-    }
-
-    // Get timeouts from config (already has defaults from mergeConfig)
-    const cfg = this.getConfig()
-    timeout = timeout || cfg.CONNECTION_TIMEOUT
-    const reconnectionTimeout = cfg.RECONNECTION_TIMEOUT
-
-    // Setup connection lifecycle handlers
-    this._setupConnectionHandlers(reconnectionTimeout)
-    
-    // Attach listeners BEFORE connecting (CONNECT event fires during socket.connect())
+    // Attach listeners BEFORE connecting (events fire asynchronously)
     this.attachSocketEventListeners()
 
-    // Connect with timeout
-    return new Promise((resolve, reject) => {
-      // Connection success handler
-      // Note: setOnline() is now called in attachSocketEventListeners before event fires
-      const onConnect = () => {
-        this._clearConnectionTimeout()
-        resolve()
-      }
-
-      // Connection timeout handler
-      if (timeout !== TIMEOUT_INFINITY) {
-        _scope.connectionTimeout = setTimeout(() => {
-          this.removeListener(TransportEvent.READY, onConnect)
-          reject(new TransportError({ 
-            code: TransportErrorCode.CONNECTION_TIMEOUT,
-            message: `Connection timeout to ${this.getAddress()}`,
-            transportId: this.getId(),
-            address: this.getAddress()
-          }))
-          this.disconnect()
-        }, timeout)
-      }
-
-      // Start connection
-      this.once(TransportEvent.READY, onConnect)
-      socket.connect(this.getAddress())
-    })
-  }
-
-  /**
-   * Setup connection lifecycle handlers (private helper)
-   * Handles: disconnect detection, reconnection, reconnection failure
-   */
-  _setupConnectionHandlers (reconnectionTimeout) {
-    let _scope = _private.get(this)
-
-    // Handler: Connection lost (disconnect)
-    const onDisconnect = () => {
-      this.setOffline()
-      _scope.state = DealerStateType.RECONNECTING
-
-      // Start reconnection timeout
-      if (reconnectionTimeout !== TIMEOUT_INFINITY) {
-        _scope.reconnectionTimeout = setTimeout(() => {
-          this.removeListener(TransportEvent.READY, onReconnect)
-          this.emit(TransportEvent.CLOSED)  // Reconnection failed - transport is dead
-          this.disconnect()
-        }, reconnectionTimeout)
-      }
-
-      // Wait for reconnection
-      this.once(TransportEvent.READY, onReconnect)
-    }
-
-    // Handler: Reconnection successful
-    const onReconnect = (info) => {
-      this._clearReconnectionTimeout()
-      this.setOnline()
-      // Transport back online - emit READY again
-      // (Protocol will handle session restoration)
-      // Re-attach disconnect handler for future disconnects
-      this.once(TransportEvent.NOT_READY, onDisconnect)
-    }
-
-    // Initial disconnect handler
-    this.once(TransportEvent.NOT_READY, onDisconnect)
-  }
-
-  /**
-   * Clear connection timeout (private helper)
-   */
-  _clearConnectionTimeout () {
-    let _scope = _private.get(this)
-    if (_scope.connectionTimeout) {
-      clearTimeout(_scope.connectionTimeout)
-      _scope.connectionTimeout = null
-    }
-  }
-
-  /**
-   * Clear reconnection timeout (private helper)
-   */
-  _clearReconnectionTimeout () {
-    let _scope = _private.get(this)
-    if (_scope.reconnectionTimeout) {
-      clearTimeout(_scope.reconnectionTimeout)
-      _scope.reconnectionTimeout = null
-    }
+    // Non-blocking connect - ZeroMQ handles connection/reconnection
+    socket.connect(this.getAddress())
   }
 
   /**
    * Disconnect from router (application-level cleanup)
    * 
    * Order is critical:
-   * 1. Stop message listener (prevents EBUSY during disconnect)
-   * 2. Clear timeouts
-   * 3. Disconnect from ZeroMQ router
-   * 4. Remove event listeners
-   * 5. Set offline state
+   * 1. Disconnect from ZeroMQ router
+   * 2. Remove event listeners
+   * 3. Set offline state
    */
   async disconnect () {
     let _scope = _private.get(this)
-    let { socket, routerAddress, state } = _scope
+    let { socket, routerAddress } = _scope
 
-    // 1. Stop message listener FIRST (sets flag to break async iterator)
-    this.stopMessageListener()
-
-    // 2. Wait a tick for the iterator to see the flag and stop
-    await new Promise(resolve => setImmediate(resolve))
-
-    // 3. Clear all timeouts
-    this._clearConnectionTimeout()
-    this._clearReconnectionTimeout()
-
-    // 4. Remove all event listeners BEFORE disconnect to prevent duplicate CLOSED events
-    this.removeAllListeners()
+    // 1. Detach only ZMQ socket event listeners to prevent duplicate low-level events
     this.detachSocketEventListeners()
+    _scope.eventsAttached = false
 
-    // 5. Disconnect from router if not already disconnected (listener stopped, no EBUSY)
-    if (state !== DealerStateType.DISCONNECTED && routerAddress) {
-      socket.disconnect(routerAddress)
-      _scope.state = DealerStateType.DISCONNECTED
+    try {
+      // 2. Disconnect from current endpoint (idempotent)
+      if (routerAddress) {
+        socket.disconnect(routerAddress)
+      }
+    } catch (err) {
+      this.debug && this.logger?.warn(`Error disconnecting from router: ${err.message}`)
+      // ignore disconnect errors; socket may already be disconnected
     }
 
-    // 6. Update state
+    // 3. Mark offline
     this.setOffline()
   }
 
@@ -297,17 +157,26 @@ export default class DealerSocket extends Socket {
    */
   async close () {
     await this.disconnect()
-    super.close()
+    super.close(true)
   }
 
   /**
    * Attach Dealer-specific socket event listeners
-   * Only listens to events relevant for Dealer (client) sockets
+   * Maps native ZeroMQ events → TransportEvents
+   * 
+   * ZeroMQ handles reconnection automatically, we just listen to state changes:
+   * - connect: Link established (initial or after reconnect)
+   * - disconnect: Link lost (ZeroMQ will auto-retry per config)
    */
   attachSocketEventListeners () {
     let { socket } = _private.get(this)
-    
+    let _scope = _private.get(this)
+
+    if (_scope.eventsAttached) return
+
     if (socket.events) {
+      _scope.eventsAttached = true
+
       // Map ZeroMQ connect → TransportEvent.READY
       socket.events.on('connect', (fd, endpoint) => {
         this.setOnline()
@@ -319,7 +188,13 @@ export default class DealerSocket extends Socket {
       socket.events.on('disconnect', (fd, endpoint) => {
         this.setOffline()
         this.debug && this.logger.info(`Emitted '${TransportEvent.NOT_READY}' on socket '${this.getId()}'`)
+        // Note: ZeroMQ auto-retries per reconnectInterval/reconnectMaxInterval
         this.emit(TransportEvent.NOT_READY, { fd, endpoint })
+      })
+
+      socket.events.on('connect:retry', (fd, endpoint) => {
+        this.debug && this.logger.info(`Emitted '${TransportEvent.RECONNECT_RETRY}' on socket '${this.getId()}'`)
+        this.emit(TransportEvent.RECONNECT_RETRY, { fd, endpoint })
       })
     }
   }

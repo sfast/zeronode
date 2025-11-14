@@ -124,7 +124,7 @@ describe('RouterSocket (Professional Refactor)', () => {
         await router.bind()
         expect.fail('Should have thrown')
       } catch (err) {
-        expect(err.message).to.include('Bind address is required')
+        expect(err.message).to.include('Address must be a non-empty string')
       }
     })
 
