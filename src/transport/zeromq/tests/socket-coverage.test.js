@@ -14,6 +14,7 @@ import { expect } from 'chai'
 import { Dealer as DealerSocket, Router as RouterSocket } from '../index.js'
 import { Socket } from '../socket.js'
 import { TransportError, TransportErrorCode } from '../../errors.js'
+import { TransportEvent } from '../../events.js'
 import { EventEmitter } from 'events'
 
 describe('Socket Coverage - Uncovered Paths', () => {
@@ -56,8 +57,8 @@ describe('Socket Coverage - Uncovered Paths', () => {
       
       const socket = new TestDealerSocket()
       
-      // Listen for error event
-      socket.once('error', (error) => {
+      // Listen for transport error event
+      socket.once(TransportEvent.ERROR, (error) => {
         expect(error).to.be.instanceOf(TransportError)
         expect(error.code).to.equal(TransportErrorCode.RECEIVE_FAILED)
         expect(error.message).to.include('Unexpected message format')
@@ -103,7 +104,7 @@ describe('Socket Coverage - Uncovered Paths', () => {
       
       const socket = new TestRouterSocket()
       
-      socket.once('error', (error) => {
+      socket.once(TransportEvent.ERROR, (error) => {
         expect(error).to.be.instanceOf(TransportError)
         expect(error.code).to.equal(TransportErrorCode.RECEIVE_FAILED)
         expect(error.message).to.include('expected 2 (Dealer) or 3 (Router)')
@@ -155,7 +156,7 @@ describe('Socket Coverage - Uncovered Paths', () => {
       const socket = new TestSocket()
       
       let errorEmitted = false
-      socket.on('error', () => {
+      socket.on(TransportEvent.ERROR, () => {
         errorEmitted = true
       })
       
@@ -200,7 +201,7 @@ describe('Socket Coverage - Uncovered Paths', () => {
       
       const socket = new TestSocket()
       
-      socket.once('error', (error) => {
+      socket.once(TransportEvent.ERROR, (error) => {
         expect(error).to.be.instanceOf(TransportError)
         expect(error.code).to.equal(TransportErrorCode.RECEIVE_FAILED)
         expect(error.message).to.include('Socket message listener error')

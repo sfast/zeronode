@@ -74,7 +74,15 @@ export const TransportEvent = {
    * No more reconnection attempts, transport is dead
    * Protocol will clean up and reject pending requests
    */
-  CLOSED: 'transport:closed'
+  CLOSED: 'transport:closed',
+  
+  /**
+   * ERROR - Transport-level error surfaced by the transport implementation
+   * 
+   * Payload: TransportError instance (see src/transport/errors.js)
+   * Use for observability; protocol may still continue operating depending on error.
+   */
+  ERROR: 'transport:error'
 }
 
 /**

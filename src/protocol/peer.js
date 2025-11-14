@@ -12,6 +12,8 @@
 // ============================================================================
 
 export const PeerState = {
+  IDLE: 'IDLE',               // Initial state 
+  CONNECTING: 'CONNECTING',   // Connecting to server
   CONNECTED: 'CONNECTED',     // Just connected (initial state)
   HEALTHY: 'HEALTHY',         // Receiving regular pings
   GHOST: 'GHOST',             // Missed ping(s) - warning state
@@ -32,8 +34,8 @@ export default class PeerInfo {
     this.role = role // 'server' or 'client' (optional, for debugging)
     
     // State management
-    this.state = PeerState.CONNECTED
-    this.connectedAt = Date.now()
+    this.state = PeerState.IDLE
+    this.connectedAt = null
     this.lastStateChange = Date.now()
     
     // Heartbeat tracking
@@ -67,8 +69,11 @@ export default class PeerInfo {
   }
   
   isOnline () {
-    // Online = not failed and not stopped
-    return this.state !== PeerState.FAILED && this.state !== PeerState.STOPPED
+    return (
+      this.state === PeerState.CONNECTED ||
+      this.state === PeerState.HEALTHY ||
+      this.state === PeerState.GHOST
+    )
   }
   
   // ============================================================================
@@ -79,6 +84,11 @@ export default class PeerInfo {
     const oldState = this.state
     this.state = newState
     this.lastStateChange = Date.now()
+    
+    // Record the first time we become CONNECTED
+    if (newState === PeerState.CONNECTED && this.connectedAt == null) {
+      this.connectedAt = this.lastStateChange
+    }
     
     // Could add logging here if needed
     // console.log(`Peer ${this.id}: ${oldState} → ${newState} ${reason ? `(${reason})` : ''}`)

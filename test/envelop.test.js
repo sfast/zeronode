@@ -75,7 +75,7 @@ describe('Envelope', () => {
         id: 1n,
         owner: 'sender',
         recipient: 'receiver',
-        tag: 'test:event',
+        event: 'test:event',
         data: { hello: 'world' }
       })
       
@@ -89,7 +89,7 @@ describe('Envelope', () => {
         id: 2n,
         owner: 'client',
         recipient: 'server',
-        tag: 'test:request',
+        event: 'test:request',
         data: { query: 'data' }
       })
       
@@ -103,7 +103,7 @@ describe('Envelope', () => {
         id: 3n,
         owner: 'server',
         recipient: 'client',
-        tag: 'test:response',
+        event: 'test:response',
         data: { result: 'success' }
       })
       
@@ -117,7 +117,7 @@ describe('Envelope', () => {
         id: 4n,
         owner: 'server',
         recipient: 'client',
-        tag: 'test:error',
+        event: 'test:error',
         data: { error: 'Something went wrong' }
       })
       
@@ -131,7 +131,7 @@ describe('Envelope', () => {
         id: 5n,
         owner: 'sender',
         recipient: '',
-        tag: 'broadcast',
+        event: 'broadcast',
         data: null
       })
       
@@ -144,7 +144,7 @@ describe('Envelope', () => {
         id: 6n,
         owner: 'sender',
         recipient: 'receiver',
-        tag: 'ping',
+        event: 'ping',
         data: null
       })
       
@@ -157,7 +157,7 @@ describe('Envelope', () => {
         id: 7n,
         owner: 'a',
         recipient: 'b',
-        tag: 'test',
+        event: 'test',
         data: null
       })
       
@@ -171,7 +171,7 @@ describe('Envelope', () => {
         id: 8n,
         owner: 'a',
         recipient: 'b',
-        tag: 'test',
+        event: 'test',
         data: null
       }, BufferStrategy.POWER_OF_2)
       
@@ -188,7 +188,7 @@ describe('Envelope', () => {
           id: 9n,
           owner: 'x', // Minimum 1 char
           recipient: '',
-          tag: 'y', // Minimum 1 char
+          event: 'y', // Minimum 1 char
           data: null
         })
       }).to.not.throw()
@@ -202,7 +202,7 @@ describe('Envelope', () => {
         id: 100n,
         owner: 'client',
         recipient: 'server',
-        tag: 'test',
+        event: 'test',
         data: null
       })
       
@@ -217,7 +217,7 @@ describe('Envelope', () => {
         id: id,
         owner: 'sender',
         recipient: 'receiver',
-        tag: 'test',
+        event: 'test',
         data: null
       })
       
@@ -231,7 +231,7 @@ describe('Envelope', () => {
         id: 1n,
         owner: 'my-owner-id',
         recipient: 'receiver',
-        tag: 'test',
+        event: 'test',
         data: null
       })
       
@@ -245,7 +245,7 @@ describe('Envelope', () => {
         id: 1n,
         owner: 'sender',
         recipient: 'my-recipient-id',
-        tag: 'test',
+        event: 'test',
         data: null
       })
       
@@ -253,18 +253,18 @@ describe('Envelope', () => {
       expect(envelope.recipient).to.equal('my-recipient-id')
     })
 
-    it('should read tag field', () => {
+    it('should read event field', () => {
       const buffer = Envelope.createBuffer({
         type: EnvelopType.TICK,
         id: 1n,
         owner: 'sender',
         recipient: 'receiver',
-        tag: 'my:custom:tag',
+        event: 'my:custom:tag',
         data: null
       })
       
       const envelope = new Envelope(buffer)
-      expect(envelope.tag).to.equal('my:custom:tag')
+      expect(envelope.event).to.equal('my:custom:tag')
     })
 
     it('should lazily parse data field', () => {
@@ -274,7 +274,7 @@ describe('Envelope', () => {
         id: 1n,
         owner: 'sender',
         recipient: 'receiver',
-        tag: 'test',
+        event: 'test',
         data: testData
       })
       
@@ -289,7 +289,7 @@ describe('Envelope', () => {
         id: 1n,
         owner: 'sender',
         recipient: 'receiver',
-        tag: 'ping',
+        event: 'ping',
         data: null
       })
       
@@ -303,7 +303,7 @@ describe('Envelope', () => {
         id: 1n,
         owner: 'sender',
         recipient: 'receiver',
-        tag: 'test',
+        event: 'test',
         data: null
       })
       
@@ -324,7 +324,7 @@ describe('Envelope', () => {
         id: 1n,
         owner: 'sender',
         recipient: '',
-        tag: 'broadcast',
+        event: 'broadcast',
         data: null
       })
       
@@ -340,7 +340,7 @@ describe('Envelope', () => {
         id: 1n,
         owner: 'sender',
         recipient: 'receiver',
-        tag: 'test',
+        event: 'test',
         data: null
       })
       
@@ -390,7 +390,7 @@ describe('Envelope', () => {
         id: 1n,
         owner: 'sender',
         recipient: 'receiver',
-        tag: 'test',
+        event: 'test',
         data: { foo: 'bar' }
       })
       
@@ -421,7 +421,7 @@ describe('Envelope', () => {
         id: 123n,
         owner: 'client',
         recipient: 'server',
-        tag: 'test:method',
+        event: 'test:method',
         data: { key: 'value' }
       })
       
@@ -438,7 +438,7 @@ describe('Envelope', () => {
         id: 1n,
         owner: 'sender',
         recipient: '',
-        tag: 'event',
+        event: 'event',
         data: null
       })
       
@@ -457,7 +457,7 @@ describe('Envelope', () => {
         id: 999n,
         owner: 'test-client',
         recipient: 'test-server',
-        tag: 'user:create',
+        event: 'user:create',
         data: { name: 'Alice', age: 30 }
       })
       
@@ -469,7 +469,7 @@ describe('Envelope', () => {
       expect(obj.id).to.equal(999n)
       expect(obj.owner).to.equal('test-client')
       expect(obj.recipient).to.equal('test-server')
-      expect(obj.tag).to.equal('user:create')
+      expect(obj.event).to.equal('user:create')
       expect(obj.data).to.deep.equal({ name: 'Alice', age: 30 })
     })
 
@@ -479,7 +479,7 @@ describe('Envelope', () => {
         id: 1n,
         owner: 'sender',
         recipient: 'receiver',
-        tag: 'ping',
+        event: 'ping',
         data: null
       })
       
@@ -495,7 +495,7 @@ describe('Envelope', () => {
         id: 1n,
         owner: 'server',
         recipient: '',  // Empty recipient
-        tag: '',        // Empty tag
+        event: '',      // Empty event
         data: {}
       })
       
@@ -503,7 +503,7 @@ describe('Envelope', () => {
       const obj = envelope.toObject()
       
       expect(obj.recipient).to.equal('')
-      expect(obj.tag).to.equal('')
+      expect(obj.event).to.equal('')
       expect(obj.data).to.deep.equal({})
     })
 
@@ -518,7 +518,7 @@ describe('Envelope', () => {
         id: 42n,
         owner: 'api-server',
         recipient: 'web-client',
-        tag: 'users:list',
+        event: 'users:list',
         data: complexData
       })
       
@@ -537,7 +537,7 @@ describe('Envelope', () => {
         id: 999n,
         owner: 'test-client',
         recipient: 'test-server',
-        tag: 'user:create',
+        event: 'user:create',
         data: {
           name: 'Alice',
           email: 'alice@example.com',
@@ -552,7 +552,7 @@ describe('Envelope', () => {
       expect(envelope.id).to.equal(original.id)
       expect(envelope.owner).to.equal(original.owner)
       expect(envelope.recipient).to.equal(original.recipient)
-      expect(envelope.tag).to.equal(original.tag)
+      expect(envelope.event).to.equal(original.event)
       expect(envelope.data).to.deep.equal(original.data)
     })
 
@@ -573,7 +573,7 @@ describe('Envelope', () => {
         id: 1n,
         owner: 'server',
         recipient: 'client',
-        tag: 'response',
+        event: 'response',
         data: complexData
       })
       
@@ -593,7 +593,7 @@ describe('Envelope', () => {
           id: BigInt(i),
           owner: 'sender',
           recipient: 'receiver',
-          tag: 'test',
+          event: 'test',
           data: { index: i }
         })
       }
@@ -608,7 +608,7 @@ describe('Envelope', () => {
         id: 1n,
         owner: 'sender',
         recipient: 'receiver',
-        tag: 'test',
+        event: 'test',
         data: { large: 'data'.repeat(1000) }
       })
       
@@ -617,7 +617,7 @@ describe('Envelope', () => {
       // Just reading metadata should be instant
       envelope.type
       envelope.owner
-      envelope.tag
+      envelope.event
       const elapsed = Date.now() - start
       
       expect(elapsed).to.be.lessThan(10)

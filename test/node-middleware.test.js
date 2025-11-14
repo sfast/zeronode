@@ -672,7 +672,7 @@ describe('Node - Middleware Chain (Node-to-Node)', () => {
       nodeA.onRequest(/^api:/, (envelope, reply) => {
         executionLog.push('logging')
         requestLog.push({
-          event: envelope.tag,
+          event: envelope.event,
           from: envelope.owner,
           timestamp: Date.now()
         })

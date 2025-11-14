@@ -1,624 +1,560 @@
 # ZeroNode
 
 <p align="center">
-  <img src="https://i.imgur.com/NZVXZPo.png" alt="Zeronode Logo" />
+  <img src="https://i.imgur.com/NZVXZPo.png" alt="ZeroNode Logo" width="100%"/>
 </p>
 
 <p align="center">
-  <strong>Production-Grade Microservices Communication Layer for Node.js</strong>
+  <strong>Production-Grade Microservices Framework for Node.js</strong>
   <br/>
-  <em>Built on ZeroMQ • Fully Async/Await • Type-Safe • Battle-Tested</em>
+  <em>Sub-millisecond Latency • Zero Configuration • Battle-Tested</em>
 </p>
 
 <p align="center">
-  <a href="https://github.com/standard/standard"><img src="https://cdn.rawgit.com/standard/standard/master/badge.svg" alt="JavaScript Style Guide"></a>
+  <a href="https://codecov.io/gh/sfast/zeronode"><img src="https://img.shields.io/badge/coverage-95%25-brightgreen" alt="Coverage"></a>
+  <a href="https://www.npmjs.com/package/zeronode"><img src="https://img.shields.io/npm/v/zeronode.svg" alt="npm version"></a>
+  <a href="https://github.com/sfast/zeronode/blob/master/LICENSE"><img src="https://img.shields.io/github/license/sfast/zeronode.svg" alt="MIT License"></a>
   <a href="https://gitter.im/npm-zeronode/Lobby"><img src="https://img.shields.io/gitter/room/nwjs/nw.js.svg" alt="Gitter"></a>
-  <a href="https://snyk.io/test/github/sfast/zeronode"><img src="https://snyk.io/test/github/sfast/zeronode/badge.svg" alt="Known Vulnerabilities"></a>
-  <a href="https://github.com/sfast/zeronode/blob/master/LICENSE"><img src="https://img.shields.io/github/license/sfast/zeronode.svg" alt="GitHub license"></a>
-</p>
-
-<p align="center">
-  <a href="https://nodei.co/npm/zeronode/"><img src="https://nodei.co/npm/zeronode.png" alt="NPM"></a>
 </p>
 
 ---
 
-## 📖 Table of Contents
+## What is ZeroNode?
 
-- [Why ZeroNode?](#why-zeronode)
-- [Installation](#installation)
-- [Quick Start](#quick-start)
-- [Core Concepts](#core-concepts)
-- [Architecture](#architecture)
-- [API Reference](#api-reference)
-- [Examples](#examples)
-- [Events & Error Handling](#events--error-handling)
-- [Production Best Practices](#production-best-practices)
-- [Contributing](#contributing)
-- [License](#license)
+**ZeroNode is a lightweight, high-performance framework for building distributed systems in Node.js.** Each Node can simultaneously act as both a server (binding to an address) and a client (connecting to multiple remote nodes), forming a flexible peer-to-peer mesh network.
 
----
+Unlike traditional client-server architectures, ZeroNode provides:
 
-## Why ZeroNode?
+- **N:M Connectivity**: One Node can bind as a server while connecting to N other nodes as a client
+- **Automatic Health Management**: Built-in ping from clients to server and server's heartbeat check protocol keeps track of live connections and failures.
+- **Intelligent Reconnection**: Automatic recovery from network failures with exponential backoff
+- **Sub-millisecond Latency**: Average 0.3ms request-response times for low-latency applications
+- **Smart Routing**: Route messages by ID, and by filters or predicate functions based on each node's  options, automatic smart load balancing and "publish to all" is built in
+- **Zero Configuration**: No brokers, no registries, no complex setup—just bind and connect
 
-### The Problem
-
-Building reliable microservice communication is **hard**:
-
-- ❓ How to handle dynamic scaling? (services come and go)
-- 🔄 How to handle reconnections? (network failures happen)
-- 🎯 How to route messages? (one-to-one, one-to-many, filtered routing)
-- 🚨 How to handle errors gracefully? (timeouts, disconnections, invalid data)
-- 📦 How to deal with message queuing? (when a service is temporarily down)
-- 🔍 How to discover services? (without a central registry)
-- ⚖️ How to load balance? (distribute requests across multiple instances)
-
-### The Solution
-
-ZeroNode solves these problems with:
-
-✅ **Automatic Reconnection** - Never worry about network failures  
-✅ **Built-in Patterns** - Request/Reply, Fire-and-Forget (Tick), Broadcasting  
-✅ **Mesh Networking** - Peer-to-peer communication without central broker  
-✅ **Dynamic Discovery** - Services discover each other automatically  
-✅ **Smart Routing** - Filter-based routing with options matching  
-✅ **Load Balancing** - Random, round-robin, priority-based routing  
-✅ **Zero Configuration** - Works out of the box with sensible defaults  
-✅ **Production-Ready** - Comprehensive error handling and lifecycle management  
+**Perfect for:** High-frequency trading systems, AI model inference clusters, multi-agent AI systems, real-time analytics, microservices and more.
 
 ---
 
-## Installation
-
-### Prerequisites
-
-ZeroNode requires [ZeroMQ](http://zeromq.org) to be installed.
-
-**Automatic Installation (Ubuntu, Debian, macOS):**
+### Installation
 
 ```bash
 npm install zeronode
 ```
 
-The install script will automatically install ZeroMQ for supported platforms.
+ZeroNode automatically installs required dependencies for supported platforms.
 
-**Manual Installation (Other Platforms):**
-
-```bash
-# Install ZeroMQ first
-# Ubuntu/Debian
-sudo apt-get install libzmq3-dev
-
-# macOS
-brew install zeromq
-
-# Then install ZeroNode
-npm install zeronode
-```
-
-**Docker:**
-
-```dockerfile
-FROM node:18-alpine
-RUN apk add --no-cache zeromq-dev
-RUN npm install zeronode
-```
-
----
-
-## Quick Start
-
-### 1. Create a Server
+### Basic Example
 
 ```javascript
+
+// A Node can:
+// - bind to an address (accept downstream connections)
+// - connect to many other nodes (act as a client)
+// - do both simultaneously
+
 import Node from 'zeronode'
 
-const server = new Node({ id: 'api-server' })
+// Create a Node and bind
+const server = new Node({ 
+  // Node id
+  id: 'api-server',                    
+  // Node metadata — arbitrary data used for smart routing
+  options: { role: 'api', version: 1 }
+})
 
-// Bind to a port
+// Bind to an address
 await server.bind('tcp://127.0.0.1:8000')
 
-// Handle requests
-server.onRequest('user:get', (envelope) => {
-  return {
-    id: envelope.data.userId,
-    name: 'John Doe',
-    email: 'john@example.com'
-  }
+// Register a request handler
+server.onRequest('user:get', (envelope, reply) => {
+  // The envelope wraps the underlying message buffer
+  const { userId } = envelope.data 
+  
+  // Simulate server returning user info
+  const userInfo = { id: userId, name: 'John Doe', email: 'john@example.com' }
+  // Return response back to the caller
+  return userInfo // or: reply(userInfo)
 })
 
-console.log('✓ Server ready at tcp://127.0.0.1:8000')
+console.log('Server ready at tcp://127.0.0.1:8000')
 ```
 
-### 2. Create a Client
-
 ```javascript
-import Node from 'zeronode'
-
+// Create a new Node 
 const client = new Node({ id: 'web-client' })
 
-// Connect to server
+// Connect to the first Node
 await client.connect({ address: 'tcp://127.0.0.1:8000' })
 
-// Make a request
-const response = await client.request({
-  to: 'api-server',
-  event: 'user:get',
-  data: { userId: 123 }
-})
+// Now we can make a request from client to server 
+const requestObject = {
+  to: 'api-server',           // Target node ID
+  event: 'user:get',          // Event name
+  data: { userId: 123 },      // Request payload
+  timeout: 5000               // Optional timeout in ms
+}
 
-console.log('User:', response)
-// { id: 123, name: 'John Doe', email: 'john@example.com' }
+// Read user data by id from server
+const user = await client.request(requestObject)
+
+console.log(user)
+// Output: { id: 123, name: 'John Doe', email: 'john@example.com' }
 ```
 
-### 3. Fire-and-Forget (Tick)
-
-```javascript
-// Send a message without waiting for a response
-client.tick({
-  to: 'api-server',
-  event: 'analytics:track',
-  data: { action: 'page_view', page: '/home' }
-})
-
-// Handle tick messages on server
-server.onTick('analytics:track', (envelope) => {
-  console.log('Analytics event:', envelope.data)
-  // No response needed - fire and forget!
-})
-```
-
-That's it! 🎉 You now have a working microservices communication layer.
+What does `client.connect()` do?
+- Establishes a transport connection to the server address
+- Performs a handshake to exchange identities and options
+- Starts periodic client→server pings and server-side heartbeat tracking
+- Subscribes to disconnection/failure events
+- Manages automatic reconnection with exponential backoff
 
 ---
+
 
 ## Core Concepts
 
-### Node
-
-A **Node** is the core building block of ZeroNode. Each Node can:
-- **Bind** to an address (acts as a server)
-- **Connect** to other nodes (acts as a client)  
-- Both! (hybrid mode)
-
-Think of a Node as a **participant** in your distributed system.
-
-```javascript
-const node = new Node({
-  id: 'unique-node-id',        // Unique identifier (auto-generated if not provided)
-  options: { role: 'worker' },  // Metadata for routing/discovery
-  config: {}                    // ZeroMQ configuration (optional)
-})
-```
-
 ### Messaging Patterns
 
-#### 1. **Request/Reply** (RPC-style)
+#### 1. Request/Reply (RPC-Style)
 
-**Use when:** You need a response (API calls, database queries, calculations)
+Use when you need a response from the target service.
 
 ```javascript
-// Server
-server.onRequest('math:add', (envelope) => {
-  const { a, b } = envelope.data
-  return { result: a + b }
+// Server: Register a handler
+server.onRequest('calculate:sum', ({ data }, reply) => {
+  const { numbers } = data
+  
+  // Perform calculation
+  const sum = numbers.reduce((a, b) => a + b, 0)
+  
+  // Return result (or call reply({ result: sum }))
+  return { result: sum }
 })
 
-// Client
+// Client: Make a request
 const response = await client.request({
   to: 'calc-server',
-  event: 'math:add',
-  data: { a: 5, b: 3 }
+  event: 'calculate:sum',
+  data: { numbers: [1, 2, 3, 4, 5] }
 })
-console.log(response.result) // 8
+
+console.log(response.result) // 15
 ```
 
-#### 2. **Tick** (Fire-and-Forget)
+#### 2. Tick (Fire-and-Forget)
 
-**Use when:** You don't need a response (logging, analytics, notifications)
+Use when you don't need a response (logging, notifications, analytics).
 
 ```javascript
-// Server
-server.onTick('log:info', (envelope) => {
-  console.log(envelope.data.message)
+// Server: Register a tick handler
+server.onTick('log:info', ({data}) => {
+  // envelope.data contains the log data
+  const { message, metadata } = data
+  
+  // Process asynchronously (no response expected)
+  console.log(`[INFO] ${message}`, metadata)
+  logToDatabase(message, metadata)
 })
 
-// Client (non-blocking!)
+// Client: Send a tick (non-blocking, returns immediately)
 client.tick({
   to: 'log-server',
   event: 'log:info',
-  data: { message: 'User logged in' }
-})
-```
-
-#### 3. **Broadcasting**
-
-**Use when:** Send to multiple nodes at once (pub/sub, notifications)
-
-```javascript
-// Send to ALL nodes that match a filter
-await node.tickAll({
-  event: 'config:reload',
-  data: { version: '2.0' },
-  filter: { role: 'worker' }  // Only nodes with options.role === 'worker'
-})
-```
-
-### Routing
-
-ZeroNode provides powerful routing capabilities:
-
-#### **Direct Routing** (by ID)
-
-```javascript
-// Send to a specific node
-await node.request({
-  to: 'specific-node-id',
-  event: 'ping',
-  data: {}
-})
-```
-
-#### **Smart Routing** (by options/filter)
-
-```javascript
-// Send to ANY node that matches the filter
-await node.requestAny({
-  event: 'process:job',
-  data: { jobId: 123 },
-  filter: {
-    role: 'worker',
-    status: 'idle',
-    region: 'us-west'
+  data: {
+    message: 'User logged in',
+    metadata: { userId: 123, timestamp: Date.now() }
   }
 })
 ```
 
-#### **Directional Routing**
+#### 3. Broadcasting
+
+Send to multiple nodes simultaneously.
 
 ```javascript
-// Send only to downstream nodes (nodes that connected TO this node)
-await node.requestDownAny({
-  event: 'task:assign',
-  data: { taskId: 456 }
-})
-
-// Send only to upstream nodes (nodes this node connected TO)
-await node.requestUpAny({
-  event: 'report:status',
-  data: { status: 'healthy' }
-})
-```
-
-### Pattern Matching
-
-Use RegExp for flexible routing:
-
-```javascript
-// Handle all API routes
-server.onRequest(/^api:.*/, (envelope) => {
-  const route = envelope.tag // e.g., 'api:users:get'
-  const data = envelope.data
-  // Route to appropriate handler
-  return handleApiRequest(route, data)
-})
-
-// Handle all log events
-server.onTick(/^log:/, (envelope) => {
-  logToFile(envelope.data)
-})
-```
-
----
-
-## Architecture
-
-ZeroNode is built with a clean, layered architecture:
-
-```
-┌─────────────────────────────────────────┐
-│            Node Layer                   │  ← Mesh networking, routing, discovery
-│  (Orchestration & Smart Routing)        │
-├─────────────────────────────────────────┤
-│     Client Layer    │   Server Layer    │  ← Application protocols
-│  (Connection mgmt)  │  (Client tracking)│
-├─────────────────────────────────────────┤
-│         Protocol Layer                  │  ← Request/reply, handshakes, pings
-│  (Message serialization & routing)      │
-├─────────────────────────────────────────┤
-│        Transport Layer (ZeroMQ)         │  ← Raw socket communication
-│    Router Socket  │  Dealer Socket      │
-└─────────────────────────────────────────┘
-```
-
-### Layer Responsibilities
-
-#### **Node Layer** (`src/node.js`)
-- Manages N clients + 1 server
-- Intelligent routing (by ID, by filter, random selection)
-- Handler registry (works even if server/clients created later)
-- Event transformation (Client/Server events → Node events)
-
-#### **Client Layer** (`src/protocol/client.js`)
-- Connects to remote servers
-- Handshake protocol
-- Heartbeat/ping management
-- Automatic reconnection
-
-#### **Server Layer** (`src/protocol/server.js`)
-- Binds to address
-- Tracks connected clients
-- Client timeout detection
-- Graceful shutdown protocol
-
-#### **Protocol Layer** (`src/protocol/protocol.js`)
-- Message serialization (MessagePack)
-- Request/response matching
-- Envelope format
-- Pattern-based routing
-
-#### **Transport Layer** (`src/transport/zeromq/`)
-- ZeroMQ socket management (Router, Dealer)
-- Connection state machine
-- Error handling
-- Native ZeroMQ features
-
----
-
-## API Reference
-
-### Node Class
-
-#### Constructor
-
-```javascript
-const node = new Node({
-  id: string,           // Optional. Auto-generated if not provided
-  bind: string,         // Optional. Address to bind (e.g., 'tcp://127.0.0.1:8000')
-  options: object,      // Optional. Metadata for routing/discovery
-  config: object        // Optional. ZeroMQ configuration
-})
-```
-
-#### Connection Management
-
-```javascript
-// Bind (act as server)
-await node.bind(address: string): Promise<string>
-// Returns the actual bound address (useful for port 0)
-
-// Connect (act as client)
-await node.connect({
-  address: string,
-  timeout?: number,           // Handshake timeout (default: 5000ms)
-  reconnectionTimeout?: number // Max reconnection time (default: -1 = infinite)
-}): Promise<object>
-// Returns remote node info
-
-// Disconnect
-await node.disconnect(address: string): Promise<boolean>
-
-// Stop (close all connections)
-await node.stop(): Promise<void>
-```
-
-#### Messaging
-
-```javascript
-// Request/Reply (waits for response)
-await node.request({
-  to: string,          // Target node ID
-  event: string,       // Event name
-  data: object,        // Payload
-  timeout?: number     // Request timeout (default: 10000ms)
-}): Promise<any>
-
-// Tick (fire-and-forget, returns immediately)
-node.tick({
-  to: string,
-  event: string,
-  data: object
-}): void
-
-// Request to ANY matching node
-await node.requestAny({
-  event: string,
-  data: object,
-  timeout?: number,
-  filter?: object,     // Options filter
-  down?: boolean,      // Include downstream nodes (default: true)
-  up?: boolean         // Include upstream nodes (default: true)
-}): Promise<any>
-
-// Tick to ANY matching node
-await node.tickAny({
-  event: string,
-  data: object,
-  filter?: object,
-  down?: boolean,
-  up?: boolean
-}): Promise<void>
-
-// Tick to ALL matching nodes
+// Send to ALL nodes matching a filter
 await node.tickAll({
-  event: string,
-  data: object,
-  filter?: object,
-  down?: boolean,
-  up?: boolean
-}): Promise<void>
-```
-
-#### Handler Registration
-
-```javascript
-// Register request handler
-node.onRequest(
-  pattern: string | RegExp,
-  handler: (envelope, reply) => any
-)
-
-// Register tick handler
-node.onTick(
-  pattern: string | RegExp,
-  handler: (envelope) => void
-)
-
-// Unregister handlers
-node.offRequest(pattern, handler?)
-node.offTick(pattern, handler?)
-```
-
-#### Utility Methods
-
-```javascript
-// Get node info
-node.getId(): string
-node.getAddress(): string
-node.getOptions(): object
-
-// Update options (for routing/discovery)
-await node.setOptions(options: object): Promise<void>
-
-// Get filtered nodes
-node.getFilteredNodes({
-  options?: object,
-  predicate?: function,
-  up?: boolean,
-  down?: boolean
-}): string[]
-
-// Get peer info
-node.getServerInfo({ id?, address? }): object | null
-node.getClientInfo({ id }): object | null
+  event: 'config:reload',
+  data: { version: '2.0', config: newConfig },
+  filter: { 
+    role: 'worker',    // Only workers
+    status: 'ready'    // That are ready
+  }
+})
 ```
 
 ---
 
-## Examples
+### Smart Routing
 
-### Example 1: API Gateway + Workers
+#### Direct Routing (by ID)
 
 ```javascript
-// api-gateway.js
-import Node from 'zeronode'
+// Route to a specific node by ID
+const response = await node.request({
+  to: 'user-service-1',  // Exact node ID
+  event: 'user:get',
+  data: { userId: 123 }
+})
+```
 
-const gateway = new Node({ id: 'gateway' })
-await gateway.bind('tcp://0.0.0.0:8000')
+#### Filter-Based Routing / Load balancing 
 
-gateway.onRequest('api:*', async (envelope) => {
-  // Forward to any available worker
-  return await gateway.requestAny({
-    event: 'worker:process',
-    data: envelope.data,
-    filter: { role: 'worker', status: 'ready' }
+```javascript
+// Route to ANY node matching the filter (automatic load balancing)
+const response = await node.requestAny({
+  event: 'job:process',
+  data: { jobId: 456 },
+  filter: {
+    role: 'worker',           // Must be a worker
+    status: 'idle',           // Must be idle
+    region: 'us-west',        // In the correct region
+    capacity: { $gte: 50 }    // With sufficient capacity
+  }
+})
+```
+
+#### Pattern Matching
+
+ZeroNode supports pattern-based handlers using strings or RegExp. With RegExp you can register
+one handler for a family of events that share a common prefix. The incoming event name is available
+as `envelope.event`, so you can branch on the action and keep code DRY and fast.
+
+```javascript
+// Handle multiple events with a single handler using RegExp
+server.onRequest(/^api:user:/, ({data, tag }, reply) => {
+  // Matches: 'api:user:get', 'api:user:create', 'api:user:update', etc.
+  const action = tag.split(':')[2] // 'get', 'create', 'update'
+  
+  switch (action) {
+    case 'get':
+      return getUserData(data)
+    case 'create':
+      return createUser(data)
+    // ...
+  }
+})
+```
+
+---
+
+### Node Options and Metadata
+
+Use metadata (Node options) for service discovery and routing.
+
+```javascript
+// Worker node with metadata
+const worker = new Node({
+  id: `worker-${process.pid}`,
+  options: {
+    role: 'worker',
+    region: 'us-east-1',
+    version: '2.1.0',
+    capacity: 100,
+    features: ['ml', 'image-processing'],
+    status: 'ready'
+  }
+})
+
+// workShedulerNode routes based on metadata
+const response = await workShedulerNode.requestAny({
+  event: 'process:image',
+  data: imageData,
+  filter: {
+    role: 'worker',
+    features: { $contains: 'image-processing' },
+    capacity: { $gte: 50 },
+    status: 'ready'
+  }
+})
+
+// Update options dynamically
+await worker.setOptions({ status: 'busy' })
+// Process work...
+await worker.setOptions({ status: 'ready' })
+```
+
+**Advanced Filtering Operators:**
+
+
+```javascript
+filter: {
+  // Exact match
+  role: 'worker',
+  
+  // Comparison
+  capacity: { $gte: 50, $lte: 100 },
+  priority: { $in: [1, 2, 3] },
+  
+  // String matching
+  region: { $regex: /^us-/ },
+  name: { $contains: 'prod' },
+  
+  // Array matching
+  features: { $containsAny: ['ml', 'gpu'] },
+  excluded: { $containsNone: ['deprecated'] }
+}
+```
+
+---
+
+## Middleware System
+
+ZeroNode provides Express.js-style middleware chains for composing request handling logic.
+
+### Basic Middleware
+
+```javascript
+// 2-parameter: Auto-continue after execution (for side effects)
+server.onRequest(/^api:/, (envelope, reply) => {
+  // Log every API request
+  console.log(`${envelope.event} from ${envelope.owner}`)
+  
+  // Automatically continues to next handler
+})
+
+// 3-parameter: Manual control (for validation/auth)
+server.onRequest(/^api:/, (envelope, reply, next) => {
+  // Check authentication
+  if (!envelope.data.token) {
+    return reply.error('Unauthorized')  // Stop chain
+  }
+  
+  // Attach user info to envelope
+  envelope.user = verifyToken(envelope.data.token)
+  
+  // Continue to next handler
+  next()
+})
+
+// Business logic handler
+server.onRequest('api:user:get', async (envelope, reply) => {
+  // envelope.user is available from middleware
+  const user = await database.users.findOne({ 
+    id: envelope.data.userId 
+  })
+  
+  return user
+})
+```
+
+### Error Handling
+
+```javascript
+// 4-parameter: Error handler (catches errors from middleware chain)
+server.onRequest(/^api:/, (error, envelope, reply, next) => {
+  // Log error
+  console.error('API Error:', error)
+  
+  // Send structured error response
+  reply.error({
+    code: 'API_ERROR',
+    message: error.message,
+    requestId: envelope.id
   })
 })
 ```
 
-```javascript
-// worker.js
-import Node from 'zeronode'
+### Complete Middleware Example
 
-const worker = new Node({
-  id: `worker-${process.pid}`,
-  options: { role: 'worker', status: 'ready' }
+```javascript
+// 1. Request logging
+server.onRequest(/^api:/, (envelope, reply) => {
+  logger.info(`[${envelope.id}] ${envelope.event}`)
 })
 
-await worker.connect({ address: 'tcp://gateway:8000' })
+// 2. Authentication
+server.onRequest(/^api:/, async (envelope, reply, next) => {
+  const user = await authenticate(envelope.data.token)
+  if (!user) return reply.error('Unauthorized')
+  
+  envelope.user = user
+  next()
+})
 
-worker.onRequest('worker:process', (envelope) => {
-  // Process the request
-  return { result: 'processed', data: envelope.data }
+// 3. Rate limiting
+server.onRequest(/^api:/, (envelope, reply, next) => {
+  if (rateLimiter.isExceeded(envelope.user.id)) {
+    return reply.error('Rate limit exceeded')
+  }
+  next()
+})
+
+// 4. Validation
+server.onRequest(/^api:user:/, (envelope, reply, next) => {
+  if (!envelope.data.userId) {
+    return reply.error('userId is required')
+  }
+  next()
+})
+
+// 5. Error handler
+server.onRequest(/^api:/, (error, envelope, reply, next) => {
+  metrics.increment('api.errors')
+  reply.error({ code: 'API_ERROR', message: error.message })
+})
+
+// 6. Business logic
+server.onRequest('api:user:get', async (envelope, reply) => {
+  return await database.users.findOne({ id: envelope.data.userId })
 })
 ```
 
-### Example 2: Distributed Logging
+See [docs/MIDDLEWARE.md](docs/MIDDLEWARE.md) for comprehensive middleware documentation.
+
+---
+
+// TODO lets have a list of real world examples under examples folder and a README inside it and just have alist of some real worl examples with github links of each file in readme 
+
+i.e API Gateway
+i.e Distributed Logging System
+i.e Task Queue with Priority Workers
+ .... 
+
+## Real-World Examples
+
+
+### Example 1: API Gateway with Load-Balanced Workers
 
 ```javascript
-// log-aggregator.js
+// gateway.js - API Gateway
+const gateway = new Node({ 
+  id: 'api-gateway',
+  options: { role: 'gateway' }
+})
+
+await gateway.bind('tcp://0.0.0.0:8000')
+
+// Route all API requests to available workers
+gateway.onRequest(/^api:/, async (envelope, reply) => {
+  // Automatically load-balance across idle workers
+  return await gateway.requestAny({
+    event: envelope.event,        // Forward the same event
+    data: envelope.data,        // Forward the same data
+    filter: { 
+      role: 'worker', 
+      status: 'idle' 
+    },
+    timeout: 30000              // 30 second timeout
+  })
+})
+
+console.log('API Gateway ready')
+```
+
+```javascript
+// worker.js - Worker Instance (run multiple copies)
+const worker = new Node({
+  id: `worker-${process.pid}`,
+  options: { 
+    role: 'worker',
+    status: 'idle',           // Initially idle
+    capacity: 100
+  }
+})
+
+// Connect to gateway
+await worker.connect({ address: 'tcp://gateway:8000' })
+
+// Handle requests
+worker.onRequest(/^api:/, async (envelope, reply) => {
+  // Mark as busy
+  await worker.setOptions({ status: 'busy' })
+  
+  try {
+    // Process the request
+    const result = await processRequest(envelope)
+    
+    return result
+  } finally {
+    // Mark as idle again
+    await worker.setOptions({ status: 'idle' })
+  }
+})
+
+console.log(`Worker ${worker.getId()} ready`)
+```
+
+### Example 2: Distributed Logging System
+
+```javascript
+// log-aggregator.js - Central Log Collector
 const aggregator = new Node({ id: 'log-aggregator' })
 await aggregator.bind('tcp://0.0.0.0:9000')
 
+// Handle all log events
 aggregator.onTick(/^log:/, (envelope) => {
-  const level = envelope.tag.split(':')[1] // 'info', 'warn', 'error'
-  const message = envelope.data.message
+  // Extract log level from event name (log:info, log:warn, log:error)
+  const level = envelope.event.split(':')[1]
   
-  console.log(`[${level.toUpperCase()}] ${message}`)
-  // Write to database, send to monitoring, etc.
+  const { service, message, metadata } = envelope.data
+  
+  // Write to storage (Elasticsearch, file, etc.)
+  writeToElasticsearch({
+    service,
+    level,
+    message,
+    metadata,
+    timestamp: Date.now()
+  })
+  
+  // Also write to console for debugging
+  console.log(`[${level.toUpperCase()}] [${service}] ${message}`)
 })
+
+console.log('Log aggregator ready')
 ```
 
 ```javascript
-// app-server.js
-const app = new Node({ id: 'app-1' })
+// app.js - Application using the logger
+const app = new Node({ id: 'user-service' })
 await app.connect({ address: 'tcp://log-aggregator:9000' })
 
-// Log anywhere in your app
+// Log from anywhere in your application (non-blocking)
 app.tick({
   to: 'log-aggregator',
   event: 'log:info',
-  data: { message: 'User logged in', userId: 123 }
-})
-```
-
-### Example 3: Health Check System
-
-```javascript
-// monitor.js
-const monitor = new Node({ id: 'monitor' })
-await monitor.bind('tcp://0.0.0.0:7000')
-
-// Ping all services every 30 seconds
-setInterval(async () => {
-  const services = monitor.getFilteredNodes({ up: true, down: true })
-  
-  for (const serviceId of services) {
-    try {
-      const response = await monitor.request({
-        to: serviceId,
-        event: 'health:check',
-        timeout: 5000
-      })
-      console.log(`✓ ${serviceId}: ${response.status}`)
-    } catch (err) {
-      console.error(`✗ ${serviceId}: ${err.message}`)
-    }
+  data: {
+    service: 'user-service',
+    message: 'User logged in successfully',
+    metadata: { userId: 123, ip: '192.168.1.1' }
   }
-}, 30000)
-```
+})
 
-```javascript
-// service.js
-const service = new Node({ id: 'service-1' })
-await service.connect({ address: 'tcp://monitor:7000' })
-
-service.onRequest('health:check', () => {
-  return {
-    status: 'healthy',
-    uptime: process.uptime(),
-    memory: process.memoryUsage()
+// Log errors
+app.tick({
+  to: 'log-aggregator',
+  event: 'log:error',
+  data: {
+    service: 'user-service',
+    message: 'Database connection failed',
+    metadata: { error: err.message, stack: err.stack }
   }
 })
 ```
 
-### Example 4: Load-Balanced Task Queue
+### Example 3: Task Queue with Priority Workers
 
 ```javascript
-// task-dispatcher.js
-const dispatcher = new Node({ id: 'dispatcher' })
-await dispatcher.bind('tcp://0.0.0.0:6000')
+// dispatcher.js - Task Dispatcher
+const dispatcher = new Node({ id: 'task-dispatcher' })
+await dispatcher.bind('tcp://0.0.0.0:7000')
 
-dispatcher.onRequest('task:submit', async (envelope) => {
-  const { taskId, data } = envelope.data
+dispatcher.onRequest('task:submit', async (envelope, reply) => {
+  const { priority, taskData } = envelope.data
   
-  // Send to any idle worker (load balancing!)
   try {
+    // Route high-priority tasks to high-priority workers
     const result = await dispatcher.requestAny({
       event: 'task:execute',
-      data: { taskId, data },
-      filter: { role: 'worker', status: 'idle' },
-      timeout: 30000
+      data: taskData,
+      filter: {
+        role: 'worker',
+        status: 'idle',
+        priority: priority === 'high' ? { $gte: 5 } : { $gte: 1 }
+      },
+      timeout: 60000  // 60 second timeout
     })
     
     return { success: true, result }
@@ -629,268 +565,219 @@ dispatcher.onRequest('task:submit', async (envelope) => {
 ```
 
 ```javascript
-// worker.js (run multiple instances!)
+// worker.js - Priority Worker
 const worker = new Node({
   id: `worker-${process.pid}`,
-  options: { role: 'worker', status: 'idle' }
+  options: {
+    role: 'worker',
+    status: 'idle',
+    priority: process.env.PRIORITY || 5  // 1-10 scale
+  }
 })
 
-await worker.connect({ address: 'tcp://dispatcher:6000' })
+await worker.connect({ address: 'tcp://dispatcher:7000' })
 
-worker.onRequest('task:execute', async (envelope) => {
+worker.onRequest('task:execute', async (envelope, reply) => {
   // Mark as busy
-  await worker.setOptions({ role: 'worker', status: 'busy' })
+  await worker.setOptions({ status: 'busy' })
   
-  // Process task
-  const result = await processTask(envelope.data)
-  
-  // Mark as idle again
-  await worker.setOptions({ role: 'worker', status: 'idle' })
-  
-  return result
+  try {
+    // Execute the task
+    const result = await executeTask(envelope.data)
+    return result
+  } finally {
+    // Mark as idle
+    await worker.setOptions({ status: 'idle' })
+  }
 })
 ```
 
 ---
 
-## Events & Error Handling
+## Error Handling & Reconnection
 
-### Node Events
+### Automatic Reconnection
 
 ```javascript
-import { NodeEvent } from 'zeronode'
-
-node.on(NodeEvent.READY, ({ nodeId, hasServer }) => {
-  console.log('Node ready:', nodeId)
+// Client automatically reconnects on connection loss
+await client.connect({
+  address: 'tcp://server:8000',
+  reconnectionTimeout: -1  // -1 = infinite retries (default)
+  // reconnectionTimeout: 30000  // Give up after 30 seconds
 })
 
-node.on(NodeEvent.PEER_JOINED, ({ peerId, direction, peerOptions }) => {
-  console.log('Peer joined:', peerId, direction)
-  // direction: 'upstream' (we connected TO them) | 'downstream' (they connected TO us)
-})
-
-node.on(NodeEvent.PEER_LEFT, ({ peerId, direction, reason }) => {
-  console.log('Peer left:', peerId, reason)
-  // reason: 'disconnected' | 'timeout' | 'stopped' | 'failed'
-})
-
-node.on(NodeEvent.STOPPED, () => {
-  console.log('Node stopped')
-})
-
-node.on('error', (err) => {
-  console.error('Node error:', err)
-})
+// Connection lost? ZeroNode automatically reconnects with exponential backoff
+// No manual intervention required!
 ```
 
-### Error Types
+### Handling Errors
 
 ```javascript
 import { NodeError, NodeErrorCode } from 'zeronode'
 
 try {
-  await node.request({ to: 'unknown-node', event: 'ping', data: {} })
+  const response = await node.request({
+    to: 'remote-service',
+    event: 'process:data',
+    data: payload,
+    timeout: 5000
+  })
+  
+  return response
 } catch (err) {
+  // ZeroNode provides structured error codes
   if (err instanceof NodeError) {
     switch (err.code) {
       case NodeErrorCode.NODE_NOT_FOUND:
-        console.error('No route to node')
-        break
+        // No route to the target node
+        logger.warn('Service not available, using fallback')
+        return fallbackResponse
+        
+      case NodeErrorCode.REQUEST_TIMEOUT:
+        // Request timed out
+        logger.error('Request timed out, will retry')
+        return retryRequest()
+        
+        // TODO maybe this can be also 
       case NodeErrorCode.NO_NODES_MATCH_FILTER:
-        console.error('No nodes match the filter')
-        break
-      case NodeErrorCode.ROUTING_FAILED:
-        console.error('Routing failed:', err.message)
-        break
+        // No nodes match the filter criteria
+        logger.error('No available workers')
+        throw new Error('Service unavailable')
+        
       default:
-        console.error('Node error:', err)
+        logger.error('Unexpected error:', err)
+        throw err
     }
   }
+  
+  // Handle other error types
+  throw err
 }
 ```
 
-### Protocol Errors
+### Lifecycle Events
 
 ```javascript
-import { ProtocolError, ProtocolErrorCode } from 'zeronode'
+import { NodeEvent } from 'zeronode'
 
-node.onRequest('api:*', async (envelope) => {
-  try {
-    // Your logic
-  } catch (err) {
-    // Return structured error
-    throw new ProtocolError({
-      code: ProtocolErrorCode.HANDLER_ERROR,
-      message: 'Failed to process request',
-      cause: err
-    })
-  }
+// Monitor peer connections
+node.on(NodeEvent.PEER_JOINED, ({ peerId, peerOptions, direction }) => {
+  logger.info(`Peer connected: ${peerId}`, { direction, options: peerOptions })
+  // direction: 'upstream' (we connected to them) | 'downstream' (they connected to us)
+})
+
+node.on(NodeEvent.PEER_LEFT, ({ peerId, reason, direction }) => {
+  logger.warn(`Peer disconnected: ${peerId}`, { reason, direction })
+  // reason: 'disconnected' | 'timeout' | 'stopped' | 'failed'
+})
+
+// Monitor node lifecycle
+node.on(NodeEvent.READY, ({ nodeId }) => {
+  logger.info(`Node ready: ${nodeId}`)
+})
+
+node.on(NodeEvent.STOPPED, () => {
+  logger.info('Node stopped gracefully')
+})
+
+// Handle errors
+node.on('error', (err) => {
+  logger.error('Node error:', err)
+  metrics.increment('node.errors')
 })
 ```
 
 ---
 
-## Connection Lifecycle
+## Performance
 
-### Handshake Protocol
+ZeroNode is designed for high-performance microservices communication:
 
-When a client connects to a server:
+### Latency Benchmarks in AWS t3 micro (smallest one)
 
-```
-Client                          Server
-  │                              │
-  ├──── CONNECT (options) ───────>│
-  │                              │ (validates client)
-  │<───── CONNECTED (options) ───┤
-  │                              │
-  │ ✓ Connection established     │
+
+### Running Benchmarks
+
+```bash
+npm run benchmark:node      # Node-to-node latency
+npm run benchmark:throughput # Throughput test
 ```
 
-### Heartbeat/Ping
+See [docs/PERFORMANCE.md](docs/PERFORMANCE.md) for detailed performance tuning guide.
 
-To detect disconnections:
+---
 
-```
-Client                          Server
-  │                              │
-  ├──── PING ────────────────────>│
-  │<───── PONG ────────────────── │
-  │                              │
-  │ (every 2.5 seconds)          │ (expects ping within 10s)
-```
+## Documentation
 
-**Configuration:**
+### Getting Started
+- **[Quick Start Guide](#quick-start)** - Get up and running in minutes
+- **[Core Concepts](#core-concepts)** - Understanding ZeroNode fundamentals
 
-```javascript
-const node = new Node({
-  config: {
-    PING_INTERVAL: 2500,      // Client ping frequency (ms)
-    CLIENT_TIMEOUT: 10000,    // Server timeout for missing pings (ms)
-    HANDSHAKE_TIMEOUT: 5000   // Handshake timeout (ms)
-  }
-})
-```
+### Feature Guides
+- **[Middleware System](docs/MIDDLEWARE.md)** - Express-style middleware chains
+- **[Smart Routing](docs/ROUTING.md)** - Service discovery and load balancing
+- **[Error Handling](docs/ERROR_HANDLING.md)** - Comprehensive error handling
+- **[Events Reference](docs/EVENTS.md)** - All events and lifecycle hooks
 
-### Reconnection
+### Advanced Topics
+- **[Architecture Guide](docs/ARCHITECTURE.md)** - Deep dive into internals
+- **[Performance Tuning](docs/PERFORMANCE.md)** - Optimization strategies
+- **[Benchmarks](docs/BENCHMARKS.md)** - Performance testing and analysis
+- **[Testing Guide](docs/TESTING.md)** - Testing distributed systems
+- **[Production Deployment](docs/PRODUCTION.md)** - Best practices for production
 
-**Automatic reconnection** is built-in:
-
-```javascript
-await node.connect({
-  address: 'tcp://server:8000',
-  reconnectionTimeout: -1  // -1 = infinite reconnection attempts (default)
-  // reconnectionTimeout: 30000  // Give up after 30 seconds
-})
-
-// Client will automatically reconnect if connection is lost!
-```
-
-**Reconnection behavior:**
-
-1. Connection lost → Client enters RECONNECTING state
-2. Attempts to reconnect using exponential backoff
-3. On success → Re-handshake and restore handlers
-4. On timeout → Emits FAILED/CLOSED events
-
-**Listen for reconnection events:**
-
-```javascript
-import { ClientEvent } from 'zeronode'
-
-node.on(ClientEvent.DISCONNECTED, ({ serverId }) => {
-  console.log('Disconnected from server, will attempt reconnection...')
-})
-
-node.on(ClientEvent.READY, ({ serverId }) => {
-  console.log('Reconnected successfully!')
-})
-
-node.on(ClientEvent.FAILED, ({ serverId }) => {
-  console.error('Reconnection failed - giving up')
-})
-```
-
-### Graceful Shutdown
-
-```javascript
-// Server sends STOP to all clients
-await server.stop()
-
-// Clients receive STOP and gracefully disconnect
-// No need for manual cleanup!
-```
+### API Reference
+- **[Complete API](docs/API.md)** - Full API documentation
+- **[Configuration](docs/CONFIGURATION.md)** - All configuration options
 
 ---
 
 ## Production Best Practices
 
-### 1. **Use Unique Node IDs**
+### 1. Use Unique Node IDs
 
 ```javascript
-// ✅ Good: Unique per instance
+// ✓ Unique per instance
 const node = new Node({
-  id: `${process.env.SERVICE_NAME}-${process.env.HOSTNAME}-${process.pid}`
+  id: `${process.env.SERVICE}-${process.env.HOSTNAME}-${process.pid}`
 })
 
-// ❌ Bad: Same ID for all instances
+// ✗ Same ID for all instances (routing conflicts)
 const node = new Node({ id: 'worker' })
 ```
 
-### 2. **Set Meaningful Options**
+### 2. Always Set Timeouts
 
 ```javascript
-const node = new Node({
-  options: {
-    role: 'api-worker',
-    region: process.env.AWS_REGION,
-    version: process.env.APP_VERSION,
-    capacity: 100
-  }
+// ✓ Explicit timeout
+const response = await node.request({
+  to: 'service',
+  event: 'process',
+  data: payload,
+  timeout: 30000  // 30 second max
 })
+
+// ✗ Using default timeout (may be too long/short)
 ```
 
-### 3. **Handle Errors Properly**
+### 3. Handle All Error Cases
 
 ```javascript
-// ✅ Good: Handle all error scenarios
+// ✓ Comprehensive error handling
 try {
-  const response = await node.request({
-    to: 'service',
-    event: 'process',
-    data: payload,
-    timeout: 5000
-  })
-  return response
+  return await node.request({ ... })
 } catch (err) {
   if (err.code === 'REQUEST_TIMEOUT') {
-    // Retry or return cached response
+    return cachedResponse
   } else if (err.code === 'NODE_NOT_FOUND') {
-    // Route to backup service
+    return fallbackService()
   } else {
-    // Log and handle
+    throw err
   }
 }
-
-// ❌ Bad: No error handling
-const response = await node.request({ to: 'service', event: 'process', data: payload })
 ```
 
-### 4. **Use Timeouts**
-
-```javascript
-// ✅ Good: Always set timeouts
-await node.request({
-  to: 'external-api',
-  event: 'fetch',
-  data: {},
-  timeout: 30000  // 30 seconds max
-})
-
-// ❌ Bad: No timeout (default is 10s, but be explicit!)
-await node.request({ to: 'external-api', event: 'fetch', data: {} })
-```
-
-### 5. **Monitor Node Health**
+### 4. Implement Health Checks
 
 ```javascript
 // Expose health endpoint
@@ -898,29 +785,20 @@ node.onRequest('health:check', () => ({
   status: 'healthy',
   uptime: process.uptime(),
   memory: process.memoryUsage(),
-  peers: node.getFilteredNodes({ up: true, down: true }).length
+  connections: node.getFilteredNodes({ up: true, down: true }).length
 }))
-
-// Listen for connection issues
-node.on('error', (err) => {
-  metrics.increment('node.errors', { code: err.code })
-})
-
-node.on(NodeEvent.PEER_LEFT, ({ peerId, reason }) => {
-  metrics.increment('node.peer_left', { reason })
-})
 ```
 
-### 6. **Graceful Shutdown**
+### 5. Graceful Shutdown
 
 ```javascript
 process.on('SIGTERM', async () => {
-  console.log('Received SIGTERM, shutting down gracefully...')
+  console.log('Shutting down gracefully...')
   
-  // Stop accepting new requests
+  // Stop accepting new connections
   await node.unbind()
   
-  // Wait for in-flight requests to complete
+  // Wait for in-flight requests
   await new Promise(resolve => setTimeout(resolve, 5000))
   
   // Close all connections
@@ -930,80 +808,20 @@ process.on('SIGTERM', async () => {
 })
 ```
 
-### 7. **Use Load Balancing**
-
-```javascript
-// Distribute load across multiple workers
-const response = await dispatcher.requestAny({
-  event: 'task:process',
-  data: payload,
-  filter: {
-    role: 'worker',
-    status: 'idle'
-  }
-})
-```
-
-### 8. **Implement Circuit Breaker**
-
-```javascript
-const circuitBreaker = {
-  failures: 0,
-  threshold: 5,
-  resetTime: 60000,
-  isOpen: false
-}
-
-async function callService(event, data) {
-  if (circuitBreaker.isOpen) {
-    throw new Error('Circuit breaker open')
-  }
-  
-  try {
-    const response = await node.request({ to: 'service', event, data })
-    circuitBreaker.failures = 0
-    return response
-  } catch (err) {
-    circuitBreaker.failures++
-    if (circuitBreaker.failures >= circuitBreaker.threshold) {
-      circuitBreaker.isOpen = true
-      setTimeout(() => {
-        circuitBreaker.isOpen = false
-        circuitBreaker.failures = 0
-      }, circuitBreaker.resetTime)
-    }
-    throw err
-  }
-}
-```
-
 ---
 
-## Testing
+## Community & Support
 
-ZeroNode is thoroughly tested with **95%+ code coverage**.
-
-```bash
-# Run all tests
-npm test
-
-# Run specific test file
-npm test test/node.test.js
-
-# Run with coverage
-npm run coverage
-
-# Run benchmarks
-npm run benchmark
-```
+- 💬 **[Gitter Chat](https://gitter.im/npm-zeronode/Lobby)** - Community discussions
+- 🐛 **[Issue Tracker](https://github.com/sfast/zeronode/issues)** - Bug reports and feature requests
+- 📖 **[Wiki](https://github.com/sfast/zeronode/wiki)** - Community guides and tutorials
+- 🔧 **[Examples](https://github.com/sfast/zeronode/tree/master/examples)** - Code examples
 
 ---
 
 ## Contributing
 
 We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-### Development Setup
 
 ```bash
 git clone https://github.com/sfast/zeronode.git
@@ -1014,25 +832,6 @@ npm test
 
 ---
 
-## Documentation
-
-- [Architecture Guide](docs/ARCHITECTURE.md) - In-depth architecture documentation
-- [Performance Guide](docs/PERFORMANCE.md) - Performance tuning and benchmarks
-- [Testing Guide](docs/TESTING.md) - Testing best practices
-- [API Reference](docs/API.md) - Complete API documentation
-- [Migration Guide](docs/MIGRATION.md) - Upgrading from older versions
-
----
-
-## Community
-
-- 💬 [Gitter Chat](https://gitter.im/npm-zeronode/Lobby)
-- 🐛 [Issue Tracker](https://github.com/sfast/zeronode/issues)
-- 📖 [Wiki](https://github.com/sfast/zeronode/wiki)
-- 🐦 [Twitter](https://twitter.com/intent/tweet?text=Zeronode%20-%20rock%20solid%20transport%20and%20smarts%20for%20building%20NodeJS%20microservices.%E2%9C%8C%E2%9C%8C%E2%9C%8C&url=https://github.com/sfast/zeronode&hashtags=microservices,scaling,loadbalancing,zeromq,awsomenodejs,nodejs)
-
----
-
 ## License
 
 [MIT](LICENSE) © [SFast](https://github.com/sfast)
@@ -1040,7 +839,7 @@ npm test
 ---
 
 <p align="center">
-  <strong>Built with ❤️ by the ZeroNode team</strong>
+  <strong>Built for the Node.js community</strong>
   <br/>
-  <em>Star ⭐ this repo if you find it useful!</em>
+  <em>If ZeroNode helps your project, please ⭐ star this repository!</em>
 </p>

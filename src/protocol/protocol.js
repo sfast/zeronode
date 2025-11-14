@@ -16,6 +16,7 @@ import { EventEmitter } from 'events'
 import { ProtocolError, ProtocolErrorCode } from './protocol-errors.js'
 import { EnvelopeIdGenerator, Envelope, BufferStrategy, EnvelopType } from './envelope.js'
 import { TransportEvent } from '../transport/events.js'
+import Globals from '../globals.js'
 
 // ============================================================================
 // PROTOCOL CONFIGURATION DEFAULTS
@@ -37,7 +38,8 @@ export const ProtocolEvent = {
   // Transport state changes (simplified)
   TRANSPORT_READY: 'protocol:transport_ready',       // Transport can send/receive bytes
   TRANSPORT_NOT_READY: 'protocol:transport_not_ready', // Transport disconnected/unbound
-  TRANSPORT_CLOSED: 'protocol:transport_closed'      // Transport permanently closed
+  TRANSPORT_CLOSED: 'protocol:transport_closed',      // Transport permanently closed
+  ERROR: 'protocol:error'                             // Protocol-surfaced transport/protocol error
 }
 
 // ============================================================================
@@ -48,7 +50,9 @@ export const ProtocolEvent = {
 // prefix to prevent user code from spoofing them.
 
 export const ProtocolSystemEvent = {
-  CLIENT_CONNECTED: '_system:client_connected',  // Client → Server: Handshake request
+  // Handshake (explicit names)
+  HANDSHAKE_INIT_FROM_CLIENT: '_system:handshake_init_from_client',  // Client → Server
+  HANDSHAKE_ACK_FROM_SERVER: '_system:handshake_ack_from_server',    // Server → Client
   CLIENT_PING: '_system:client_ping',            // Client → Server: Heartbeat
   CLIENT_STOP: '_system:client_stop',            // Client → Server: Graceful disconnect
   SERVER_STOP: '_system:server_stop'             // Server → Client: Server shutting down
@@ -85,6 +89,14 @@ export default class Protocol extends EventEmitter {
       throw new Error('Protocol requires a socket')
     }
     
+    // Simple config merge: defaults → constructor overrides
+    const mergedConfig = {
+      BUFFER_STRATEGY: Globals.PROTOCOL_BUFFER_STRATEGY,
+      PROTOCOL_REQUEST_TIMEOUT: Globals.PROTOCOL_REQUEST_TIMEOUT,
+      DEBUG: false,
+      ...(config || {})
+    }
+
     let _scope = {
       socket,                    // PRIVATE - never expose!
       // Request tracking: id → { resolve, reject, timer }
@@ -99,23 +111,15 @@ export default class Protocol extends EventEmitter {
       // Handler storage - Both Client and Server need this
       requestEmitter: new PatternEmitter(),
       tickEmitter: new PatternEmitter(),
-      // Protocol configuration
-      config: {
-        // Buffer allocation strategy (default: EXACT)
-        BUFFER_STRATEGY: config.BUFFER_STRATEGY !== undefined 
-          ? config.BUFFER_STRATEGY 
-          : BufferStrategy.EXACT
-      }
+      // Protocol configuration (simple merged)
+      config: mergedConfig,
+      // Closed flag for idempotent teardown and API gating
+      closed: false
       // NO state tracking - just pass through transport events
       // NO peer tracking - that's Server/Client responsibility!
     }
     
     _private.set(this, _scope)
-    
-    // Listen to socket messages
-    socket.on(TransportEvent.MESSAGE, ({ buffer, sender }) => {
-      this._handleIncomingMessage(buffer, sender)
-    })
     
     // Translate socket events to protocol events
     this._attachSocketEventHandlers(socket)
@@ -131,8 +135,8 @@ export default class Protocol extends EventEmitter {
   }
   
   getConfig () {
-    let { socket } = _private.get(this)
-    return socket.getConfig()
+    let { config } = _private.get(this)
+    return config
   }
 
   setLogger (logger) {
@@ -142,29 +146,25 @@ export default class Protocol extends EventEmitter {
 
   debugMode (val) {
     let { socket } = _private.get(this)
-    return socket.debugMode(val)
+    return socket.debug = val
   }
 
   isOnline () {
-    let { socket } = _private.get(this)
-    return socket.isOnline()
+    let { socket, closed } = _private.get(this)
+    return socket.isOnline() && !closed
   }
 
-  // Protocol is ready when socket is online
-  isReady () {
-    return this.isOnline()
-  }
-  
   // ============================================================================
   // REQUEST/RESPONSE
   // ============================================================================
   
   request ({ to, event, data, timeout } = {}) {
-    let { socket, requests } = _private.get(this)
-    timeout = timeout || this.getConfig().REQUEST_TIMEOUT || ProtocolConfigDefaults.REQUEST_TIMEOUT
+    let { socket, requests, config } = _private.get(this)
+    // we merged defaults in constructor
+    timeout = timeout || config.PROTOCOL_REQUEST_TIMEOUT
     
-    // Check if protocol is ready to send
-    if (!this.isReady()) {
+    // Check if transport is online
+    if (!this.isOnline()) {
       return Promise.reject(new ProtocolError({
         code: ProtocolErrorCode.NOT_READY,
         message: `Cannot send request: Protocol '${this.getId()}' is not ready`,
@@ -196,7 +196,7 @@ export default class Protocol extends EventEmitter {
       const buffer = Envelope.createBuffer({
         type: EnvelopType.REQUEST,
         id,
-        tag: event,
+        event,
         data,
         owner: this.getId(),
         recipient: to
@@ -310,7 +310,7 @@ export default class Protocol extends EventEmitter {
     const buffer = Envelope.createBuffer({
       type: EnvelopType.TICK,
       id: idGenerator.next(),
-      tag: event,
+      event,
       data,
       owner: this.getId(),
       recipient: to
@@ -360,7 +360,7 @@ export default class Protocol extends EventEmitter {
     // TransportEvent (4 events):     ProtocolEvent (pass-through):
     // - READY                     →  TRANSPORT_READY
     // - NOT_READY                 →  TRANSPORT_NOT_READY  
-    // - MESSAGE                   →  (handled separately)
+    // - MESSAGE                   →  handled below (fast path dispatch)
     // - CLOSED                    →  TRANSPORT_CLOSED
     // 
     // Client/Server handle:
@@ -374,27 +374,37 @@ export default class Protocol extends EventEmitter {
     // - Message parsing
     // ============================================================================
     
+    // dispatch incoming messages to protocol handlers
+    socket.on(TransportEvent.MESSAGE, ({ buffer, sender }) => {
+      this._handleIncomingMessage(buffer, sender)
+    })
+    
     // Transport can send/receive - pass through
     socket.on(TransportEvent.READY, () => {
       if (process.env.NODE_ENV !== 'test') {
-        socket.logger?.info(`Protocol '${this.getId()}': Transport ready`)
+        this.debugMode() && socket.logger?.info(`Protocol '${this.getId()}': Transport ready`)
       }
       this.emit(ProtocolEvent.TRANSPORT_READY)
     })
     
     // Transport disconnected - pass through
     socket.on(TransportEvent.NOT_READY, () => {
-      socket.logger?.warn(`Protocol '${this.getId()}': Transport not ready`)
+      this.debugMode() && socket.logger?.warn(`Protocol '${this.getId()}': Transport not ready`)
       this.emit(ProtocolEvent.TRANSPORT_NOT_READY)
     })
     
     // Transport permanently closed - reject pending requests
     socket.on(TransportEvent.CLOSED, () => {
-      if (process.env.NODE_ENV !== 'test') {
-        socket.logger?.error(`Protocol '${this.getId()}': Transport closed`)
-      }
+      this.debugMode() && socket.logger?.error(`Protocol '${this.getId()}': Transport closed`)
+      
       this._rejectPendingRequests('Transport closed')
       this.emit(ProtocolEvent.TRANSPORT_CLOSED)
+    })
+
+    // Transport error - surface as protocol-level error
+    socket.on(TransportEvent.ERROR, (err) => {
+      this.debugMode() && socket.logger?.error(`Protocol '${this.getId()}': Transport error`, err)
+      this.emit(ProtocolEvent.ERROR, err)
     })
   }
   
@@ -407,7 +417,7 @@ export default class Protocol extends EventEmitter {
     
     if (requests.size === 0) return
     
-    socket.logger?.warn(`[Protocol] Rejecting ${requests.size} pending requests: ${reason}`)
+    this.debugMode() && socket.logger?.warn(`[Protocol] Rejecting ${requests.size} pending requests: ${reason}`)
     
     requests.forEach((request, id) => {
       clearTimeout(request.timeout)
@@ -455,7 +465,8 @@ export default class Protocol extends EventEmitter {
     
     const request = requests.get(envelope.id)
     if (!request) {
-      return socket.logger?.warn(`[Protocol] Response ${envelope.id} probably timed out`)
+       this.debugMode() && socket.logger?.warn(`[Protocol] Response ${envelope.id} probably timed out`)
+       return
     }
     
     clearTimeout(request.timeout)
@@ -474,11 +485,11 @@ export default class Protocol extends EventEmitter {
     const envelope = new Envelope(buffer)
     
     // Get matching handlers
-    const handlers = requestEmitter.getMatchingListeners(envelope.tag)
+    const handlers = requestEmitter.getMatchingListeners(envelope.event)
     
     if (handlers.length === 0) {
       // No handler - send error response
-      this._sendErrorResponse(envelope, `No handler for request: ${envelope.tag}`)
+      this._sendErrorResponse(envelope, `No handler for request: ${envelope.event}`)
       return
     }
     
@@ -567,7 +578,7 @@ export default class Protocol extends EventEmitter {
     // Reply function
     const reply = (responseData) => {
       if (replyCalled) {
-        socket.logger?.warn('[Protocol] Reply already called, ignoring duplicate')
+        this.debugMode() && socket.logger?.warn('[Protocol] Reply already called, ignoring duplicate')
         return
       }
       replyCalled = true
@@ -585,7 +596,7 @@ export default class Protocol extends EventEmitter {
     // Reply error function
     reply.error = (error) => {
       if (replyCalled) {
-        socket.logger?.warn('[Protocol] Reply already called, ignoring duplicate')
+        this.debugMode() && socket.logger?.warn('[Protocol] Reply already called, ignoring duplicate')
         return
       }
       replyCalled = true
@@ -651,15 +662,14 @@ export default class Protocol extends EventEmitter {
         }
         
         // Debug log for async handlers
-        if (config.DEBUG) {
-          socket.logger?.debug('[Middleware] Handler executed', {
-            arity,
-            resultType: result === undefined ? 'undefined' : (result && result.then ? 'Promise' : typeof result),
-            replyCalled,
-            handlerIndex: currentIndex,
-            totalHandlers: handlers.length
-          })
-        }
+        this.debugMode() && socket.logger?.debug('[Middleware] Handler executed', {
+          arity,
+          resultType: result === undefined ? 'undefined' : (result && result.then ? 'Promise' : typeof result),
+          replyCalled,
+          handlerIndex: currentIndex,
+          totalHandlers: handlers.length
+        })
+        
         
         // Handle return values
         // Special case: If result is a Promise and handler is 2-param (auto-continue),
@@ -673,9 +683,7 @@ export default class Protocol extends EventEmitter {
                   // If async function returned undefined and it's a 2-param handler,
                   // continue to next handler instead of sending undefined response
                   if (responseData === undefined && arity !== 3) {
-                    if (config.DEBUG) {
-                      socket.logger?.debug('[Middleware] Async 2-param handler returned undefined, auto-continuing')
-                    }
+                    this.debugMode() && socket.logger?.debug('[Middleware] Async 2-param handler returned undefined, auto-continuing')
                     setImmediate(next)
                   } else {
                     // Send the response data
@@ -756,8 +764,8 @@ export default class Protocol extends EventEmitter {
     
     // Execute tick handler (fire-and-forget)
     // Handler signature: (envelope)
-    // - envelope: full envelope object with envelope.data, envelope.tag, etc.
-    tickEmitter.emit(envelope.tag, envelope)
+    // - envelope: full envelope object with envelope.data, envelope.event, etc.
+    tickEmitter.emit(envelope.event, envelope)
   }
   
   // ============================================================================
@@ -771,5 +779,70 @@ export default class Protocol extends EventEmitter {
   
   _getPrivateScope () {
     return _private.get(this)
+  }
+
+  /**
+   * Detach protocol-managed transport listeners from the socket.
+   * Safe to call multiple times.
+   * @private
+   */
+  _detachSocketEventHandlers (socket) {
+    if (!socket || typeof socket.removeAllListeners !== 'function') return
+    try {
+      socket.removeAllListeners(TransportEvent.MESSAGE)
+      socket.removeAllListeners(TransportEvent.READY)
+      socket.removeAllListeners(TransportEvent.NOT_READY)
+      socket.removeAllListeners(TransportEvent.CLOSED)
+      socket.removeAllListeners(TransportEvent.ERROR)
+    } catch {
+      this.debugMode() && socket.logger?.error('[Protocol] Failed to detach transport event listeners')
+    }
+  }
+
+  /**
+   * Disconnect protocol from transport events without closing or rejecting pending.
+   * - Idempotent: safe to call multiple times
+   * - Does NOT set closed flag
+   * - Does NOT reject pending requests
+   * - Does NOT close underlying transport
+   */
+  async disconnect () {
+    let { socket } = _private.get(this)
+    this._detachSocketEventHandlers(socket)
+
+    await socket.disconnect();
+  }
+
+  /**
+   * Close the protocol and cleanup resources.
+   * - Idempotent
+   * - Detaches protocol-attached socket listeners
+   * - Rejects and clears pending requests
+   * - Optionally closes the underlying transport
+   * 
+   * @param {Object} [options]
+   * @param {boolean} [options.closeTransport=true] - Whether to close the socket
+   */
+  async close (closeTransport = false) {
+    let _scope = _private.get(this)
+    const { socket, closed } = _scope
+    
+    if (closed) return
+    _scope.closed = true
+    
+    // Reject all in-flight requests
+    this._rejectPendingRequests('Protocol closed')
+    
+    // Optionally close transport
+    if (closeTransport && socket && typeof socket.close === 'function') {
+      try {
+        await socket.close()
+      } catch {
+        this.debugMode() && socket.logger?.error('[Protocol] Failed to close transport')
+      }
+    }
+    
+    // Detach protocol-managed transport listeners after close to allow CLOSED to propagate
+    this._detachSocketEventHandlers(socket)
   }
 }

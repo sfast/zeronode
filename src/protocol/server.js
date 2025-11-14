@@ -37,8 +37,8 @@ export default class Server extends Protocol {
     // Create RouterSocket (transport layer)
     const socket = new RouterSocket({ id, config })
     
-    // Pass socket to Protocol
-    super(socket)
+    // Pass socket and config to Protocol (store app-level config)
+    super(socket, config)
 
     let _scope = {
       bindAddress: null,
@@ -94,18 +94,19 @@ export default class Server extends Protocol {
     // ============================================================================
     // HANDSHAKE - Client discovery via messages
     // ============================================================================
-    this.onTick(ProtocolSystemEvent.CLIENT_CONNECTED, (envelope) => {
+    // New explicit name
+    this.onTick(ProtocolSystemEvent.HANDSHAKE_INIT_FROM_CLIENT, (envelope) => {
       let { clientPeers } = _private.get(this)
       
       const clientId = envelope.owner
-      const data = envelope.data
+      const clientOptions = envelope.data
       let peerInfo = clientPeers.get(clientId)
       
       if (!peerInfo) {
         // NEW CLIENT - Discover peer from handshake message
         peerInfo = new PeerInfo({ 
           id: clientId,
-          options: data  // Store any client metadata
+          options: clientOptions  // Store any client metadata
         })
         peerInfo.setState('CONNECTED')
         clientPeers.set(clientId, peerInfo)
@@ -113,7 +114,7 @@ export default class Server extends Protocol {
         // Emit peer joined event
         this.emit(ServerEvent.CLIENT_JOINED, { 
           clientId,
-          data
+          clientOptions
         })
       } else {
         // EXISTING CLIENT - Reconnected, update state
@@ -127,7 +128,7 @@ export default class Server extends Protocol {
       // ✅ Use internal API to send system event (handshake response)
       this._sendSystemTick({
         to: clientId,
-        event: ProtocolSystemEvent.CLIENT_CONNECTED,  // '_system:client_connected'
+        event: ProtocolSystemEvent.HANDSHAKE_ACK_FROM_SERVER,  // '_system:handshake_ack_from_server'
         data: options || {}
       })
     })
@@ -190,7 +191,7 @@ export default class Server extends Protocol {
     this._stopHealthChecks()
     
     // Notify all clients
-    if (this.isReady()) {
+    if (this.isOnline()) {
         try {
           this.tick({
             event: ProtocolSystemEvent.SERVER_STOP,
@@ -248,8 +249,8 @@ export default class Server extends Protocol {
     }
     
     const config = this.getConfig()
-    const checkInterval = config.HEALTH_CHECK_INTERVAL || Globals.HEALTH_CHECK_INTERVAL || 30000
-    const ghostThreshold = config.GHOST_THRESHOLD || Globals.CLIENT_TIMEOUT || 60000
+    const checkInterval = (config.CLIENT_HEALTH_CHECK_INTERVAL ?? config.clientHealthCheckInterval) || Globals.CLIENT_HEALTH_CHECK_INTERVAL || 30000
+    const ghostThreshold = (config.CLIENT_GHOST_TIMEOUT ?? config.clientGhostTimeout) || Globals.CLIENT_GHOST_TIMEOUT || 60000
     
     _scope.healthCheckInterval = setInterval(() => {
       this._checkClientHealth(ghostThreshold)

@@ -103,7 +103,8 @@ describe('Public API (index.js)', () => {
 
     it('should export ProtocolSystemEvent', () => {
       expect(ProtocolSystemEvent).to.be.an('object')
-      expect(ProtocolSystemEvent.CLIENT_CONNECTED).to.be.a('string')
+    expect(ProtocolSystemEvent.HANDSHAKE_INIT_FROM_CLIENT).to.be.a('string')
+    expect(ProtocolSystemEvent.HANDSHAKE_ACK_FROM_SERVER).to.be.a('string')
       expect(ProtocolSystemEvent.CLIENT_PING).to.be.a('string')
     })
 

@@ -154,8 +154,7 @@ class Socket extends EventEmitter {
             transportId: this.getId(),
             context: { frameCount: frames.length, expectedFormats: ['Dealer: 2 frames', 'Router: 3 frames'] }
           })
-      
-          this.emit('error', transportError)
+          this.emit(TransportEvent.ERROR, transportError)
           
           // Skip this malformed message and continue
           continue
@@ -179,8 +178,7 @@ class Socket extends EventEmitter {
         cause: err
       })
       
-      // Emit error event so Router/Dealer can handle it
-      this.emit('error', transportError)
+      this.emit(TransportEvent.ERROR, transportError)
     }
   }
 
@@ -272,7 +270,7 @@ class Socket extends EventEmitter {
         cause: err
       })
 
-      this.emit('error', transportError)
+      this.emit(TransportEvent.ERROR, transportError)
     }
 
   }

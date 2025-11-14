@@ -40,7 +40,7 @@ describe('Client ↔ Server Integration', function () {
     await server.bind('tcp://127.0.0.1:0')
     serverAddress = server.getAddress()
     console.log(`[TEST] Server bound to: ${serverAddress}`)
-    console.log(`[TEST] Server ready: ${server.isReady()}`)
+    console.log(`[TEST] Server ready: ${server.isOnline()}`)
   })
 
   afterEach(async () => {
@@ -88,8 +88,9 @@ describe('Client ↔ Server Integration', function () {
       }
       
       // Verify client is ready
-      console.log(`[TEST] Client ready: ${client.isReady()}`)
-      expect(client.isReady()).to.be.true
+      console.log(`[TEST] Client online: ${client.isOnline()}`)
+      // Client may be online before handshake completes; use isOnline for transport
+      expect(client.isOnline()).to.be.true
       
       // Verify server received client
       const clientPeer = server.getClientPeerInfo('client-1')
@@ -119,11 +120,11 @@ describe('Client ↔ Server Integration', function () {
         done(new Error('CLIENT_JOINED event timeout'))
       }, 10000)
       
-      server.once(ServerEvent.CLIENT_JOINED, ({ clientId, data }) => {
+      server.once(ServerEvent.CLIENT_JOINED, ({ clientId, clientOptions }) => {
         clearTimeout(timeoutHandle)
         console.log(`[TEST] CLIENT_JOINED received: ${clientId}`)
         expect(clientId).to.equal('client-1')
-        expect(data).to.deep.equal({ role: 'worker' })
+        expect(clientOptions).to.deep.equal({ role: 'worker' })
         done()
       })
       
@@ -503,7 +504,7 @@ describe('Client ↔ Server Integration', function () {
     it('should match request patterns with RegExp', async () => {
       // Register pattern handler
       server.onRequest(/^api:user:/, (envelope, reply) => {
-        const action = envelope.tag.split(':')[2]
+        const action = envelope.event.split(':')[2]
         return {
           action,
           userId: envelope.data.id,
@@ -525,7 +526,7 @@ describe('Client ↔ Server Integration', function () {
 
     it('should match tick patterns with RegExp', (done) => {
       server.onTick(/^log:/, (envelope) => {
-        expect(envelope.tag).to.match(/^log:/)
+        expect(envelope.event).to.match(/^log:/)
         expect(envelope.data.level).to.equal('error')
         done()
       })
@@ -626,21 +627,21 @@ describe('Client ↔ Server Integration', function () {
       const client = new Client({ id: 'client-1' })
       await client.connect(serverAddress)
       
-      expect(client.isReady()).to.be.true
+      expect(client.isOnline()).to.be.true
       
       await client.disconnect()
       
-      expect(client.isReady()).to.be.false
+      expect(client.isOnline()).to.be.false
     })
 
     it('should support reconnection', async () => {
       // First connection
       const client1 = new Client({ id: 'client-reconnect-1' })
       await client1.connect(serverAddress)
-      expect(client1.isReady()).to.be.true
+      expect(client1.isOnline()).to.be.true
       
       await client1.disconnect()
-      expect(client1.isReady()).to.be.false
+      expect(client1.isOnline()).to.be.false
       
       // Wait a bit for cleanup
       await wait(TIMING.SOCKET_CLOSE)
@@ -649,7 +650,7 @@ describe('Client ↔ Server Integration', function () {
       // Note: Reusing the same Client instance after disconnect is not supported
       const client2 = new Client({ id: 'client-reconnect-2' })
       await client2.connect(serverAddress)
-      expect(client2.isReady()).to.be.true
+      expect(client2.isOnline()).to.be.true
       
       await client2.disconnect()
     })

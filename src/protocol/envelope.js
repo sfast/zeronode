@@ -18,7 +18,7 @@
  * │ id          │ 8 bytes  │ Unique ID (owner hash + ts + counter)│
  * │ owner       │ 1+N bytes│ Length (1 byte) + UTF-8 string      │
  * │ recipient   │ 1+N bytes│ Length (1 byte) + UTF-8 string      │
- * │ tag         │ 1+N bytes│ Length (1 byte) + UTF-8 string      │
+ * │ event       │ 1+N bytes│ Length (1 byte) + UTF-8 string      │
  * │ dataLength  │ 2 bytes  │ Data length (uint16, max 65535)     │
  * │ data        │ N bytes  │ MessagePack encoded data (or Buffer)│
  * └─────────────┴──────────┴─────────────────────────────────────┘
@@ -57,11 +57,11 @@
  * const recipient = buffer.toString('utf8', offset, offset + recipientLength)
  * offset += recipientLength
  * 
- * // Tag (length-prefixed string)
- * const tagLength = buffer[offset]
+ * // Event (length-prefixed string)
+ * const eventLength = buffer[offset]
  * offset += 1
- * const tag = buffer.toString('utf8', offset, offset + tagLength)
- * offset += tagLength
+ * const event = buffer.toString('utf8', offset, offset + eventLength)
+ * offset += eventLength
  * 
  * // Data length (2 bytes - uint16)
  * const dataLength = buffer.readUInt16BE(offset)
@@ -356,7 +356,7 @@ export class Envelope {
    *   - 'power-of-2': Power-of-2 bucket sizes (64, 128, 256, ...) - CPU cache-friendly
    * @returns {Buffer} Binary envelope buffer
    */
-  static createBuffer ({ type, id, tag, owner, recipient, data }, bufferStrategy = null) {
+  static createBuffer ({ type, id, event, owner, recipient, data }, bufferStrategy = null) {
     // ============================================================================
     // VALIDATION - Ensure all required fields are valid
     // ============================================================================
@@ -379,22 +379,22 @@ export class Envelope {
       throw new Error('Owner is required')
     }
     
-    // Tag is required for REQUEST and TICK, optional for RESPONSE and ERROR
-    // (responses are matched by ID, not tag)
+    // Event is required for REQUEST and TICK, optional for RESPONSE and ERROR
+    // (responses are matched by ID, not event)
     const isResponse = type === EnvelopType.RESPONSE || type === EnvelopType.ERROR
-    if (!tag && !isResponse) {
-      throw new Error('Tag is required for REQUEST and TICK envelopes')
+    if (!event && !isResponse) {
+      throw new Error('Event is required for REQUEST and TICK envelopes')
     }
     
-    // Convert to strings (recipient can be empty for broadcasts, tag can be empty for responses)
+    // Convert to strings (recipient can be empty for broadcasts, event can be empty for responses)
     owner = typeof owner === 'string' ? owner : String(owner)
     recipient = typeof recipient === 'string' ? recipient : String(recipient || '')
-    tag = typeof tag === 'string' ? tag : String(tag || '')
+    event = typeof event === 'string' ? event : String(event || '')
     
     // Calculate byte lengths (Buffer.byteLength handles UTF-8 correctly)
     const ownerBytes = Buffer.byteLength(owner, 'utf8')
     const recipientBytes = Buffer.byteLength(recipient, 'utf8')
-    const tagBytes = Buffer.byteLength(tag, 'utf8')
+    const eventBytes = Buffer.byteLength(event, 'utf8')
     
     // Validate length prefixes fit in 1 byte (max 255)
     if (ownerBytes > Envelope.MAX_STRING_LENGTH) {
@@ -403,8 +403,8 @@ export class Envelope {
     if (recipientBytes > Envelope.MAX_STRING_LENGTH) {
       throw new Error(`Recipient too long: ${recipientBytes} bytes (max ${Envelope.MAX_STRING_LENGTH})`)
     }
-    if (tagBytes > Envelope.MAX_STRING_LENGTH) {
-      throw new Error(`Tag too long: ${tagBytes} bytes (max ${Envelope.MAX_STRING_LENGTH})`)
+    if (eventBytes > Envelope.MAX_STRING_LENGTH) {
+      throw new Error(`Event too long: ${eventBytes} bytes (max ${Envelope.MAX_STRING_LENGTH})`)
     }
     
     // ============================================================================
@@ -439,7 +439,7 @@ export class Envelope {
       8 +                               // id (8 bytes)
       (1 + ownerBytes) +                // owner (length + bytes)
       (1 + recipientBytes) +            // recipient (length + bytes)
-      (1 + tagBytes) +                  // tag (length + bytes)
+      (1 + eventBytes) +                // event (length + bytes)
       2 +                               // data length (2 bytes)
       dataLength                        // data (0 to 65535 bytes)
     
@@ -495,11 +495,11 @@ export class Envelope {
       offset += recipientBytes
     }
     
-    // Write tag (length prefix + UTF-8 bytes)
-    buffer[offset++] = tagBytes
-    if (tagBytes > 0) {
-      buffer.write(tag, offset, tagBytes, 'utf8')
-      offset += tagBytes
+    // Write event (length prefix + UTF-8 bytes)
+    buffer[offset++] = eventBytes
+    if (eventBytes > 0) {
+      buffer.write(event, offset, eventBytes, 'utf8')
+      offset += eventBytes
     }
     
     // Write data length (2 bytes - uint16)
@@ -569,12 +569,12 @@ export class Envelope {
     const recipientOffset = offset
     offset += recipientLength
     
-    // Tag (1 byte length + N bytes data)
-    checkBounds(offset, 1, 'tag length')
-    const tagLength = buffer[offset++]
-    checkBounds(offset, tagLength, 'tag data')
-    const tagOffset = offset
-    offset += tagLength
+    // Event (1 byte length + N bytes data)
+    checkBounds(offset, 1, 'event length')
+    const eventLength = buffer[offset++]
+    checkBounds(offset, eventLength, 'event data')
+    const eventOffset = offset
+    offset += eventLength
     
     // Data length (2 bytes - uint16)
     checkBounds(offset, 2, 'data length')
@@ -593,8 +593,8 @@ export class Envelope {
       ownerBytes: ownerLength,
       recipient: recipientOffset,
       recipientBytes: recipientLength,
-      tag: tagOffset,
-      tagBytes: tagLength,
+      event: eventOffset,
+      eventBytes: eventLength,
       data: dataOffset,
       dataBytes: dataLength
     }
@@ -660,15 +660,15 @@ export class Envelope {
   }
   
   /**
-   * Get tag (string)
+   * Get event (string)
    * Read directly from buffer at calculated offset
    */
-  get tag () {
+  get event () {
     const offsets = this._calculateOffsets()
     return this._buffer.toString(
       'utf8',
-      offsets.tag,
-      offsets.tag + offsets.tagBytes
+      offsets.event,
+      offsets.event + offsets.eventBytes
     )
   }
   
@@ -736,7 +736,7 @@ export class Envelope {
       id: this.id,
       owner: this.owner,
       recipient: this.recipient,
-      tag: this.tag,
+      event: this.event,
       data: this.data
     }
   }

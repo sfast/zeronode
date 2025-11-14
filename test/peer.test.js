@@ -14,10 +14,10 @@ describe('PeerInfo', function () {
       expect(peer.getId()).to.equal('test-peer')
     })
 
-    it('should initialize with CONNECTED state', () => {
+    it('should initialize with IDLE state', () => {
       const peer = new PeerInfo({ id: 'test' })
-      expect(peer.getState()).to.equal(PeerState.CONNECTED)
-      expect(peer.isConnected()).to.be.true
+      expect(peer.getState()).to.equal(PeerState.IDLE)
+      expect(peer.isConnected()).to.be.false
     })
 
     it('should accept address and options', () => {
@@ -35,9 +35,11 @@ describe('PeerInfo', function () {
       expect(peer.getOptions()).to.deep.equal({})
     })
 
-    it('should set connectedAt timestamp', () => {
+    it('should set connectedAt timestamp when transitioning to CONNECTED', () => {
       const before = Date.now()
       const peer = new PeerInfo({ id: 'test' })
+      expect(peer.connectedAt).to.equal(null)
+      peer.setState(PeerState.CONNECTED)
       const after = Date.now()
       expect(peer.connectedAt).to.be.at.least(before)
       expect(peer.connectedAt).to.be.at.most(after)
@@ -53,6 +55,7 @@ describe('PeerInfo', function () {
   describe('State Queries', () => {
     it('isConnected() should return true when state is CONNECTED', () => {
       const peer = new PeerInfo({ id: 'test' })
+      peer.setState(PeerState.CONNECTED)
       expect(peer.isConnected()).to.be.true
       expect(peer.isHealthy()).to.be.false
     })
@@ -263,7 +266,7 @@ describe('PeerInfo', function () {
 
     it('ping() should transition CONNECTED to HEALTHY', () => {
       const peer = new PeerInfo({ id: 'test' })
-      expect(peer.getState()).to.equal(PeerState.CONNECTED)
+      peer.setState(PeerState.CONNECTED)
       peer.ping()
       expect(peer.getState()).to.equal(PeerState.HEALTHY)
     })

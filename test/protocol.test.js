@@ -71,9 +71,9 @@ describe('Protocol', () => {
     })
   })
 
-  describe('isReady()', () => {
+  describe('isOnline()', () => {
     it('should return false when socket offline', () => {
-      expect(clientProtocol.isReady()).to.be.false
+      expect(clientProtocol.isOnline()).to.be.false
     })
   })
 

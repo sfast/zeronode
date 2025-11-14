@@ -30,7 +30,8 @@ export const NodeEvent = {
   READY: 'node:ready',             // Node is fully initialized and ready
   PEER_JOINED: 'node:peer_joined', // New peer discovered (upstream or downstream)
   PEER_LEFT: 'node:peer_left',     // Peer disconnected
-  STOPPED: 'node:stopped'          // Node stopped
+  STOPPED: 'node:stopped',         // Node stopped
+  ERROR: 'node:error'              // Node-level error (normalized payload)
 }
 
 const _private = new WeakMap()
@@ -106,6 +107,12 @@ export default class Node extends EventEmitter {
         this.bind(bind).catch(err => {
           _scope.logger.error(`[Node] Failed to bind server to ${bind}:`, err)
           this.emit('error', err)
+          this.emit(NodeEvent.ERROR, {
+            source: 'server',
+            stage: 'bind',
+            address: bind,
+            error: err
+          })
         })
       })
     }
@@ -218,15 +225,21 @@ export default class Node extends EventEmitter {
     // Forward errors
     server.on('error', (err) => {
       logger.error('[Node] Server error:', err)
+      
       this.emit('error', err)
+      this.emit(NodeEvent.ERROR, {
+        source: 'server',
+        address: this.getAddress?.(),
+        error: err
+      })
     })
     
     // Transform: Server.CLIENT_JOINED → Node.PEER_JOINED
-    server.on(ServerEvent.CLIENT_JOINED, ({ clientId, data }) => {
+    server.on(ServerEvent.CLIENT_JOINED, ({ clientId, clientOptions }) => {
       this.emit(NodeEvent.PEER_JOINED, {
         peerId: clientId,
         direction: 'downstream',   // Client connected TO our server
-        peerOptions: data || {}
+        peerOptions: clientOptions
       })
     })
     
@@ -391,18 +404,26 @@ export default class Node extends EventEmitter {
     const _scope = _private.get(this)
     const { logger } = _scope
     
-    // Forward errors
-    client.on('error', (err) => {
+    // Also listen to structured client error event
+    client.on(ClientEvent.ERROR, (err) => {
       logger.error('[Node] Client error:', err)
-      this.emit('error', err)
+      let serverId = null
+      try {
+        serverId = client.getServerPeerInfo?.()?.getId?.() || null
+      } catch {}
+      this.emit(NodeEvent.ERROR, {
+        source: 'client',
+        serverId,
+        error: err
+      })
     })
     
     // Transform: Client.READY → Node.PEER_JOINED
-    client.on(ClientEvent.READY, ({ serverId, serverData }) => {
+    client.on(ClientEvent.READY, ({ serverId, serverOptions }) => {
       this.emit(NodeEvent.PEER_JOINED, {
         peerId: serverId,
         direction: 'upstream',     // We connected TO this server
-        peerOptions: serverData || {}
+        peerOptions: serverOptions || {}
       })
     })
     
@@ -747,6 +768,11 @@ export default class Node extends EventEmitter {
         context: { filter, down, up, event }
       })
       this.emit('error', error)
+      this.emit(NodeEvent.ERROR, {
+        source: 'router',
+        category: 'filter',
+        error
+      })
       return Promise.reject(error)
     }
     

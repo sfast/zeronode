@@ -98,17 +98,17 @@ describe('Server', () => {
     })
   })
 
-  describe('isReady()', () => {
+  describe('isOnline()', () => {
     it('should return false before binding', () => {
       server = new Server({ id: 'test' })
-      expect(server.isReady()).to.be.false
+      expect(server.isOnline()).to.be.false
     })
 
     it('should return true after binding', async () => {
       server = new Server({ id: 'test' })
       await server.bind('tcp://127.0.0.1:0')
       
-      expect(server.isReady()).to.be.true
+      expect(server.isOnline()).to.be.true
     })
   })
 
@@ -194,7 +194,7 @@ describe('Server', () => {
     it('should ignore ping from unknown client gracefully', () => {
       // This is tested implicitly - server doesn't crash on unknown client pings
       // The handler checks for peerInfo existence before updating
-      expect(server.isReady()).to.be.true
+      expect(server.isOnline()).to.be.true
     })
   })
 
@@ -302,11 +302,11 @@ describe('Server', () => {
       server = new Server({ id: 'test' })
       await server.bind('tcp://127.0.0.1:0')
       
-      expect(server.isReady()).to.be.true
+      expect(server.isOnline()).to.be.true
       
       await server.unbind()
       
-      expect(server.isReady()).to.be.false
+      expect(server.isOnline()).to.be.false
     })
 
     it('should handle unbind when not bound (idempotent)', async () => {
@@ -314,7 +314,7 @@ describe('Server', () => {
       
       // Should not throw
       await server.unbind()
-      expect(server.isReady()).to.be.false
+      expect(server.isOnline()).to.be.false
     })
   })
 
@@ -323,11 +323,11 @@ describe('Server', () => {
       server = new Server({ id: 'test' })
       await server.bind('tcp://127.0.0.1:0')
       
-      expect(server.isReady()).to.be.true
+      expect(server.isOnline()).to.be.true
       
       await server.close()
       
-      expect(server.isReady()).to.be.false
+      expect(server.isOnline()).to.be.false
     })
 
     it('should close underlying socket', async () => {
@@ -337,7 +337,7 @@ describe('Server', () => {
       await server.close()
       
       // After close, server should not be ready
-      expect(server.isReady()).to.be.false
+      expect(server.isOnline()).to.be.false
     })
   })
 
@@ -371,7 +371,7 @@ describe('Server', () => {
       await server.bind('tcp://127.0.0.1:0')
       
       // Server should be ready after bind
-      expect(server.isReady()).to.be.true
+      expect(server.isOnline()).to.be.true
       
       // Should have a valid address
       const address = server.getAddress()
@@ -481,8 +481,8 @@ describe('Server', () => {
   describe('Health Check Mechanism', () => {
     beforeEach(async () => {
       server = new Server({ id: 'test-server', config: {
-        HEALTH_CHECK_INTERVAL: 500,  // Fast for testing
-        GHOST_THRESHOLD: 1000
+        CLIENT_HEALTH_CHECK_INTERVAL: 500,  // Fast for testing
+        CLIENT_GHOST_TIMEOUT: 1000
       }})
       await server.bind('tcp://127.0.0.1:0')
       serverAddress = server.getAddress()
@@ -493,18 +493,18 @@ describe('Server', () => {
       // Verify by checking that interval is set
       setTimeout(() => {
         // Server should have started health checks
-        expect(server.isReady()).to.be.true
+        expect(server.isOnline()).to.be.true
         done()
       }, 100)
     })
 
     it('should stop health checks on unbind', async () => {
-      expect(server.isReady()).to.be.true
+      expect(server.isOnline()).to.be.true
       
       await server.unbind()
       
       // Health checks should be stopped
-      expect(server.isReady()).to.be.false
+      expect(server.isOnline()).to.be.false
     })
 
     it('should detect GHOST clients - test mechanism', async function() {
@@ -540,7 +540,7 @@ describe('Server', () => {
       server._startHealthChecks()
       
       // Should still be working fine (no crash)
-      expect(server.isReady()).to.be.true
+      expect(server.isOnline()).to.be.true
     })
 
     it('should handle stop health checks when not started', () => {
@@ -583,7 +583,7 @@ describe('Server', () => {
           setTimeout(() => {
             // Note: SERVER_STOP may not always arrive if server shuts down immediately
             // Test that unbind completed successfully
-            expect(server.isReady()).to.be.false
+            expect(server.isOnline()).to.be.false
             done()
           }, 200)
         }).catch(done)
@@ -596,7 +596,7 @@ describe('Server', () => {
       // Try unbind again when already offline
       await server.unbind()
       
-      expect(server.isReady()).to.be.false
+      expect(server.isOnline()).to.be.false
     })
   })
 
@@ -690,8 +690,8 @@ describe('Server', () => {
       server = new Server({ 
         id: 'test-server',
         config: { 
-          GHOST_THRESHOLD: 200,  // Use correct config key (was clientTimeout)
-          HEALTH_CHECK_INTERVAL: 50  // Use correct config key (was healthCheckInterval)
+          CLIENT_GHOST_TIMEOUT: 200,  // Use correct config key
+          CLIENT_HEALTH_CHECK_INTERVAL: 50  // Use correct config key
         }
       })
       await server.bind('tcp://127.0.0.1:0')
@@ -722,7 +722,7 @@ describe('Server', () => {
     it('should not timeout healthy clients', async () => {
       server = new Server({ 
         id: 'test-server',
-        config: { clientTimeout: 200, healthCheckInterval: 50 }
+        config: { clientGhostTimeout: 200, clientHealthCheckInterval: 50 }
       })
       await server.bind('tcp://127.0.0.1:0')
       

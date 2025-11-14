@@ -204,7 +204,7 @@ export default class RouterSocket extends Socket {
           address: bindAddress,
           cause: err
         })
-        this.emit('error', transportError)
+        this.emit(TransportEvent.ERROR, transportError)
         return
       }
     }

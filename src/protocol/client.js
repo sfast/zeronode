@@ -22,8 +22,56 @@ export const ClientEvent = {
   READY: 'client:ready',               // Handshake complete, client can send requests
   DISCONNECTED: 'client:disconnected', // Server disconnected
   FAILED: 'client:failed',             // Connection permanently failed
-  STOPPED: 'client:stopped'            // Client explicitly stopped
+  STOPPED: 'client:stopped',           // Client explicitly stopped
+  ERROR: 'client:error'                // Client-level error (transport/protocol failure)
 }
+
+/**
+ * Event Flow Map (Client)
+ * 
+ * Transport Layer (via Protocol → ProtocolEvent)
+ * ┌────────────────────────────┬──────────────────────────────────────────────┐
+ * │ Listened (Inbound)        │ Action                                      │
+ * ├────────────────────────────┼──────────────────────────────────────────────┤
+ * │ TRANSPORT_READY           │ Send handshake (_system:handshake_init_from_client) │
+ * │ TRANSPORT_NOT_READY       │ Mark ghost, stop ping, emit DISCONNECTED     │
+ * │ TRANSPORT_CLOSED          │ Stop ping, emit FAILED                       │
+ * │ ERROR                     │ Forward as client:error                      │
+ * └────────────────────────────┴──────────────────────────────────────────────┘
+ * 
+ * System Ticks (ProtocolSystemEvent)
+ * ┌────────────────────────────┬──────────────────────────────────────────────┐
+ * │ Sent (Outbound)           │ Purpose                                     │
+ * ├────────────────────────────┼──────────────────────────────────────────────┤
+ * │ HANDSHAKE_INIT_FROM_CLIENT│ Handshake request to server                  │
+ * │ CLIENT_PING               │ Heartbeat ping to known server ID            │
+ * │ CLIENT_STOP               │ Graceful disconnect                          │
+ * └────────────────────────────┴──────────────────────────────────────────────┘
+ * ┌────────────────────────────┬──────────────────────────────────────────────┐
+ * │ Received (Inbound)        │ Purpose                                     │
+ * ├────────────────────────────┼──────────────────────────────────────────────┤
+ * │ HANDSHAKE_ACK_FROM_SERVER │ Handshake response (welcome + options)       │
+ * │ SERVER_STOP               │ Server is shutting down                      │
+ * └────────────────────────────┴──────────────────────────────────────────────┘
+ * 
+ * Application Events (emitted by Client)
+ * ┌────────────────────────────┬──────────────────────────────────────────────┐
+ * │ Emitted                   │ When                                         │
+ * ├────────────────────────────┼──────────────────────────────────────────────┤
+ * │ client:ready              │ After handshake response; ping starts        │
+ * │ client:disconnected       │ Transport not ready                          │
+ * │ client:failed             │ Transport closed permanently                  │
+ * │ client:stopped            │ Client closed/stopped                        │
+ * │ client:error              │ Transport/protocol error surfaced by Client  │
+ * └────────────────────────────┴──────────────────────────────────────────────┘
+ * 
+ * Handshake Sequence
+ * 1) TRANSPORT_READY →
+ * 2) send _system:handshake_init_from_client →
+ * 3) receive _system:handshake_ack_from_server (welcome) →
+ * 4) set serverPeerInfo (id/options), start ping →
+ * 5) emit client:ready
+ */
 
 let _private = new WeakMap()
 
@@ -35,11 +83,11 @@ export default class Client extends Protocol {
     // Create DealerSocket (transport layer)
     const socket = new DealerSocket({ id, config })
     
-    // Pass socket to Protocol
-    super(socket)
+    // Pass socket and config to Protocol (store app-level config)
+    super(socket, config)
     
     let _scope = {
-      routerAddress: null,
+      serverAddress: null,
       serverPeerInfo: null,
       pingInterval: null,
       options  // ✅ Store node options for handshake
@@ -59,6 +107,11 @@ export default class Client extends Protocol {
   // ============================================================================
   
   _attachProtocolEventHandlers () {
+    // Surface protocol-level errors as client-level errors
+    this.on(ProtocolEvent.ERROR, (err) => {
+      this.emit(ClientEvent.ERROR, err)
+    })
+    
     // ============================================================================
     // MANUAL HANDSHAKE APPROACH
     // 
@@ -70,7 +123,7 @@ export default class Client extends Protocol {
       let { serverPeerInfo } = _private.get(this)
       
       if (serverPeerInfo) {
-        serverPeerInfo.setState('CONNECTING')  // ✅ Still connecting (handshake pending)
+        serverPeerInfo.setState('CONNECTED')
       }
       
       // Send handshake tick to server (recipient unknown at this point)
@@ -102,9 +155,7 @@ export default class Client extends Protocol {
       this._stopPing()
       
       // Emit application event
-      this.emit(ClientEvent.FAILED, { 
-        serverId: 'server'
-      })
+      this.emit(ClientEvent.FAILED, { serverId: 'server' })
     })
   }
   
@@ -116,7 +167,8 @@ export default class Client extends Protocol {
     // ============================================================================
     // HANDSHAKE RESPONSE - Server welcomes client
     // ============================================================================
-    this.onTick(ProtocolSystemEvent.CLIENT_CONNECTED, (envelope) => {
+    // New explicit name
+    this.onTick(ProtocolSystemEvent.HANDSHAKE_ACK_FROM_SERVER, (envelope) => {
       let { serverPeerInfo } = _private.get(this)
       
       const data = envelope.data      
@@ -131,7 +183,7 @@ export default class Client extends Protocol {
       if (serverPeerInfo) {
         // ✅ Store server ID (now we know who we're talking to)
         serverPeerInfo.setId(serverId)
-        serverPeerInfo.setState('READY')  // ✅ Application ready!
+        serverPeerInfo.setState('HEALTHY')  
         
         // ✅ Store server options from handshake response
         if (data && typeof data === 'object') {
@@ -145,7 +197,7 @@ export default class Client extends Protocol {
       // ✅ Emit CLIENT READY - handshake complete, session established
       this.emit(ClientEvent.READY, { 
         serverId,
-        serverData: data
+        serverOptions: data
       })
     })
     
@@ -169,9 +221,9 @@ export default class Client extends Protocol {
   // PUBLIC API
   // ============================================================================
   
-  async connect (routerAddress, timeout) {
+  async connect (serverAddress, timeout) {
     let _scope = _private.get(this)
-    _scope.routerAddress = routerAddress
+    _scope.serverAddress = serverAddress
     
     // Create server peer info (ID unknown until handshake completes)
     _scope.serverPeerInfo = new PeerInfo({ 
@@ -185,14 +237,20 @@ export default class Client extends Protocol {
     
     try {
       // Connect transport
-      await socket.connect(routerAddress, timeout)
+      await socket.connect(serverAddress, timeout)
+
+      _scope.serverPeerInfo.setState('CONNECTED')
       
       // Wait for handshake to complete (CLIENT_READY event)
       await new Promise((resolve, reject) => {
+        // Use provided timeout, then config, then global default, finally 10s
+        const config = this.getConfig()
+        const handshakeMs = (timeout ?? config.CLIENT_HANDSHAKE_TIMEOUT ?? Globals.CLIENT_HANDSHAKE_TIMEOUT ?? 10000)
+        
         const handshakeTimeout = setTimeout(() => {
           _scope.serverPeerInfo.setState('FAILED')
-          reject(new Error(`Handshake timeout: server at ${routerAddress} did not respond`))
-        }, timeout || 10000)
+          reject(new Error(`Handshake timeout: server at ${serverAddress} did not respond`))
+        }, handshakeMs)
         
         this.once(ClientEvent.READY, ({ serverId }) => {
           clearTimeout(handshakeTimeout)
@@ -219,25 +277,22 @@ export default class Client extends Protocol {
           data: { clientId: this.getId() }
         })
       } catch (err) {
-        // Ignore if offline
+        this.debugMode() && this.logger?.error('Error sending client stop: ', err)
       }
     }
+
+    // disconnect from transport and detach listeners
+    await super.disconnect();
     
-    // ✅ Use Protocol's socket (via protected method)
-    const socket = this._getSocket()
-    await socket.disconnect()
-    
-    if (serverPeerInfo) {
-      serverPeerInfo.setState('STOPPED')
-    }
+    // do we need this ?? 
+    // if (serverPeerInfo) {
+    //   serverPeerInfo.setState('STOPPED')
+    // }
   }
   
   async close () {
     await this.disconnect()
-    
-    // ✅ Use Protocol's socket (via protected method)
-    const socket = this._getSocket()
-    await socket.close()
+    await super.close(true) // close underlying transport and detach listeners
   }
   
   getServerPeerInfo () {
@@ -258,7 +313,7 @@ export default class Client extends Protocol {
     }
     
     const config = this.getConfig()
-    const pingInterval = config.PING_INTERVAL || Globals.PING_INTERVAL || 10000
+    const pingInterval = (config.PING_INTERVAL ?? config.pingInterval) || Globals.CLIENT_PING_INTERVAL || 10000
     
     _scope.pingInterval = setInterval(() => {
       if (this.isReady()) {
@@ -266,7 +321,7 @@ export default class Client extends Protocol {
         const serverId = serverPeerInfo?.getId()
         
         if (!serverId) {
-          this.logger?.warn('Cannot send ping: server ID unknown')
+          this.debugMode() && this.logger?.warn('Cannot send ping: server ID unknown')
           return
         }
         
@@ -274,10 +329,8 @@ export default class Client extends Protocol {
         this._sendSystemTick({
           to: serverId,  // ✅ Now we know server ID!
           event: ProtocolSystemEvent.CLIENT_PING,
-          data: { 
-            timestamp: Date.now()
-            // ❌ Removed: clientId (redundant with envelope.owner)
-          }
+          // No data needed for ping, we have timestamp in each envelope
+          data: null
         })
       }
     }, pingInterval)
@@ -293,40 +346,33 @@ export default class Client extends Protocol {
   }
   
   _sendClientConnected () {
-    // ✅ Check transport ready (not application ready - that comes after handshake)
-    const socket = this._getSocket()
-    if (!socket.isOnline()) {
+    // ✅ Check protocol/transport ready (not application ready - that comes after handshake)
+    if (!super.isOnline()) {
       return
     }
     
     const { options } = _private.get(this)
     
     // ✅ Use internal API to send system event (handshake)
-    // Server will respond with _system:client_connected (welcome message)
+    // Server will respond with _system:handshake_ack_from_server (welcome message)
     this._sendSystemTick({
-      event: ProtocolSystemEvent.CLIENT_CONNECTED,  // '_system:client_connected'
+      event: ProtocolSystemEvent.HANDSHAKE_INIT_FROM_CLIENT,  // '_system:handshake_init_from_client'
       data: options || {}
     })
   }
   
   // ============================================================================
-  // APPLICATION READY CHECK
+  // READY CHECK
   // ============================================================================
-  
   /**
-   * Override Protocol.isReady() to check application-level readiness
-   * Application is ready when:
-   * 1. Transport is online (socket connected)
-   * 2. Server ID is known (handshake completed)
+   * Client is ready when:
+   * 1) Transport is online AND
+   * 2) Handshake completed (server ID known)
    */
   isReady () {
-    // Check transport ready
-    const transportReady = super.isReady()
-    
-    // Check server ID known
+    const transportOnline = this.isOnline()
     const { serverPeerInfo } = _private.get(this)
-    const serverIdKnown = serverPeerInfo && serverPeerInfo.getId()
-    
-    return transportReady && !!serverIdKnown
+    const serverIdKnown = !!(serverPeerInfo && serverPeerInfo.getId())
+    return transportOnline && serverIdKnown
   }
 }

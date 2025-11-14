@@ -395,7 +395,7 @@ describe('Socket.js - 100% Coverage', () => {
       
       const socket = new TestSocket()
       
-      socket.once('error', (err) => {
+      socket.once('transport:error', (err) => {
         expect(err).to.be.instanceOf(TransportError)
         expect(err.code).to.equal(TransportErrorCode.CLOSE_FAILED)
         expect(err.message).to.include('Failed to close socket')
@@ -439,7 +439,7 @@ describe('Socket.js - 100% Coverage', () => {
       
       const socket = new TestSocket()
       
-      socket.once('error', (err) => {
+      socket.once('transport:error', (err) => {
         expect(err).to.be.instanceOf(TransportError)
         expect(err.code).to.equal(TransportErrorCode.CLOSE_FAILED)
         expect(err.message).to.include('Cannot close socket')
@@ -475,7 +475,7 @@ describe('Socket.js - 100% Coverage', () => {
       
       const socket = new TestSocket()
       
-      socket.once('error', (err) => {
+      socket.once('transport:error', (err) => {
         expect(err.code).to.equal(TransportErrorCode.CLOSE_FAILED)
         expect(err.message).to.include('Stop listener failed')
         expect(err.cause).to.exist
@@ -519,7 +519,7 @@ describe('Socket.js - 100% Coverage', () => {
       const socket = new TestSocket()
       expect(socket.isOnline()).to.be.true
       
-      socket.once('error', (err) => {
+      socket.once('transport:error', (err) => {
         // Even though error occurred, socket should be offline
         expect(socket.isOnline()).to.be.false
         done()
