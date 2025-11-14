@@ -39,7 +39,7 @@ detachSocketEventListeners()           // ✅ Correct
 // Dealer defines its own buildTransportEventHandler
 function buildTransportEventHandler (eventName) {
   return (fd, endpoint) => {
-    if (this.debugMode()) {
+    if (this.debug) {
       this.logger.info(`Emitted '${eventName}' on socket '${this.getId()}'`)
     }
     this.emit(eventName, { fd, endpoint })
@@ -62,7 +62,7 @@ function buildTransportEventHandler (eventName) {
 // Router ALSO defines buildSocketEventHandler (correct name though)
 function buildSocketEventHandler (eventName) {
   return (fd, endpoint) => {
-    if (this.debugMode()) {
+    if (this.debug) {
       this.logger.info(`Emitted '${eventName}' on socket '${this.getId()}'`)
     }
     this.emit(eventName, { fd, endpoint })
@@ -106,7 +106,7 @@ Checking if any methods are unused...
 - `isOnline()` ✅ Used
 - `getConfig()` ✅ Used
 - `setLogger()` ✅ Used
-- `debugMode()` ✅ Used
+- `debug` (getter/setter) ✅ Used
 - `sendBuffer()` ✅ Used
 - `getSocketMsgFromBuffer()` ✅ Used (overridden)
 - `attachSocketEventListeners()` ✅ Used
@@ -238,7 +238,7 @@ async function startMessageListener (socket) {
 // Socket.js
 export function buildSocketEventHandler (eventName) {
   return (fd, endpoint) => {
-    if (this.debugMode()) {
+    if (this.debug) {
       this.logger.info(`Emitted '${eventName}' on socket '${this.getId()}'`)
     }
     this.emit(eventName, { fd, endpoint })

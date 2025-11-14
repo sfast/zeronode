@@ -144,11 +144,6 @@ export default class Protocol extends EventEmitter {
     socket.setLogger(logger)
   }
 
-  debugMode (val) {
-    let { socket } = _private.get(this)
-    return socket.debug = val
-  }
-
   isOnline () {
     let { socket, closed } = _private.get(this)
     return socket.isOnline() && !closed
@@ -382,20 +377,20 @@ export default class Protocol extends EventEmitter {
     // Transport can send/receive - pass through
     socket.on(TransportEvent.READY, () => {
       if (process.env.NODE_ENV !== 'test') {
-        this.debugMode() && socket.logger?.info(`Protocol '${this.getId()}': Transport ready`)
+        this.debug && socket.logger?.info(`Protocol '${this.getId()}': Transport ready`)
       }
       this.emit(ProtocolEvent.TRANSPORT_READY)
     })
     
     // Transport disconnected - pass through
     socket.on(TransportEvent.NOT_READY, () => {
-      this.debugMode() && socket.logger?.warn(`Protocol '${this.getId()}': Transport not ready`)
+      this.debug && socket.logger?.warn(`Protocol '${this.getId()}': Transport not ready`)
       this.emit(ProtocolEvent.TRANSPORT_NOT_READY)
     })
     
     // Transport permanently closed - reject pending requests
     socket.on(TransportEvent.CLOSED, () => {
-      this.debugMode() && socket.logger?.error(`Protocol '${this.getId()}': Transport closed`)
+      this.debug && socket.logger?.error(`Protocol '${this.getId()}': Transport closed`)
       
       this._rejectPendingRequests('Transport closed')
       this.emit(ProtocolEvent.TRANSPORT_CLOSED)
@@ -403,7 +398,7 @@ export default class Protocol extends EventEmitter {
 
     // Transport error - surface as protocol-level error
     socket.on(TransportEvent.ERROR, (err) => {
-      this.debugMode() && socket.logger?.error(`Protocol '${this.getId()}': Transport error`, err)
+      this.debug && socket.logger?.error(`Protocol '${this.getId()}': Transport error`, err)
       this.emit(ProtocolEvent.ERROR, err)
     })
   }
@@ -417,7 +412,7 @@ export default class Protocol extends EventEmitter {
     
     if (requests.size === 0) return
     
-    this.debugMode() && socket.logger?.warn(`[Protocol] Rejecting ${requests.size} pending requests: ${reason}`)
+    this.debug && socket.logger?.warn(`[Protocol] Rejecting ${requests.size} pending requests: ${reason}`)
     
     requests.forEach((request, id) => {
       clearTimeout(request.timeout)
@@ -465,7 +460,7 @@ export default class Protocol extends EventEmitter {
     
     const request = requests.get(envelope.id)
     if (!request) {
-       this.debugMode() && socket.logger?.warn(`[Protocol] Response ${envelope.id} probably timed out`)
+       this.debug && socket.logger?.warn(`[Protocol] Response ${envelope.id} probably timed out`)
        return
     }
     
@@ -578,7 +573,7 @@ export default class Protocol extends EventEmitter {
     // Reply function
     const reply = (responseData) => {
       if (replyCalled) {
-        this.debugMode() && socket.logger?.warn('[Protocol] Reply already called, ignoring duplicate')
+        this.debug && socket.logger?.warn('[Protocol] Reply already called, ignoring duplicate')
         return
       }
       replyCalled = true
@@ -596,7 +591,7 @@ export default class Protocol extends EventEmitter {
     // Reply error function
     reply.error = (error) => {
       if (replyCalled) {
-        this.debugMode() && socket.logger?.warn('[Protocol] Reply already called, ignoring duplicate')
+        this.debug && socket.logger?.warn('[Protocol] Reply already called, ignoring duplicate')
         return
       }
       replyCalled = true
@@ -662,7 +657,7 @@ export default class Protocol extends EventEmitter {
         }
         
         // Debug log for async handlers
-        this.debugMode() && socket.logger?.debug('[Middleware] Handler executed', {
+        this.debug && socket.logger?.debug('[Middleware] Handler executed', {
           arity,
           resultType: result === undefined ? 'undefined' : (result && result.then ? 'Promise' : typeof result),
           replyCalled,
@@ -683,7 +678,7 @@ export default class Protocol extends EventEmitter {
                   // If async function returned undefined and it's a 2-param handler,
                   // continue to next handler instead of sending undefined response
                   if (responseData === undefined && arity !== 3) {
-                    this.debugMode() && socket.logger?.debug('[Middleware] Async 2-param handler returned undefined, auto-continuing')
+                    this.debug && socket.logger?.debug('[Middleware] Async 2-param handler returned undefined, auto-continuing')
                     setImmediate(next)
                   } else {
                     // Send the response data
@@ -795,7 +790,7 @@ export default class Protocol extends EventEmitter {
       socket.removeAllListeners(TransportEvent.CLOSED)
       socket.removeAllListeners(TransportEvent.ERROR)
     } catch {
-      this.debugMode() && socket.logger?.error('[Protocol] Failed to detach transport event listeners')
+      this.debug && socket.logger?.error('[Protocol] Failed to detach transport event listeners')
     }
   }
 
@@ -850,7 +845,7 @@ export default class Protocol extends EventEmitter {
       try {
         await socket.close()
       } catch {
-        this.debugMode() && socket.logger?.error('[Protocol] Failed to close transport')
+        this.debug && socket.logger?.error('[Protocol] Failed to close transport')
       }
     }
     

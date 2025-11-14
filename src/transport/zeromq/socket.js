@@ -166,7 +166,7 @@ class Socket extends EventEmitter {
       // Socket closed or error occurred
       // EAGAIN: Socket closed normally (expected during shutdown)
       if (err.code === 'EAGAIN') {
-        this.debugMode() && this.logger?.warn(`Socket message listener error: ${err.message} - EAGAIN expected during shutdown`) 
+        this.debug && this.logger?.warn(`Socket message listener error: ${err.message} - EAGAIN expected during shutdown`) 
         return  // Normal closure, nothing to report
       }
       

@@ -275,7 +275,7 @@ export default class Client extends Protocol {
         data: { clientId: this.getId() }
       })
     } catch (err) {
-      this.debugMode() && this.logger?.error('Error sending client stop: ', err)
+      this.debug && this.logger?.error('Error sending client stop: ', err)
     }
     
 
@@ -319,7 +319,7 @@ export default class Client extends Protocol {
         const serverId = serverPeerInfo?.getId()
         
         if (!serverId) {
-          this.debugMode() && this.logger?.warn('Cannot send ping: server ID unknown')
+          this.debug && this.logger?.warn('Cannot send ping: server ID unknown')
           return
         }
         

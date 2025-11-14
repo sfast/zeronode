@@ -201,7 +201,7 @@ export default class Server extends Protocol {
         })
       }
     } catch (err) {
-      this.debugMode() && this.logger?.error('Error sending server stop: ', err)
+      this.debug && this.logger?.error('Error sending server stop: ', err)
     }
     
     await super.unbind()
