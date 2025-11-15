@@ -1,3 +1,4 @@
+// Reviewed: 16 Nov 2025 by @avar 
 /**
  * RouterSocket - Thin wrapper around ZeroMQ Router
  * Handles: bind/unbind, message routing format
@@ -156,15 +157,30 @@ export default class RouterSocket extends Socket {
     }
   }
 
+
   /**
-   * Unbind from address (application-level cleanup)
-   * 
-   * Order is critical:
-   * 1. Stop message listener (prevents EBUSY during unbind)
-   * 2. Unbind from ZeroMQ address
-   * 3. Detach event listeners
-   * 4. Set offline state
+   * Attach Router-specific socket event listeners
+   * Only listens to events relevant for Router (server) sockets
    */
+  attachSocketEventListeners () {
+    // No additional Router-specific event listeners needed
+  }
+
+  // ZeroMQ Router-specific: message format for routing
+  // Router needs [recipient identity, delimiter, payload]
+  getSocketMsgFromBuffer (buffer, recipient) {
+    return [recipient || '', '', buffer]
+  }
+
+  /**
+ * Unbind from address (application-level cleanup)
+ * 
+ * Order is critical:
+ * 1. Stop message listener (prevents EBUSY during unbind)
+ * 2. Unbind from ZeroMQ address
+ * 3. Detach event listeners
+ * 4. Set offline state
+ */
   async unbind () {
     let _scope = _private.get(this)
     let { socket, bindAddress } = _scope
@@ -182,7 +198,7 @@ export default class RouterSocket extends Socket {
     
     // 3. Now safe to unbind (listener stopped, no EBUSY)
     try {
-    await socket.unbind(bindAddress)
+      await socket.unbind(bindAddress)
     } catch (err) {
       // Ignore "No such endpoint" errors (already unbound)
       if (err.code !== 'ENOENT') {
@@ -193,6 +209,7 @@ export default class RouterSocket extends Socket {
           address: bindAddress,
           cause: err
         })
+        this.debug && this.logger.error(`Emitted '${TransportEvent.ERROR}' on socket '${this.getId()}'`, transportError)
         this.emit(TransportEvent.ERROR, transportError)
         return
       }
@@ -220,20 +237,6 @@ export default class RouterSocket extends Socket {
   async close () {
     await this.unbind()
     super.close(true)
-  }
-
-  /**
-   * Attach Router-specific socket event listeners
-   * Only listens to events relevant for Router (server) sockets
-   */
-  attachSocketEventListeners () {
-    // No additional Router-specific event listeners needed
-  }
-
-  // ZeroMQ Router-specific: message format for routing
-  // Router needs [recipient identity, delimiter, payload]
-  getSocketMsgFromBuffer (buffer, recipient) {
-    return [recipient || '', '', buffer]
   }
 }
 

@@ -1,3 +1,6 @@
+// Reviewed: 15 Nov 2025 by @avar 
+
+
 import { EventEmitter } from 'events'
 import { TransportEvent } from '../events.js'
 import { TransportError, TransportErrorCode } from '../errors.js'

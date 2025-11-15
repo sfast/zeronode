@@ -35,8 +35,6 @@ describe('ZMQ Configuration Module', () => {
       expect(ZMQConfigDefaults).to.have.property('ZMQ_RCVHWM')
       expect(ZMQConfigDefaults).to.have.property('ZMQ_RECONNECT_IVL')
       expect(ZMQConfigDefaults).to.have.property('ZMQ_RECONNECT_IVL_MAX')
-      expect(ZMQConfigDefaults).to.have.property('CONNECTION_TIMEOUT')
-      expect(ZMQConfigDefaults).to.have.property('RECONNECTION_TIMEOUT')
     })
 
     it('should have sensible default values', () => {
@@ -389,71 +387,6 @@ describe('ZMQ Configuration Module', () => {
 
     it('should allow undefined ZMQ_RECONNECT_IVL', () => {
       expect(() => validateConfig({ ZMQ_RECONNECT_IVL: undefined })).to.not.throw()
-    })
-  })
-
-  // ============================================================================
-  // validateConfig() - Timeouts
-  // ============================================================================
-
-  describe('validateConfig() - CONNECTION_TIMEOUT', () => {
-    it('should accept -1 (infinite timeout)', () => {
-      expect(() => validateConfig({ CONNECTION_TIMEOUT: -1 })).to.not.throw()
-    })
-
-    it('should accept 0', () => {
-      expect(() => validateConfig({ CONNECTION_TIMEOUT: 0 })).to.not.throw()
-    })
-
-    it('should accept positive timeouts', () => {
-      expect(() => validateConfig({ CONNECTION_TIMEOUT: 1000 })).to.not.throw()
-      expect(() => validateConfig({ CONNECTION_TIMEOUT: 30000 })).to.not.throw()
-    })
-
-    it('should reject values < -1', () => {
-      expect(() => validateConfig({ CONNECTION_TIMEOUT: -2 }))
-        .to.throw(/Invalid CONNECTION_TIMEOUT.*Must be -1 \(infinite\) or >= 0/)
-      
-      expect(() => validateConfig({ CONNECTION_TIMEOUT: -100 }))
-        .to.throw(/Invalid CONNECTION_TIMEOUT/)
-    })
-
-    it('should reject non-numeric CONNECTION_TIMEOUT', () => {
-      expect(() => validateConfig({ CONNECTION_TIMEOUT: 'never' }))
-        .to.throw(/Invalid CONNECTION_TIMEOUT/)
-    })
-
-    it('should allow undefined CONNECTION_TIMEOUT', () => {
-      expect(() => validateConfig({ CONNECTION_TIMEOUT: undefined })).to.not.throw()
-    })
-  })
-
-  describe('validateConfig() - RECONNECTION_TIMEOUT', () => {
-    it('should accept -1 (infinite reconnection)', () => {
-      expect(() => validateConfig({ RECONNECTION_TIMEOUT: -1 })).to.not.throw()
-    })
-
-    it('should accept 0', () => {
-      expect(() => validateConfig({ RECONNECTION_TIMEOUT: 0 })).to.not.throw()
-    })
-
-    it('should accept positive timeouts', () => {
-      expect(() => validateConfig({ RECONNECTION_TIMEOUT: 5000 })).to.not.throw()
-      expect(() => validateConfig({ RECONNECTION_TIMEOUT: 60000 })).to.not.throw()
-    })
-
-    it('should reject values < -1', () => {
-      expect(() => validateConfig({ RECONNECTION_TIMEOUT: -3 }))
-        .to.throw(/Invalid RECONNECTION_TIMEOUT.*Must be -1 \(infinite\) or >= 0/)
-    })
-
-    it('should reject non-numeric RECONNECTION_TIMEOUT', () => {
-      expect(() => validateConfig({ RECONNECTION_TIMEOUT: null }))
-        .to.throw(/Invalid RECONNECTION_TIMEOUT/)
-    })
-
-    it('should allow undefined RECONNECTION_TIMEOUT', () => {
-      expect(() => validateConfig({ RECONNECTION_TIMEOUT: undefined })).to.not.throw()
     })
   })
 

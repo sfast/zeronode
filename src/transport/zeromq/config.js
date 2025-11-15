@@ -7,7 +7,7 @@
 
 /**
  * Constant for infinite timeout (-1 means wait forever)
- * Used with CONNECTION_TIMEOUT and RECONNECTION_TIMEOUT
+ * Note: Used by application layer (Client/Protocol) for handshake and request timeouts
  */
 export const TIMEOUT_INFINITY = -1
 
@@ -138,26 +138,6 @@ export const ZMQConfigDefaults = {
    * true = allow identity handover
    */
   // ZMQ_ROUTER_HANDOVER: false,  // Optional - undefined means ZeroMQ default
-  
-  // ============================================================================
-  // APPLICATION-LEVEL TIMEOUTS
-  // ============================================================================
-  
-  /**
-   * CONNECTION_TIMEOUT: How long to wait for initial connection
-   * TIMEOUT_INFINITY = infinite (wait forever)
-   * >0 = timeout in milliseconds
-   * Default: TIMEOUT_INFINITY (infinite - let ZeroMQ handle it)
-   */
-  CONNECTION_TIMEOUT: TIMEOUT_INFINITY,
-  
-  /**
-   * RECONNECTION_TIMEOUT: How long to keep trying to reconnect
-   * TIMEOUT_INFINITY = infinite (never give up, recommended for production)
-   * >0 = give up after N milliseconds
-   * Default: TIMEOUT_INFINITY (infinite)
-   */
-  RECONNECTION_TIMEOUT: TIMEOUT_INFINITY
 }
 
 /**
@@ -258,20 +238,7 @@ export function validateConfig(config) {
   if (config.ZMQ_RECONNECT_IVL !== undefined && (typeof config.ZMQ_RECONNECT_IVL !== 'number' || config.ZMQ_RECONNECT_IVL < 1)) {
     throw new Error(`Invalid ZMQ_RECONNECT_IVL: ${config.ZMQ_RECONNECT_IVL}. Must be > 0`)
   }
-  
-  // Validate timeouts
-  if (config.CONNECTION_TIMEOUT !== undefined) {
-    if (typeof config.CONNECTION_TIMEOUT !== 'number' || (config.CONNECTION_TIMEOUT < -1 && config.CONNECTION_TIMEOUT !== 0)) {
-      throw new Error(`Invalid CONNECTION_TIMEOUT: ${config.CONNECTION_TIMEOUT}. Must be -1 (infinite) or >= 0`)
-    }
-  }
-  
-  if (config.RECONNECTION_TIMEOUT !== undefined) {
-    if (typeof config.RECONNECTION_TIMEOUT !== 'number' || (config.RECONNECTION_TIMEOUT < -1 && config.RECONNECTION_TIMEOUT !== 0)) {
-      throw new Error(`Invalid RECONNECTION_TIMEOUT: ${config.RECONNECTION_TIMEOUT}. Must be -1 (infinite) or >= 0`)
-    }
-  }
-  
+
   return true
 }
 

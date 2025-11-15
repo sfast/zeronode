@@ -1,3 +1,5 @@
+// Reviewed: 16 Nov 2025 by @avar 
+
 /**
  * DealerSocket - Thin wrapper around ZeroMQ Dealer
  * Handles: connect/disconnect
@@ -10,7 +12,7 @@ import { TransportError, TransportErrorCode } from '../errors.js'
 import { Socket } from './socket.js'
 import { TransportEvent } from '../events.js'
 import { createContext } from './context.js'
-import { mergeConfig, TIMEOUT_INFINITY } from './config.js'
+import { mergeConfig } from './config.js'
 
 let _private = new WeakMap()
 
@@ -66,7 +68,7 @@ export default class DealerSocket extends Socket {
     // Validate address format
     if (typeof routerAddress !== 'string' || !routerAddress.length) {
       throw new TransportError({
-        code: TransportErrorCode.ADDRESS_REQUIRED,
+        code: TransportErrorCode.INVALID_ADDRESS,
         message: 'Router address must be a non-empty string',
         transportId: this.getId()
       })
@@ -149,16 +151,7 @@ export default class DealerSocket extends Socket {
     this.setOffline()
   }
 
-  /**
-   * Close the dealer socket
-   * Teardown sequence:
-   * 1. Disconnect from router (application-level)
-   * 2. Close socket (transport-level via super.close())
-   */
-  async close () {
-    await this.disconnect()
-    super.close(true)
-  }
+
 
   /**
    * Attach Dealer-specific socket event listeners
@@ -204,4 +197,16 @@ export default class DealerSocket extends Socket {
   getSocketMsgFromBuffer (buffer, recipient) {
     return buffer
   }
+
+  /**
+ * Close the dealer socket
+ * Teardown sequence:
+ * 1. Disconnect from router (application-level)
+ * 2. Close socket (transport-level via super.close())
+ */
+  async close () {
+    await this.disconnect()
+    super.close(true)
+  }
+
 }
