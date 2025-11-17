@@ -5,10 +5,10 @@
  */
 
 import { expect } from 'chai'
-import Protocol, { ProtocolEvent, ProtocolSystemEvent } from '../src/protocol/protocol.js'
-import { Dealer as DealerSocket, Router as RouterSocket } from '../src/transport/zeromq/index.js'
-import { ProtocolError, ProtocolErrorCode } from '../src/protocol/protocol-errors.js'
-import { EnvelopType } from '../src/protocol/envelope.js'
+import Protocol, { ProtocolEvent, ProtocolSystemEvent } from '../../src/protocol/protocol.js'
+import { Dealer as DealerSocket, Router as RouterSocket } from '../../src/transport/zeromq/index.js'
+import { ProtocolError, ProtocolErrorCode } from '../../src/protocol/protocol-errors.js'
+import { EnvelopType } from '../../src/protocol/envelope.js'
 
 describe('Protocol', () => {
   let dealerSocket

@@ -4,7 +4,7 @@
  */
 
 import { expect } from 'chai'
-import { TransportError, TransportErrorCode } from '../src/transport/errors.js'
+import { TransportError, TransportErrorCode } from '../../src/transport/errors.js'
 
 describe('Transport Errors', () => {
   
@@ -14,7 +14,6 @@ describe('Transport Errors', () => {
   
   describe('TransportErrorCode', () => {
     it('should have all required error codes', () => {
-      expect(TransportErrorCode).to.have.property('CONNECTION_TIMEOUT')
       expect(TransportErrorCode).to.have.property('ALREADY_CONNECTED')
       expect(TransportErrorCode).to.have.property('BIND_FAILED')
       expect(TransportErrorCode).to.have.property('ALREADY_BOUND')
@@ -45,14 +44,14 @@ describe('Transport Errors', () => {
   describe('TransportError - Constructor', () => {
     it('should create error with code and message', () => {
       const error = new TransportError({
-        code: TransportErrorCode.CONNECTION_TIMEOUT,
-        message: 'Connection timed out'
+        code: TransportErrorCode.ALREADY_CONNECTED,
+        message: 'Already connected to address'
       })
 
       expect(error).to.be.instanceOf(Error)
       expect(error).to.be.instanceOf(TransportError)
-      expect(error.code).to.equal(TransportErrorCode.CONNECTION_TIMEOUT)
-      expect(error.message).to.equal('Connection timed out')
+      expect(error.code).to.equal(TransportErrorCode.ALREADY_CONNECTED)
+      expect(error.message).to.equal('Already connected to address')
       expect(error.name).to.equal('TransportError')
     })
 
@@ -207,8 +206,8 @@ describe('Transport Errors', () => {
 
     it('should be serializable with JSON.stringify', () => {
       const error = new TransportError({
-        code: TransportErrorCode.CONNECTION_TIMEOUT,
-        message: 'Timeout',
+        code: TransportErrorCode.SEND_FAILED,
+        message: 'Send failed',
         transportId: 'dealer-789'
       })
 
@@ -216,8 +215,8 @@ describe('Transport Errors', () => {
       const parsed = JSON.parse(jsonString)
 
       expect(parsed.name).to.equal('TransportError')
-      expect(parsed.code).to.equal(TransportErrorCode.CONNECTION_TIMEOUT)
-      expect(parsed.message).to.equal('Timeout')
+      expect(parsed.code).to.equal(TransportErrorCode.SEND_FAILED)
+      expect(parsed.message).to.equal('Send failed')
       expect(parsed.transportId).to.equal('dealer-789')
     })
   })
@@ -243,12 +242,12 @@ describe('Transport Errors', () => {
       })
 
       expect(error.isCode(TransportErrorCode.SEND_FAILED)).to.be.false
-      expect(error.isCode(TransportErrorCode.CONNECTION_TIMEOUT)).to.be.false
+      expect(error.isCode(TransportErrorCode.ALREADY_CONNECTED)).to.be.false
     })
 
     it('should work with all error codes', () => {
       const codes = [
-        TransportErrorCode.CONNECTION_TIMEOUT,
+        TransportErrorCode.ALREADY_CONNECTED,
         TransportErrorCode.ALREADY_CONNECTED,
         TransportErrorCode.BIND_FAILED,
         TransportErrorCode.ALREADY_BOUND,
@@ -272,15 +271,6 @@ describe('Transport Errors', () => {
   // ============================================================================
 
   describe('isConnectionError()', () => {
-    it('should return true for CONNECTION_TIMEOUT', () => {
-      const error = new TransportError({
-        code: TransportErrorCode.CONNECTION_TIMEOUT,
-        message: 'Connection timed out'
-      })
-
-      expect(error.isConnectionError()).to.be.true
-    })
-
     it('should return true for ALREADY_CONNECTED', () => {
       const error = new TransportError({
         code: TransportErrorCode.ALREADY_CONNECTED,
@@ -340,8 +330,8 @@ describe('Transport Errors', () => {
 
     it('should return false for non-bind errors', () => {
       const connectionError = new TransportError({
-        code: TransportErrorCode.CONNECTION_TIMEOUT,
-        message: 'Connection timeout'
+        code: TransportErrorCode.ALREADY_CONNECTED,
+        message: 'Already connected'
       })
 
       const sendError = new TransportError({
@@ -375,8 +365,8 @@ describe('Transport Errors', () => {
       })
 
       const connectionError = new TransportError({
-        code: TransportErrorCode.CONNECTION_TIMEOUT,
-        message: 'Connection timeout'
+        code: TransportErrorCode.ALREADY_CONNECTED,
+        message: 'Already connected'
       })
 
       const receiveError = new TransportError({
@@ -395,10 +385,10 @@ describe('Transport Errors', () => {
   // ============================================================================
 
   describe('Integration: Real-world Error Scenarios', () => {
-    it('should handle connection timeout scenario', () => {
+    it('should handle already connected scenario', () => {
       const error = new TransportError({
-        code: TransportErrorCode.CONNECTION_TIMEOUT,
-        message: 'Failed to connect to router within 5000ms',
+        code: TransportErrorCode.ALREADY_CONNECTED,
+        message: 'Already connected to router',
         transportId: 'dealer-client-1',
         address: 'tcp://127.0.0.1:5555',
         context: { timeout: 5000 }

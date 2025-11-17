@@ -17,7 +17,6 @@
  */
 export const TransportErrorCode = {
   // Connection errors (client/dealer)
-  CONNECTION_TIMEOUT: 'TRANSPORT_CONNECTION_TIMEOUT',     // Connection attempt timed out
   ALREADY_CONNECTED: 'TRANSPORT_ALREADY_CONNECTED',       // Already connected to this address
   
   // Binding errors (server/router)
@@ -118,8 +117,7 @@ export class TransportError extends Error {
    * @returns {boolean}
    */
   isConnectionError () {
-    return this.code === TransportErrorCode.CONNECTION_TIMEOUT ||
-           this.code === TransportErrorCode.ALREADY_CONNECTED
+    return this.code === TransportErrorCode.ALREADY_CONNECTED
   }
   
   /**

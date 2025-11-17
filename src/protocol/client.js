@@ -290,7 +290,7 @@ export default class Client extends Protocol {
   
   async close () {
     await this.disconnect()
-    await super.close(true) // close underlying transport and detach listeners
+    await super.close() // close underlying transport and cleanup
   }
   
   getServerPeerInfo () {

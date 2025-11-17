@@ -5,7 +5,7 @@
  */
 
 import { expect } from 'chai'
-import { Envelope, EnvelopType, BufferStrategy, EnvelopeIdGenerator } from '../src/protocol/envelope.js'
+import { Envelope, EnvelopType, BufferStrategy, EnvelopeIdGenerator } from '../../src/protocol/envelope.js'
 
 describe('Envelope', () => {
   describe('EnvelopType', () => {

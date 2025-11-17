@@ -1,162 +1,165 @@
 /**
- * Protocol - Message protocol handler (request/response, tick)
+ * Protocol - Thin orchestrator for message protocol handling
  * 
  * ARCHITECTURE: Protocol-First Design
  * - Single gateway between Socket and Application layers
- * - Translates low-level SocketEvent → high-level ProtocolEvent
- * - Handles all request/response tracking
- * - Manages connection state
+ * - Delegates to specialized modules (Config, RequestTracker, HandlerExecutor, MessageDispatcher, Lifecycle)
+ * - Provides clean public API for request/tick operations
  * 
  * Client/Server should NEVER access socket directly!
  */
 
-import { PatternEmitter } from '@sfast/pattern-emitter-ts'
 import { EventEmitter } from 'events'
-
 import { ProtocolError, ProtocolErrorCode } from './protocol-errors.js'
-import { EnvelopeIdGenerator, Envelope, BufferStrategy, EnvelopType } from './envelope.js'
-import { TransportEvent } from '../transport/events.js'
-import Globals from '../globals.js'
+import { EnvelopeIdGenerator, Envelope, EnvelopType } from './envelope.js'
+import { 
+  ProtocolConfigDefaults, 
+  ProtocolSystemEvent, 
+  mergeProtocolConfig, 
+  validateEventName 
+} from './config.js'
+import { RequestTracker } from './request-tracker.js'
+import { HandlerExecutor } from './handler-executor.js'
+import { MessageDispatcher } from './message-dispatcher.js'
+import { LifecycleManager, ProtocolEvent } from './lifecycle.js'
 
-// ============================================================================
-// PROTOCOL CONFIGURATION DEFAULTS
-// ============================================================================
-
-/**
- * Default protocol-level timeouts and settings
- */
-export const ProtocolConfigDefaults = {
-  REQUEST_TIMEOUT: 10000,  // Request timeout in milliseconds (10 seconds)
-  INFINITY: -1             // Special value for infinite timeout
-}
-
-// ============================================================================
-// PROTOCOL EVENTS (High-Level, Semantic)
-// ============================================================================
-
-export const ProtocolEvent = {
-  // Transport state changes (simplified)
-  TRANSPORT_READY: 'protocol:transport_ready',       // Transport can send/receive bytes
-  TRANSPORT_NOT_READY: 'protocol:transport_not_ready', // Transport disconnected/unbound
-  TRANSPORT_CLOSED: 'protocol:transport_closed',      // Transport permanently closed
-  ERROR: 'protocol:error'                             // Protocol-surfaced transport/protocol error
-}
-
-// ============================================================================
-// PROTOCOL SYSTEM EVENTS (Internal Message Contract)
-// ============================================================================
-// These are internal protocol messages exchanged between client and server
-// for handshakes, pings, and lifecycle management. They use the '_system:' 
-// prefix to prevent user code from spoofing them.
-
-export const ProtocolSystemEvent = {
-  // Handshake (explicit names)
-  HANDSHAKE_INIT_FROM_CLIENT: '_system:handshake_init_from_client',  // Client → Server
-  HANDSHAKE_ACK_FROM_SERVER: '_system:handshake_ack_from_server',    // Server → Client
-  CLIENT_PING: '_system:client_ping',            // Client → Server: Heartbeat
-  CLIENT_STOP: '_system:client_stop',            // Client → Server: Graceful disconnect
-  SERVER_STOP: '_system:server_stop'             // Server → Client: Server shutting down
-}
-
-// ============================================================================
-// PROTOCOL VALIDATION
-// ============================================================================
-
-/**
- * Validate event name - prevent spoofing of system events
- * @param {string} event - Event name
- * @param {boolean} isSystemEvent - Is this a system event being sent internally?
- * @throws {Error} If client tries to send system event
- * @returns {boolean} true if valid
- */
-function validateEventName (event, isSystemEvent = false) {
-  const isSystemPrefix = event.startsWith('_system:')
-  
-  if (isSystemPrefix && !isSystemEvent) {
-    throw new Error(`Cannot send system event: ${event}. System events are reserved.`)
-  }
-  
-  return true
-}
+// Re-export for convenience
+export { ProtocolEvent, ProtocolSystemEvent, ProtocolConfigDefaults }
 
 let _private = new WeakMap()
 
 export default class Protocol extends EventEmitter {
-  constructor (socket, config = {}) {
+  constructor(socket, config = {}) {
     super()
     
     if (!socket) {
       throw new Error('Protocol requires a socket')
     }
     
-    // Simple config merge: defaults → constructor overrides
-    const mergedConfig = {
-      BUFFER_STRATEGY: Globals.PROTOCOL_BUFFER_STRATEGY,
-      PROTOCOL_REQUEST_TIMEOUT: Globals.PROTOCOL_REQUEST_TIMEOUT,
-      DEBUG: false,
-      ...(config || {})
-    }
-
-    let _scope = {
-      socket,                    // PRIVATE - never expose!
-      // Request tracking: id → { resolve, reject, timer }
-      // NOTE: IDs are globally unique (include owner hash), but we only track
-      // by ID here because:
-      // - Client: Only sees its own requests (no collision possible)
-      // - Server: Doesn't need to track requests (stateless request/response)
-      // If server needs tracking (e.g. rate limiting), use (owner, id) tuple
-      requests: new Map(),
-      // Envelope ID generator (manages counter state)
-      idGenerator: new EnvelopeIdGenerator(socket.getId()),
-      // Handler storage - Both Client and Server need this
-      requestEmitter: new PatternEmitter(),
-      tickEmitter: new PatternEmitter(),
-      // Protocol configuration (simple merged)
+    // Merge config (centralized in config module)
+    const mergedConfig = mergeProtocolConfig(config)
+    
+    // Create ID generator
+    const idGenerator = new EnvelopeIdGenerator(socket.getId())
+    
+    // Create request tracker
+    const requestTracker = new RequestTracker({
+      protocolId: socket.getId(),
       config: mergedConfig,
-      // Closed flag for idempotent teardown and API gating
+      debug: mergedConfig.DEBUG,
+      logger: socket.logger
+    })
+    
+    // Create handler executor
+    const handlerExecutor = new HandlerExecutor({
+      socket,
+      config: mergedConfig,
+      debug: mergedConfig.DEBUG,
+      logger: socket.logger
+    })
+    
+    // Create message dispatcher
+    const dispatcher = new MessageDispatcher({
+      socket,
+      requestTracker,
+      handlerExecutor,
+      debug: mergedConfig.DEBUG,
+      logger: socket.logger
+    })
+    
+    // Create lifecycle manager
+    const lifecycle = new LifecycleManager({
+      socket,
+      requestTracker,
+      dispatcher,
+      protocolEmitter: this, // Protocol is the EventEmitter
+      protocolId: socket.getId(),
+      debug: mergedConfig.DEBUG,
+      logger: socket.logger
+    })
+    
+    // Store private state
+    let _scope = {
+      socket,
+      config: mergedConfig,
+      idGenerator,
+      requestTracker,
+      handlerExecutor,
+      dispatcher,
+      lifecycle,
       closed: false
-      // NO state tracking - just pass through transport events
-      // NO peer tracking - that's Server/Client responsibility!
     }
     
     _private.set(this, _scope)
     
-    // Translate socket events to protocol events
-    this._attachSocketEventHandlers(socket)
+    // Attach transport event listeners
+    lifecycle.attachSocketEventHandlers()
   }
   
   // ============================================================================
-  // PUBLIC API
+  // PUBLIC API - BASIC INFO
   // ============================================================================
   
-  getId () {
+  getId() {
     let { socket } = _private.get(this)
     return socket.getId()
   }
   
-  getConfig () {
+  getConfig() {
     let { config } = _private.get(this)
     return config
   }
-
-  setLogger (logger) {
+  
+  setLogger(logger) {
     let { socket } = _private.get(this)
     socket.setLogger(logger)
   }
-
-  isOnline () {
+  
+  isOnline() {
     let { socket, closed } = _private.get(this)
     return socket.isOnline() && !closed
   }
-
+  
+  get debug() {
+    let { config } = _private.get(this)
+    return config.DEBUG
+  }
+  
+  set debug(value) {
+    let { config, socket } = _private.get(this)
+    config.DEBUG = value
+    socket.debug = value
+  }
+  
   // ============================================================================
-  // REQUEST/RESPONSE
+  // REQUEST/RESPONSE - PUBLIC API
   // ============================================================================
   
-  request ({ to, event, data, timeout } = {}) {
-    let { socket, requests, config } = _private.get(this)
-    // we merged defaults in constructor
-    timeout = timeout || config.PROTOCOL_REQUEST_TIMEOUT
+  /**
+   * Send request and wait for response
+   * @param {Object} params
+   * @param {string} [params.to] - Recipient ID
+   * @param {string} params.event - Event name (cannot start with '_system:')
+   * @param {*} [params.data] - Request data
+   * @param {number} [params.timeout] - Request timeout in ms
+   * @returns {Promise<*>} Response data
+   * @throws {ProtocolError} If validation fails or transport is offline
+   */
+  request({ to, event, data, timeout } = {}) {
+    let { socket, requestTracker, idGenerator, config } = _private.get(this)
+    
+    // Validate event name (no system events from public API)
+    try {
+      validateEventName(event, false)
+    } catch (err) {
+      // Wrap validation error in ProtocolError
+      return Promise.reject(new ProtocolError({
+        code: ProtocolErrorCode.INVALID_EVENT,
+        message: err.message,
+        protocolId: this.getId(),
+        context: { event }
+      }))
+    }
     
     // Check if transport is online
     if (!this.isOnline()) {
@@ -167,27 +170,17 @@ export default class Protocol extends EventEmitter {
       }))
     }
     
-    let { idGenerator } = _private.get(this)
+    // Use config default if no timeout specified
+    timeout = timeout || config.PROTOCOL_REQUEST_TIMEOUT
+    
+    // Generate unique envelope ID
     const id = idGenerator.next()
     
     return new Promise((resolve, reject) => {
-      let timer = setTimeout(() => {
-        if (requests.has(id)) {
-          requests.delete(id)
-          reject(new ProtocolError({
-            code: ProtocolErrorCode.REQUEST_TIMEOUT,
-            message: `Request envelope '${id}' timed out on protocol '${this.getId()}'`,
-            protocolId: this.getId(),
-            envelopeId: id,
-            context: { event, timeout }
-          }))
-        }
-      }, timeout)
+      // Track request
+      requestTracker.track(id, { resolve, reject, timeout })
       
-      requests.set(id, { resolve, reject, timeout: timer })
-      
-      // Create envelope buffer and send (errors automatically caught by promise rejection)
-      let { config } = _private.get(this)
+      // Create and send envelope
       const buffer = Envelope.createBuffer({
         type: EnvelopType.REQUEST,
         id,
@@ -215,11 +208,8 @@ export default class Protocol extends EventEmitter {
    * @param {*} [params.data] - Event data
    * @throws {ProtocolError} If event is a system event or transport is offline
    */
-  tick ({ to, event, data } = {}) {
-    let { socket } = _private.get(this)
-    
+  tick({ to, event, data } = {}) {
     // ❌ BLOCK system events from public API
-    // System events (_system:*) are reserved for internal use (handshake, ping, etc.)
     if (event.startsWith('_system:')) {
       throw new ProtocolError({
         code: ProtocolErrorCode.INVALID_EVENT,
@@ -229,11 +219,11 @@ export default class Protocol extends EventEmitter {
       })
     }
     
-    // ✅ Validate event name (no _system: prefix from public API)
+    // ✅ Validate event name
     validateEventName(event, false)
     
     // Check if transport is online
-    if (!socket.isOnline()) {
+    if (!this.isOnline()) {
       throw new ProtocolError({
         code: ProtocolErrorCode.NOT_READY,
         message: `Cannot send tick: Protocol '${this.getId()}' is not ready (transport offline)`,
@@ -253,9 +243,6 @@ export default class Protocol extends EventEmitter {
    * Send system tick - INTERNAL USE ONLY
    * Used by Client/Server for handshake, ping, disconnect, etc.
    * 
-   * This method bypasses public API validation and is intended ONLY for
-   * internal protocol operations. Do not expose this to user code.
-   * 
    * @protected
    * @param {Object} params
    * @param {string} [params.to] - Recipient ID
@@ -264,9 +251,7 @@ export default class Protocol extends EventEmitter {
    * @throws {ProtocolError} If transport is offline
    * @throws {Error} If event is not a system event
    */
-  _sendSystemTick ({ to, event, data } = {}) {
-    let { socket } = _private.get(this)
-    
+  _sendSystemTick({ to, event, data } = {}) {
     // ✅ Assert this is actually a system event (internal validation)
     if (!event.startsWith('_system:')) {
       throw new Error(
@@ -275,7 +260,7 @@ export default class Protocol extends EventEmitter {
     }
     
     // Check if transport is online
-    if (!socket.isOnline()) {
+    if (!this.isOnline()) {
       throw new ProtocolError({
         code: ProtocolErrorCode.NOT_READY,
         message: `Cannot send system tick: Protocol '${this.getId()}' is not ready (transport offline)`,
@@ -287,513 +272,92 @@ export default class Protocol extends EventEmitter {
     this._doTick({ to, event, data })
   }
   
-  // ============================================================================
-  // PRIVATE IMPLEMENTATION
-  // ============================================================================
-  
   /**
    * Actually send a tick (internal implementation)
    * @private
-   * @param {Object} params
-   * @param {string} [params.to] - Recipient ID
-   * @param {string} params.event - Event name (already validated)
-   * @param {*} [params.data] - Event data
    */
-  _doTick ({ to, event, data } = {}) {
+  _doTick({ to, event, data } = {}) {
     let { socket, idGenerator, config } = _private.get(this)
     
+    const id = idGenerator.next()
     const buffer = Envelope.createBuffer({
       type: EnvelopType.TICK,
-      id: idGenerator.next(),
+      id,
       event,
       data,
-      owner: this.getId(),
-      recipient: to
+      owner: this.getId()
     }, config.BUFFER_STRATEGY)
     
     socket.sendBuffer(buffer, to)
   }
   
   // ============================================================================
-  // HANDLER REGISTRATION
+  // HANDLER REGISTRATION - PUBLIC API
   // ============================================================================
   
-  onRequest (pattern, handler) {
-    let { requestEmitter } = _private.get(this)
-    requestEmitter.on(pattern, handler)
-  }
-  
-  offRequest (pattern, handler) {
-    let { requestEmitter } = _private.get(this)
-    requestEmitter.off(pattern, handler)
-  }
-  
-  onTick (pattern, handler) {
-    let { tickEmitter } = _private.get(this)
-    tickEmitter.on(pattern, handler)
-  }
-  
-  offTick (pattern, handler) {
-    let { tickEmitter } = _private.get(this)
-    if (handler) {
-      tickEmitter.off(pattern, handler)
-    } else {
-      tickEmitter.removeAllListeners(pattern)
-    }
-  }
-  
-  // ============================================================================
-  // SOCKET EVENT HANDLERS → PROTOCOL EVENT TRANSLATION
-  // ============================================================================
-  
-  _attachSocketEventHandlers (socket) {
-    // ============================================================================
-    // SIMPLIFIED EVENT TRANSLATION
-    // 
-    // Protocol just passes through 4 transport events - no state management!
-    // 
-    // TransportEvent (4 events):     ProtocolEvent (pass-through):
-    // - READY                     →  TRANSPORT_READY
-    // - NOT_READY                 →  TRANSPORT_NOT_READY  
-    // - MESSAGE                   →  handled below (fast path dispatch)
-    // - CLOSED                    →  TRANSPORT_CLOSED
-    // 
-    // Client/Server handle:
-    // - Handshake logic (when to send CLIENT_CONNECTED, etc.)
-    // - Peer management (tracking connected peers)
-    // - Session state (HEALTHY, GHOST, etc.)
-    // 
-    // Protocol only handles:
-    // - Request/response matching
-    // - Tick/request handler execution
-    // - Message parsing
-    // ============================================================================
-    
-    // dispatch incoming messages to protocol handlers
-    socket.on(TransportEvent.MESSAGE, ({ buffer, sender }) => {
-      this._handleIncomingMessage(buffer, sender)
-    })
-    
-    // Transport can send/receive - pass through
-    socket.on(TransportEvent.READY, () => {
-      if (process.env.NODE_ENV !== 'test') {
-        this.debug && socket.logger?.info(`Protocol '${this.getId()}': Transport ready`)
-      }
-      this.emit(ProtocolEvent.TRANSPORT_READY)
-    })
-    
-    // Transport disconnected - pass through
-    socket.on(TransportEvent.NOT_READY, () => {
-      this.debug && socket.logger?.warn(`Protocol '${this.getId()}': Transport not ready`)
-      this.emit(ProtocolEvent.TRANSPORT_NOT_READY)
-    })
-    
-    // Transport permanently closed - reject pending requests
-    socket.on(TransportEvent.CLOSED, () => {
-      this.debug && socket.logger?.error(`Protocol '${this.getId()}': Transport closed`)
-      
-      this._rejectPendingRequests('Transport closed')
-      this.emit(ProtocolEvent.TRANSPORT_CLOSED)
-    })
-
-    // Transport error - surface as protocol-level error
-    socket.on(TransportEvent.ERROR, (err) => {
-      this.debug && socket.logger?.error(`Protocol '${this.getId()}': Transport error`, err)
-      this.emit(ProtocolEvent.ERROR, err)
-    })
-  }
-  
-  // ============================================================================
-  // UTILITY (Private)
-  // ============================================================================
-  
-  _rejectPendingRequests (reason) {
-    let { requests, socket } = _private.get(this)
-    
-    if (requests.size === 0) return
-    
-    this.debug && socket.logger?.warn(`[Protocol] Rejecting ${requests.size} pending requests: ${reason}`)
-    
-    requests.forEach((request, id) => {
-      clearTimeout(request.timeout)
-      request.reject(new ProtocolError({
-        code: ProtocolErrorCode.REQUEST_TIMEOUT,
-        message: reason,
-        protocolId: socket.getId(),
-        envelopeId: id
-      }))
-    })
-    
-    requests.clear()
-  }
-  
-  // ============================================================================
-  // MESSAGE HANDLING (Private)
-  // ============================================================================
-  
-  _handleIncomingMessage (buffer, sender) {
-    // Protocol is peer-agnostic - just handle the message
-    // Create envelope to read type (lazy - only reads first byte)
-    const envelope = new Envelope(buffer)
-    const type = envelope.type
-    
-    switch (type) {
-      case EnvelopType.REQUEST:
-        this._handleRequest(buffer)
-        break
-                
-      case EnvelopType.TICK:
-        this._handleTick(buffer)
-        break
-      case EnvelopType.RESPONSE:
-      case EnvelopType.ERROR:
-        this._handleResponse(buffer, type)
-        break
-    }
-  }
-  
-  _handleResponse (buffer, type) {
-    let { socket, requests } = _private.get(this)
-    
-    // Use Envelope for zero-copy reading
-    const envelope = new Envelope(buffer)
-    
-    const request = requests.get(envelope.id)
-    if (!request) {
-       this.debug && socket.logger?.warn(`[Protocol] Response ${envelope.id} probably timed out`)
-       return
-    }
-    
-    clearTimeout(request.timeout)
-    requests.delete(envelope.id)
-    
-    // Deserialize response data (lazy - only if data exists)
-    const data = envelope.data
-    
-    type === EnvelopType.ERROR ? request.reject(data) : request.resolve(data)
-  }
-  
-  _handleRequest (buffer) {
-    let { socket, requestEmitter, config } = _private.get(this)
-    
-    // Use Envelope for zero-copy reading (all fields lazy including data)
-    const envelope = new Envelope(buffer)
-    
-    // Get matching handlers
-    const handlers = requestEmitter.getMatchingListeners(envelope.event)
-    
-    if (handlers.length === 0) {
-      // No handler - send error response
-      this._sendErrorResponse(envelope, `No handler for request: ${envelope.event}`)
-      return
-    }
-    
-    // ============================================================================
-    // PERFORMANCE OPTIMIZATION: Fast path for single handler (90% of requests)
-    // ============================================================================
-    if (handlers.length === 1) {
-      this._executeSingleHandler(handlers[0], envelope)
-      return
-    }
-    
-    // ============================================================================
-    // MIDDLEWARE CHAIN: Multiple handlers (10% of requests)
-    // ============================================================================
-    this._executeMiddlewareChain(handlers, envelope)
+  /**
+   * Register request handler
+   * @param {string|RegExp} pattern - Event pattern to match
+   * @param {Function} handler - Handler function (envelope, reply) or (envelope, reply, next)
+   */
+  onRequest(pattern, handler) {
+    let { dispatcher } = _private.get(this)
+    dispatcher.onRequest(pattern, handler)
   }
   
   /**
-   * Execute single handler (fast path - no middleware overhead)
-   * @private
+   * Unregister request handler
+   * @param {string|RegExp} pattern - Event pattern
+   * @param {Function} handler - Handler to remove
    */
-  _executeSingleHandler (handler, envelope) {
-    let { socket, config } = _private.get(this)
-    let replyCalled = false
-    
-    // Reply function
-    const reply = (responseData) => {
-      if (replyCalled) return
-      replyCalled = true
-      
-      const responseBuffer = Envelope.createBuffer({
-        type: EnvelopType.RESPONSE,
-        id: envelope.id,
-        data: responseData,
-        owner: socket.getId(),
-        recipient: envelope.owner
-      }, config.BUFFER_STRATEGY)
-      socket.sendBuffer(responseBuffer, envelope.owner)
-    }
-    
-    // Reply error function
-    reply.error = (error) => {
-      if (replyCalled) return
-      replyCalled = true
-      
-      const errorData = typeof error === 'object' && error !== null
-        ? {
-            message: error.message || 'Handler error',
-            code: error.code || 'HANDLER_ERROR',
-            stack: config.DEBUG ? error.stack : undefined
-          }
-        : { message: String(error), code: 'HANDLER_ERROR' }
-      
-      const errorBuffer = Envelope.createBuffer({
-        type: EnvelopType.ERROR,
-        id: envelope.id,
-        data: errorData,
-        owner: socket.getId(),
-        recipient: envelope.owner
-      }, config.BUFFER_STRATEGY)
-      socket.sendBuffer(errorBuffer, envelope.owner)
-    }
-    
-    try {
-      const result = handler(envelope, reply)
-      
-      if (result !== undefined && !replyCalled) {
-        Promise.resolve(result)
-          .then((responseData) => reply(responseData))
-          .catch((err) => reply.error(err))
-      }
-    } catch (err) {
-      reply.error(err)
-    }
+  offRequest(pattern, handler) {
+    let { dispatcher } = _private.get(this)
+    dispatcher.offRequest(pattern, handler)
   }
   
   /**
-   * Execute middleware chain (inline, closure-based - zero allocation overhead)
-   * @private
+   * Register tick handler
+   * @param {string|RegExp} pattern - Event pattern to match
+   * @param {Function} handler - Handler function (envelope)
    */
-  _executeMiddlewareChain (handlers, envelope) {
-    let { socket, config } = _private.get(this)
-    let currentIndex = -1
-    let replyCalled = false
-    
-    // Reply function
-    const reply = (responseData) => {
-      if (replyCalled) {
-        this.debug && socket.logger?.warn('[Protocol] Reply already called, ignoring duplicate')
-        return
-      }
-      replyCalled = true
-      
-      const responseBuffer = Envelope.createBuffer({
-        type: EnvelopType.RESPONSE,
-        id: envelope.id,
-        data: responseData,
-        owner: socket.getId(),
-        recipient: envelope.owner
-      }, config.BUFFER_STRATEGY)
-      socket.sendBuffer(responseBuffer, envelope.owner)
-    }
-    
-    // Reply error function
-    reply.error = (error) => {
-      if (replyCalled) {
-        this.debug && socket.logger?.warn('[Protocol] Reply already called, ignoring duplicate')
-        return
-      }
-      replyCalled = true
-      
-      const errorData = typeof error === 'object' && error !== null
-        ? {
-            message: error.message || 'Handler error',
-            code: error.code || 'HANDLER_ERROR',
-            stack: config.DEBUG ? error.stack : undefined
-          }
-        : { message: String(error), code: 'HANDLER_ERROR' }
-      
-      const errorBuffer = Envelope.createBuffer({
-        type: EnvelopType.ERROR,
-        id: envelope.id,
-        data: errorData,
-        owner: socket.getId(),
-        recipient: envelope.owner
-      }, config.BUFFER_STRATEGY)
-      socket.sendBuffer(errorBuffer, envelope.owner)
-    }
-    
-    // Handle error - find error handler or send error response
-    const handleError = (error) => {
-      if (replyCalled) return
-      
-      // Find next error handler (4 params)
-      for (let i = currentIndex + 1; i < handlers.length; i++) {
-        if (handlers[i].length === 4) {
-          currentIndex = i
-          try {
-            handlers[i](error, envelope, reply, next)
-          } catch (err) {
-            reply.error(err)
-          }
-          return
-        }
-      }
-      
-      // No error handler found - send error response
-      reply.error(error)
-    }
-    
-    // Execute handler
-    const executeHandler = (handler) => {
-      try {
-        const arity = handler.length
-        
-        // Skip error handlers (only called via next(error))
-        if (arity === 4) {
-          next()
-          return
-        }
-        
-        let result
-        
-        if (arity === 3) {
-          // Manual control: (envelope, reply, next)
-          result = handler(envelope, reply, next)
-        } else {
-          // Auto-continue: (envelope, reply)
-          result = handler(envelope, reply)
-        }
-        
-        // Debug log for async handlers
-        this.debug && socket.logger?.debug('[Middleware] Handler executed', {
-          arity,
-          resultType: result === undefined ? 'undefined' : (result && result.then ? 'Promise' : typeof result),
-          replyCalled,
-          handlerIndex: currentIndex,
-          totalHandlers: handlers.length
-        })
-        
-        
-        // Handle return values
-        // Special case: If result is a Promise and handler is 2-param (auto-continue),
-        // we need to check if the promise resolves to undefined (meaning no response)
-        if (result !== undefined && !replyCalled) {
-          // Check if it's a promise
-          if (result && typeof result.then === 'function') {
-            Promise.resolve(result)
-              .then((responseData) => {
-                if (!replyCalled) {
-                  // If async function returned undefined and it's a 2-param handler,
-                  // continue to next handler instead of sending undefined response
-                  if (responseData === undefined && arity !== 3) {
-                    this.debug && socket.logger?.debug('[Middleware] Async 2-param handler returned undefined, auto-continuing')
-                    setImmediate(next)
-                  } else {
-                    // Send the response data
-                    reply(responseData)
-                  }
-                }
-              })
-              .catch((err) => handleError(err))
-          } else {
-            // Synchronous return value - send immediately
-            reply(result)
-          }
-        } else if (arity !== 3 && !replyCalled) {
-          // Auto-continue for 2-param handlers that returned undefined
-          setImmediate(next)
-        }
-        // For 3-param handlers, wait for explicit next() call
-        
-      } catch (err) {
-        handleError(err)
-      }
-    }
-    
-    // Next function
-    const next = (error) => {
-      if (replyCalled) return
-      
-      if (error) {
-        handleError(error)
-        return
-      }
-      
-      currentIndex++
-      
-      if (currentIndex >= handlers.length) {
-        if (!replyCalled) {
-          reply.error(new Error('No handler sent a response'))
-        }
-        return
-      }
-      
-      executeHandler(handlers[currentIndex])
-    }
-    
-    // Start the chain
-    next()
+  onTick(pattern, handler) {
+    let { dispatcher } = _private.get(this)
+    dispatcher.onTick(pattern, handler)
   }
   
   /**
-   * Helper: Send error response
-   * @private
+   * Unregister tick handler
+   * @param {string|RegExp} pattern - Event pattern
+   * @param {Function} [handler] - Handler to remove (optional - removes all if omitted)
    */
-  _sendErrorResponse (envelope, message) {
-    let { socket, config } = _private.get(this)
-    
-    const errorBuffer = Envelope.createBuffer({
-      type: EnvelopType.ERROR,
-      id: envelope.id,
-      data: { message, code: 'NO_HANDLER' },
-      owner: socket.getId(),
-      recipient: envelope.owner
-    }, config.BUFFER_STRATEGY)
-    socket.sendBuffer(errorBuffer, envelope.owner)
-  }
-  
-  _handleTick (buffer) {
-    let { tickEmitter } = _private.get(this)
-    
-    // Use Envelope for zero-copy reading (all fields lazy including data)
-    const envelope = new Envelope(buffer)
-    
-    // ✅ NO SECURITY WARNING NEEDED
-    // System events are now architecturally prevented from public API (tick())
-    // If we receive a system event, it's from legitimate internal sources:
-    // 1. Our own Client/Server using _sendSystemTick() (trusted)
-    // 2. Remote Client/Server handshake (legitimate protocol operation)
-    // Users cannot send system events through public API - it throws INVALID_EVENT
-    
-    // Execute tick handler (fire-and-forget)
-    // Handler signature: (envelope)
-    // - envelope: full envelope object with envelope.data, envelope.event, etc.
-    tickEmitter.emit(envelope.event, envelope)
+  offTick(pattern, handler) {
+    let { dispatcher } = _private.get(this)
+    dispatcher.offTick(pattern, handler)
   }
   
   // ============================================================================
-  // PROTECTED API (for subclasses Client/Server)
+  // PROTECTED API - For Client/Server subclasses
   // ============================================================================
   
-  _getSocket () {
+  _getSocket() {
     let { socket } = _private.get(this)
     return socket
   }
   
-  _getPrivateScope () {
+  _getPrivateScope() {
     return _private.get(this)
   }
-
+  
   /**
    * Detach protocol-managed transport listeners from the socket.
    * Safe to call multiple times.
    * @private
    */
-  _detachSocketEventHandlers (socket) {
-    if (!socket || typeof socket.removeAllListeners !== 'function') return
-    try {
-      socket.removeAllListeners(TransportEvent.MESSAGE)
-      socket.removeAllListeners(TransportEvent.READY)
-      socket.removeAllListeners(TransportEvent.NOT_READY)
-      socket.removeAllListeners(TransportEvent.CLOSED)
-      socket.removeAllListeners(TransportEvent.ERROR)
-    } catch {
-      this.debug && socket.logger?.error('[Protocol] Failed to detach transport event listeners')
-    }
+  _detachSocketEventHandlers(socket) {
+    let { lifecycle } = _private.get(this)
+    lifecycle.detachSocketEventHandlers()
   }
-
+  
   /**
    * Disconnect protocol from transport events without closing or rejecting pending.
    * - Idempotent: safe to call multiple times
@@ -801,11 +365,11 @@ export default class Protocol extends EventEmitter {
    * - Does NOT reject pending requests
    * - Does NOT close underlying transport
    */
-  async disconnect () {
-    let { socket } = _private.get(this)
-    await socket.disconnect();
+  async disconnect() {
+    let { lifecycle } = _private.get(this)
+    await lifecycle.disconnect()
   }
-
+  
   /**
    * Unbind protocol from transport events without closing or rejecting pending.
    * - Idempotent: safe to call multiple times
@@ -813,43 +377,26 @@ export default class Protocol extends EventEmitter {
    * - Does NOT reject pending requests
    * - Does NOT close underlying transport
    */
-
-  async unbind () {
-    let { socket } = _private.get(this)
-    // Keep socket event handlers attached so further transport events (e.g., CLOSED)
-    // still propagate through Protocol to consumers. Just unbind transport here.
-    await socket.unbind();
+  async unbind() {
+    let { lifecycle } = _private.get(this)
+    await lifecycle.unbind()
   }
-
+  
   /**
    * Close the protocol and cleanup resources.
    * - Idempotent
-   * - Detaches protocol-attached socket listeners
-   * - Rejects and clears pending requests
-   * - Optionally closes the underlying transport
-   * 
-   * @param {boolean} [closeTransport=false] - Whether to close the socket
+   * - Closes the underlying transport
+   * - Rejects pending requests
+   * - Removes all handlers
+   * - Detaches listeners
    */
-  async close (closeTransport = false) {
+  async close() {
     let _scope = _private.get(this)
-    const { socket, closed } = _scope
+    const { lifecycle, closed } = _scope
     
     if (closed) return
     _scope.closed = true
     
-    // Reject all in-flight requests
-    this._rejectPendingRequests('Protocol closed')
-    
-    // Optionally close transport
-    if (closeTransport && socket && typeof socket.close === 'function') {
-      try {
-        await socket.close()
-      } catch {
-        this.debug && socket.logger?.error('[Protocol] Failed to close transport')
-      }
-    }
-    
-    // Detach protocol-managed transport listeners after close to allow CLOSED to propagate
-    this._detachSocketEventHandlers(socket)
+    await lifecycle.close()
   }
 }

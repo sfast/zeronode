@@ -1,7 +1,7 @@
 import { expect } from 'chai'
-import Server, { ServerEvent } from '../src/protocol/server.js'
-import Client, { ClientEvent } from '../src/protocol/client.js'
-import { TransportEvent } from '../src/transport/events.js'
+import Server, { ServerEvent } from '../../src/protocol/server.js'
+import Client, { ClientEvent } from '../../src/protocol/client.js'
+import { TransportEvent } from '../../src/transport/events.js'
 
 // Utility to wait for a single event once
 function once (emitter, event) {

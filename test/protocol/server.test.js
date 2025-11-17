@@ -5,9 +5,9 @@
  */
 
 import { expect } from 'chai'
-import Server, { ServerEvent } from '../src/protocol/server.js'
-import Client, { ClientEvent } from '../src/protocol/client.js'
-import { ProtocolSystemEvent } from '../src/protocol/protocol.js'
+import Server, { ServerEvent } from '../../src/protocol/server.js'
+import Client, { ClientEvent } from '../../src/protocol/client.js'
+import { ProtocolSystemEvent } from '../../src/protocol/protocol.js'
 
 describe('Server', () => {
   let server
@@ -252,7 +252,7 @@ describe('Server', () => {
       client.disconnect().catch(() => {})
     })
 
-    it('should preserve peer info after CLIENT_STOP', (done) => {
+    it('should remove peer info after CLIENT_STOP', (done) => {
       const timeoutHandle = setTimeout(() => {
         done(new Error('CLIENT_STOP event timeout'))
       }, 5000)
@@ -260,8 +260,7 @@ describe('Server', () => {
       server.once(ServerEvent.CLIENT_LEFT, () => {
         clearTimeout(timeoutHandle)
         const clientPeer = server.getClientPeerInfo('test-client')
-        expect(clientPeer).to.not.be.null
-        expect(clientPeer.getId()).to.equal('test-client')
+        expect(clientPeer).to.be.undefined  // ✅ Should be removed
         done()
       })
 
@@ -405,7 +404,7 @@ describe('Server', () => {
       if (client) await client.disconnect().catch(() => {})
     })
 
-    it('should update existing client state to HEALTHY on reconnection', async function() {
+    it('should create new peer on reconnection after disconnect', async function() {
       this.timeout(5000)
       
       client = new Client({ id: 'test-client-reconnect' })
@@ -413,26 +412,31 @@ describe('Server', () => {
       // First connection
       await client.connect(serverAddress)
       const peer1 = server.getClientPeerInfo('test-client-reconnect')
+      expect(peer1).to.exist
       expect(peer1.getState()).to.be.oneOf(['CONNECTED', 'HEALTHY'])
       
-      // Manually set to GHOST to simulate missed pings
-      peer1.setState('GHOST')
-      expect(peer1.getState()).to.equal('GHOST')
-      
-      // Disconnect and reconnect
+      // Disconnect (removes peer from map)
       await client.disconnect()
       await new Promise(resolve => setTimeout(resolve, 200))
       
-      // Reconnect with same client (reuses existing peer)
+      // Verify peer was removed
+      const peerAfterDisconnect = server.getClientPeerInfo('test-client-reconnect')
+      expect(peerAfterDisconnect).to.be.undefined
+      
+      // Reconnect with same client (creates NEW peer)
       client = new Client({ id: 'test-client-reconnect' })
       await client.connect(serverAddress)
       
-      // Wait a bit for state update
+      // Wait a bit for handshake
       await new Promise(resolve => setTimeout(resolve, 100))
       
-      // Should be back to HEALTHY
+      // Should have a NEW peer with CONNECTED or HEALTHY state
       const peer2 = server.getClientPeerInfo('test-client-reconnect')
-      expect(peer2.getState()).to.equal('HEALTHY')
+      expect(peer2).to.exist
+      expect(peer2.getState()).to.be.oneOf(['CONNECTED', 'HEALTHY'])
+      
+      // Should be a different peer object
+      expect(peer2).to.not.equal(peer1)
     })
   })
 
@@ -686,23 +690,25 @@ describe('Server', () => {
   })
 
   describe('Client Timeout Edge Cases', () => {
-    it('should handle client timeout with very short timeout value', async () => {
+    it('should handle client timeout with very short timeout value', async function() {
+      this.timeout(15000) // Increase timeout for this test (waits 6s + setup)
+      
       server = new Server({ 
         id: 'test-server',
         config: { 
-          CLIENT_GHOST_TIMEOUT: 200,  // Use correct config key
-          CLIENT_HEALTH_CHECK_INTERVAL: 50  // Use correct config key
+          CLIENT_HEALTH_CHECK_INTERVAL: 1000,
+          CLIENT_GHOST_TIMEOUT: 4000
         }
       })
+      
       await server.bind('tcp://127.0.0.1:0')
       
-      const client = new Client({ id: 'test-client' })
-      await client.connect(server.getAddress())
-      
-      await wait(150) // Wait for handshake
-      
-      // Stop client ping to trigger timeout
-      client._stopPing()
+      const client = new Client({ 
+        id: 'test-client',
+        config: {
+          PING_INTERVAL: 1000
+        }
+      })
       
       let timeoutFired = false
       server.once(ServerEvent.CLIENT_TIMEOUT, ({ clientId }) => {
@@ -710,13 +716,24 @@ describe('Server', () => {
         timeoutFired = true
       })
       
-      // Wait for timeout to trigger (200ms timeout + health check)
-      await wait(350)
+      // Attach READY listener BEFORE connecting to avoid race condition
+      const readyPromise = new Promise(resolve => {
+        client.once(ClientEvent.READY, () => resolve())
+      })
+      
+      await client.connect(server.getAddress())
+      
+      // Wait for handshake
+      await readyPromise
+      await wait(1500) // Wait for at least one ping
+      
+      // Stop ping to trigger timeout
+      client._stopPing()
+      
+      // Wait for timeout (4s + health check interval + buffer)
+      await wait(6000)
       
       expect(timeoutFired).to.be.true
-      
-      await client.disconnect()
-      await wait(50)
     })
 
     it('should not timeout healthy clients', async () => {

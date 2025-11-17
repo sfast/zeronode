@@ -166,7 +166,7 @@ describe('Public API (index.js)', () => {
 
     it('should export TransportErrorCode', () => {
       expect(TransportErrorCode).to.be.an('object')
-      expect(TransportErrorCode.CONNECTION_TIMEOUT).to.be.a('string')
+      expect(TransportErrorCode.ALREADY_CONNECTED).to.be.a('string')
       expect(TransportErrorCode.SEND_FAILED).to.be.a('string')
     })
 

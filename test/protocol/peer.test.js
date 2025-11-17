@@ -5,7 +5,7 @@
  */
 
 import { expect } from 'chai'
-import PeerInfo, { PeerState } from '../src/protocol/peer.js'
+import PeerInfo, { PeerState } from '../../src/protocol/peer.js'
 
 describe('PeerInfo', function () {
   describe('Constructor', () => {

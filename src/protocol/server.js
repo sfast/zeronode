@@ -159,7 +159,10 @@ export default class Server extends Protocol {
       
       if (peerInfo) {
         peerInfo.setState('STOPPED')
-    }
+      }
+      
+      // ✅ Graceful disconnect: Remove immediately (client explicitly stopped)
+      clientPeers.delete(clientId)
       
       this.emit(ServerEvent.CLIENT_LEFT, { clientId })
     })
@@ -209,7 +212,7 @@ export default class Server extends Protocol {
   
   async close () {
     await this.unbind()
-    await super.close(true)
+    await super.close() // close underlying transport and cleanup
   }
   
   getAddress () {
@@ -231,6 +234,18 @@ export default class Server extends Protocol {
     return this.getAllClientPeers().filter(peer => 
       peer.getState() === 'CONNECTED' || peer.getState() === 'HEALTHY'
     ).length
+  }
+  
+  /**
+   * Remove a client from the server's peer map
+   * Useful for cleaning up disconnected clients from memory
+   * 
+   * @param {string} clientId - The client ID to remove
+   * @returns {boolean} - True if client was removed, false if not found
+   */
+  removeClient (clientId) {
+    let { clientPeers } = _private.get(this)
+    return clientPeers.delete(clientId)
   }
   
   // ============================================================================
@@ -268,18 +283,36 @@ export default class Server extends Protocol {
     const now = Date.now()
     
     clientPeers.forEach((peerInfo, clientId) => {
+      const state = peerInfo.getState()
+      
+      // ✅ Skip clients that are already in terminal states
+      if (state === 'STOPPED' || state === 'FAILED') {
+        return
+      }
+      
       const timeSinceLastSeen = now - peerInfo.getLastSeen()
       
       if (timeSinceLastSeen > ghostThreshold) {
-        const previousState = peerInfo.getState()
-        peerInfo.setState('GHOST')
-        
-        // Emit event if state changed
-        if (previousState !== 'GHOST') {
+        if (state === 'GHOST') {
+          // ✅ Second timeout: Already GHOST, now mark as FAILED and remove
+          peerInfo.setState('FAILED')
+          
           this.emit(ServerEvent.CLIENT_TIMEOUT, { 
             clientId, 
             lastSeen: peerInfo.getLastSeen(),
-            timeSinceLastSeen 
+            timeSinceLastSeen,
+            final: true  // ✅ Indicate this is the final timeout
+          })
+          
+        } else {
+          // ✅ First timeout: Mark as GHOST (client may recover)
+          peerInfo.setState('GHOST')
+          
+          this.emit(ServerEvent.CLIENT_TIMEOUT, { 
+            clientId, 
+            lastSeen: peerInfo.getLastSeen(),
+            timeSinceLastSeen,
+            final: false  // ✅ Client may still recover
           })
         }
       }

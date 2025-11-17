@@ -5,8 +5,8 @@
  */
 
 import { expect } from 'chai'
-import Client, { ClientEvent } from '../src/protocol/client.js'
-import Server, { ServerEvent } from '../src/protocol/server.js'
+import Client, { ClientEvent } from '../../src/protocol/client.js'
+import Server, { ServerEvent } from '../../src/protocol/server.js'
 
 describe('Client', () => {
   let server

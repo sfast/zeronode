@@ -5,10 +5,10 @@
  */
 
 import { expect } from 'chai'
-import Client, { ClientEvent } from '../src/protocol/client.js'
-import Server, { ServerEvent } from '../src/protocol/server.js'
-import { ProtocolEvent } from '../src/protocol/protocol.js'
-import { TIMING, wait } from './test-utils.js'
+import Client, { ClientEvent } from '../../src/protocol/client.js'
+import Server, { ServerEvent } from '../../src/protocol/server.js'
+import { ProtocolEvent } from '../../src/protocol/protocol.js'
+import { TIMING, wait } from '../test-utils.js'
 
 describe('Client ↔ Server Integration', function () {
   // Increase timeout for integration tests

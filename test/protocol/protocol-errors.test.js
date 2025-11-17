@@ -5,7 +5,7 @@
  */
 
 import { expect } from 'chai'
-import { ProtocolError, ProtocolErrorCode } from '../src/protocol/protocol-errors.js'
+import { ProtocolError, ProtocolErrorCode } from '../../src/protocol/protocol-errors.js'
 
 describe('Protocol Errors', () => {
   
@@ -420,7 +420,7 @@ describe('Protocol Errors', () => {
   
   describe('Default Export', () => {
     it('should export ProtocolError and ProtocolErrorCode as default', async () => {
-      const defaultExport = await import('../src/protocol/protocol-errors.js')
+      const defaultExport = await import('../../src/protocol/protocol-errors.js')
       
       expect(defaultExport.default).to.exist
       expect(defaultExport.default.ProtocolError).to.equal(ProtocolError)

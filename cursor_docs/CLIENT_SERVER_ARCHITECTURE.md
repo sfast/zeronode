@@ -181,7 +181,7 @@ client.getServerPeerInfo()
 // Config
 client.getConfig()
 client.setLogger(logger)
-client.debugMode(val)
+client.debug = true  // getter/setter
 ```
 
 ---
@@ -342,7 +342,7 @@ server.getConnectedClientCount()
 // Config
 server.getConfig()
 server.setLogger(logger)
-server.debugMode(val)
+server.debug = true  // getter/setter
 ```
 
 ---

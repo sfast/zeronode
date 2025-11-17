@@ -213,7 +213,7 @@ getOptions()
 getConfig()
 setOptions(options)
 setLogger(logger)
-debugMode(val)
+debug  // getter/setter for debug mode
 
 // State
 isOnline()       // Socket online?
