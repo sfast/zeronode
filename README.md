@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <a href="https://codecov.io/gh/sfast/zeronode"><img src="https://img.shields.io/badge/coverage-96%25-brightgreen" alt="Coverage"></a>
+  <a href="https://codecov.io/gh/sfast/zeronode"><img src="https://img.shields.io/badge/coverage-96.3%25-brightgreen" alt="Coverage"></a>
   <a href="https://www.npmjs.com/package/zeronode"><img src="https://img.shields.io/npm/v/zeronode.svg" alt="npm version"></a>
   <a href="https://github.com/sfast/zeronode/blob/master/LICENSE"><img src="https://img.shields.io/github/license/sfast/zeronode.svg" alt="MIT License"></a>
   <a href="https://gitter.im/npm-zeronode/Lobby"><img src="https://img.shields.io/gitter/room/nwjs/nw.js.svg" alt="Gitter"></a>
@@ -391,20 +391,14 @@ node.on(NodeEvent.ERROR, ({ code, message }) => {
 ### Feature Guides
 - **[Middleware System](docs/MIDDLEWARE.md)** - Express-style middleware chains
 - **[Smart Routing](docs/ROUTING.md)** - Service discovery and load balancing
-- **[Error Handling](docs/ERROR_HANDLING.md)** - Comprehensive error handling
 - **[Events Reference](docs/EVENTS.md)** - All events and lifecycle hooks
 - **[Real-World Examples](docs/EXAMPLES.md)** - Production-ready example code
 
 ### Advanced Topics
 - **[Architecture Guide](docs/ARCHITECTURE.md)** - Deep dive into internals
 - **[Envelope Format](docs/ENVELOPE.md)** - Binary message format specification
-- **[Performance Tuning](docs/PERFORMANCE.md)** - Optimization strategies
 - **[Benchmarks](docs/BENCHMARKS.md)** - Performance testing and analysis
 - **[Testing Guide](docs/TESTING.md)** - Testing distributed systems
-- **[Production Deployment](docs/PRODUCTION.md)** - Best practices for production
-
-### API Reference
-- **[Complete API](docs/API.md)** - Full API documentation
 - **[Configuration](docs/CONFIGURATION.md)** - All configuration options
 
 ---
