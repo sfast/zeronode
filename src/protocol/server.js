@@ -13,7 +13,7 @@
 import Globals from '../globals.js'
 import PeerInfo from './peer.js'
 import Protocol, { ProtocolEvent, ProtocolSystemEvent } from './protocol.js'
-import { Router as RouterSocket } from '../transport/zeromq/index.js'
+import { Transport } from '../transport/transport.js'
 
 // ============================================================================
 // SERVER EVENTS
@@ -34,8 +34,8 @@ export default class Server extends Protocol {
     config = config || {}
     options = options || {}
 
-    // Create RouterSocket (transport layer)
-    const socket = new RouterSocket({ id, config })
+    // Create server socket via Transport factory
+    const socket = Transport.createServerSocket({ id, config })
     
     // Pass socket and config to Protocol (store app-level config)
     super(socket, config)

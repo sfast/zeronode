@@ -13,7 +13,7 @@
 import Globals from '../globals.js'
 import PeerInfo from './peer.js'
 import Protocol, { ProtocolEvent, ProtocolSystemEvent } from './protocol.js'
-import { Dealer as DealerSocket } from '../transport/zeromq/index.js'
+import { Transport } from '../transport/transport.js'
 
 // ============================================================================
 // CLIENT EVENTS (Public API)
@@ -80,8 +80,8 @@ export default class Client extends Protocol {
     config = config || {}
     options = options || {}
     
-    // Create DealerSocket (transport layer)
-    const socket = new DealerSocket({ id, config })
+    // Create client socket via Transport factory
+    const socket = Transport.createClientSocket({ id, config })
     
     // Pass socket and config to Protocol (store app-level config)
     super(socket, config)

@@ -17,6 +17,7 @@ import { ProtocolEvent, ProtocolSystemEvent } from './protocol/protocol.js'
 import { ProtocolError, ProtocolErrorCode } from './protocol/protocol-errors.js'
 
 // Transport layer
+import { Transport } from './transport/index.js'
 import { TransportEvent } from './transport/events.js'
 import { TransportError, TransportErrorCode } from './transport/errors.js'
 
@@ -49,6 +50,9 @@ export {
   ProtocolErrorCode,
   TransportError,
   TransportErrorCode,
+  
+  // Transport abstraction
+  Transport,           // Transport factory and registry
   
   // Utils
   optionsPredicateBuilder

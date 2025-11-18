@@ -518,7 +518,7 @@ describe('Node - Additional Coverage', () => {
       
       // tickUpAll should only send to upstream (B), not downstream (C)
       nodeA.tickUpAll({ event: 'upstream:test' })
-      await wait(TIMING.MESSAGE_PROPAGATION)
+      await wait(TIMING.MESSAGE_DELIVERY)
       
       expect(receivedB).to.be.true
       expect(receivedC).to.be.false
