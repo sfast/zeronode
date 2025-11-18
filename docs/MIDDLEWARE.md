@@ -13,7 +13,7 @@ ZeroNode's middleware system brings **Express.js-style** middleware chains to mi
 ```javascript
 // Auto-continue after execution
 server.onRequest(/^api:/, (envelope, reply) => {
-  console.log(`Request: ${envelope.tag}`)
+  console.log(`Request: ${envelope.event}`)
   // Automatically continues to next handler
 })
 ```
@@ -60,7 +60,7 @@ server.onRequest(/^api:/, (error, envelope, reply, next) => {
 ```javascript
 // 1. Logging (auto-continue)
 server.onRequest(/^api:/, (envelope, reply) => {
-  logger.info(`${envelope.tag} from ${envelope.owner}`)
+  logger.info(`${envelope.event} from ${envelope.owner}`)
 })
 
 // 2. Auth (manual control)
@@ -108,7 +108,7 @@ Request arrives → Logging → Auth → Rate Limiting → Business Logic → Re
 ```javascript
 // Async middleware (2-param): Auto-continues after Promise resolves
 server.onRequest(/^api:/, async (envelope, reply) => {
-  await logToDatabase(envelope.tag)
+  await logToDatabase(envelope.event)
   // Auto-continues after await completes
 })
 
@@ -231,13 +231,13 @@ server.onRequest('api:test', (envelope, reply) => {
 ```javascript
 // ✅ Good: Side effects with auto-continue
 server.onRequest(/^api:/, (envelope, reply) => {
-  logger.info(envelope.tag)
+  logger.info(envelope.event)
   metrics.increment('requests')
 })
 
 // ❌ Bad: Side effects don't need manual control
 server.onRequest(/^api:/, (envelope, reply, next) => {
-  logger.info(envelope.tag)
+  logger.info(envelope.event)
   next()  // Unnecessary!
 })
 ```
@@ -338,7 +338,7 @@ const gateway = new Node({ id: 'gateway' })
 
 // 1. Request logging
 gateway.onRequest(/^api:/, (envelope, reply) => {
-  logger.info(`${envelope.owner} → ${envelope.tag}`)
+  logger.info(`${envelope.owner} → ${envelope.event}`)
 })
 
 // 2. Authentication
@@ -366,7 +366,7 @@ gateway.onRequest(/^api:/, (error, envelope, reply, next) => {
 // 5. Route to backend
 gateway.onRequest(/^api:/, async (envelope, reply) => {
   return await gateway.requestAny({
-    event: 'backend:' + envelope.tag,
+    event: 'backend:' + envelope.event,
     data: envelope.data,
     filter: { role: 'backend' }
   })
@@ -448,7 +448,7 @@ server.onRequest(/.*/, (envelope, reply, next) => {
   next = ((originalNext) => {
     return (...args) => {
       const duration = Number(process.hrtime.bigint() - start) / 1e6
-      console.log(`${envelope.tag} took ${duration}ms`)
+      console.log(`${envelope.event} took ${duration}ms`)
       return originalNext(...args)
     }
   })(next)
