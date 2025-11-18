@@ -3,6 +3,7 @@
   "version": "2.0.1",
   "description": "Minimal building block for NodeJS microservices",
   "main": "./dist/index.js",
+  "types": "./index.d.ts",
   "directories": {
     "example": "examples"
   },
