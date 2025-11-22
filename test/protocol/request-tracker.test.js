@@ -5,19 +5,28 @@
 
 import { expect } from 'chai'
 import { RequestTracker } from '../../src/protocol/request-tracker.js'
+import { ProtocolContext } from '../../src/protocol/protocol-context.js'
 import { ProtocolError, ProtocolErrorCode } from '../../src/protocol/protocol-errors.js'
 
 describe('Request Tracker', () => {
   
   let tracker
+  let context
   
   beforeEach(() => {
-    tracker = new RequestTracker({
-      protocolId: 'test-protocol',
-      config: { PROTOCOL_REQUEST_TIMEOUT: 1000 },
-      debug: false,
+    // Create mock context
+    const mockSocket = {
+      getId: () => 'test-protocol',
       logger: null
-    })
+    }
+    const mockProtocol = {}
+    const mockConfig = { 
+      PROTOCOL_REQUEST_TIMEOUT: 1000,
+      DEBUG: false
+    }
+    
+    context = new ProtocolContext(mockProtocol, mockSocket, mockConfig)
+    tracker = new RequestTracker(context)
   })
   
   afterEach(() => {
@@ -347,15 +356,19 @@ describe('Request Tracker', () => {
   describe('Debug Mode', () => {
     it('should log when debug enabled', () => {
       const logs = []
-      const debugTracker = new RequestTracker({
-        protocolId: 'test',
-        config: { PROTOCOL_REQUEST_TIMEOUT: 1000 },
-        debug: true,
+      const mockSocket = {
+        getId: () => 'test',
         logger: {
           debug: (msg) => logs.push(msg),
           warn: (msg) => logs.push(msg)
         }
-      })
+      }
+      const mockConfig = {
+        PROTOCOL_REQUEST_TIMEOUT: 1000,
+        DEBUG: true
+      }
+      const debugContext = new ProtocolContext({}, mockSocket, mockConfig)
+      const debugTracker = new RequestTracker(debugContext)
       
       debugTracker.track('req-debug', { resolve: () => {}, reject: () => {} })
       
@@ -367,15 +380,19 @@ describe('Request Tracker', () => {
     
     it('should not log when debug disabled', () => {
       const logs = []
-      const noDebugTracker = new RequestTracker({
-        protocolId: 'test',
-        config: { PROTOCOL_REQUEST_TIMEOUT: 1000 },
-        debug: false,
+      const mockSocket = {
+        getId: () => 'test',
         logger: {
           debug: (msg) => logs.push(msg),
           warn: (msg) => logs.push(msg)
         }
-      })
+      }
+      const mockConfig = {
+        PROTOCOL_REQUEST_TIMEOUT: 1000,
+        DEBUG: false
+      }
+      const noDebugContext = new ProtocolContext({}, mockSocket, mockConfig)
+      const noDebugTracker = new RequestTracker(noDebugContext)
       
       noDebugTracker.track('req-no-debug', { resolve: () => {}, reject: () => {} })
       

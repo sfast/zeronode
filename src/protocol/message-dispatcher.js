@@ -10,18 +10,10 @@ import { PatternEmitter } from '@sfast/pattern-emitter-ts'
 import { Envelope, EnvelopType } from './envelope.js'
 
 export class MessageDispatcher {
-  constructor({ 
-    socket, 
-    requestTracker, 
-    handlerExecutor, 
-    debug, 
-    logger 
-  }) {
-    this.socket = socket
+  constructor(context, requestTracker, handlerExecutor) {
+    this.ctx = context
     this.requestTracker = requestTracker
     this.handlerExecutor = handlerExecutor
-    this.debug = debug
-    this.logger = logger
     
     // Handler registries (PatternEmitter for pattern matching)
     this.requestEmitter = new PatternEmitter()
@@ -57,7 +49,7 @@ export class MessageDispatcher {
         break
       
       default:
-        this.debug && this.logger?.warn(
+        this.ctx.debug && this.ctx.logger?.warn(
           `[MessageDispatcher] Unknown envelope type: ${envelope.type}`
         )
     }
@@ -73,7 +65,7 @@ export class MessageDispatcher {
   _handleRequest(envelope) {
     const handlers = this.requestEmitter.getMatchingListeners(envelope.event)
     
-    this.debug && this.logger?.debug(
+    this.ctx.debug && this.ctx.logger?.debug(
       `[MessageDispatcher] Request '${envelope.event}' matched ${handlers.length} handler(s)`
     )
     
@@ -88,7 +80,7 @@ export class MessageDispatcher {
    * @param {Envelope} envelope - Tick envelope
    */
   _handleTick(envelope) {
-    this.debug && this.logger?.debug(
+    this.ctx.debug && this.ctx.logger?.debug(
       `[MessageDispatcher] Tick '${envelope.event}' received`
     )
     
@@ -109,7 +101,7 @@ export class MessageDispatcher {
     const matched = this.requestTracker.match(envelope.id, envelope.data, isError)
     
     if (!matched) {
-      this.debug && this.logger?.warn(
+      this.ctx.debug && this.ctx.logger?.warn(
         `[MessageDispatcher] Response ${envelope.id} could not be matched (probably timed out)`
       )
     }
@@ -129,7 +121,7 @@ export class MessageDispatcher {
   onRequest(pattern, handler) {
     this.requestEmitter.on(pattern, handler)
     
-    this.debug && this.logger?.debug(
+    this.ctx.debug && this.ctx.logger?.debug(
       `[MessageDispatcher] Registered request handler for pattern: ${pattern}`
     )
   }
@@ -143,7 +135,7 @@ export class MessageDispatcher {
   offRequest(pattern, handler) {
     this.requestEmitter.off(pattern, handler)
     
-    this.debug && this.logger?.debug(
+    this.ctx.debug && this.ctx.logger?.debug(
       `[MessageDispatcher] Unregistered request handler for pattern: ${pattern}`
     )
   }
@@ -158,7 +150,7 @@ export class MessageDispatcher {
   onTick(pattern, handler) {
     this.tickEmitter.on(pattern, handler)
     
-    this.debug && this.logger?.debug(
+    this.ctx.debug && this.ctx.logger?.debug(
       `[MessageDispatcher] Registered tick handler for pattern: ${pattern}`
     )
   }
@@ -177,7 +169,7 @@ export class MessageDispatcher {
       this.tickEmitter.removeAllListeners(pattern)
     }
     
-    this.debug && this.logger?.debug(
+    this.ctx.debug && this.ctx.logger?.debug(
       `[MessageDispatcher] Unregistered tick handler(s) for pattern: ${pattern}`
     )
   }
@@ -212,7 +204,7 @@ export class MessageDispatcher {
     this.requestEmitter.removeAllListeners()
     this.tickEmitter.removeAllListeners()
     
-    this.debug && this.logger?.debug('[MessageDispatcher] Removed all handlers')
+    this.ctx.debug && this.ctx.logger?.debug('[MessageDispatcher] Removed all handlers')
   }
 }
 

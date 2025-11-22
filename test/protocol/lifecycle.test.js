@@ -6,6 +6,7 @@
 import { expect } from 'chai'
 import { EventEmitter } from 'events'
 import { LifecycleManager, ProtocolEvent } from '../../src/protocol/lifecycle.js'
+import { ProtocolContext } from '../../src/protocol/protocol-context.js'
 import { TransportEvent } from '../../src/transport/events.js'
 import { Envelope, EnvelopType } from '../../src/protocol/envelope.js'
 
@@ -16,6 +17,7 @@ describe('Lifecycle Manager', () => {
   let mockRequestTracker
   let mockDispatcher
   let mockProtocolEmitter
+  let context
   let emittedEvents
   
   beforeEach(() => {
@@ -27,6 +29,7 @@ describe('Lifecycle Manager', () => {
     mockSocket.disconnect = async () => {}
     mockSocket.unbind = async () => {}
     mockSocket.close = async () => {}
+    mockSocket.logger = null
     
     // Mock request tracker
     mockRequestTracker = {
@@ -51,15 +54,13 @@ describe('Lifecycle Manager', () => {
       emittedEvents.push({ event, args })
     })
     
-    lifecycle = new LifecycleManager({
-      socket: mockSocket,
-      requestTracker: mockRequestTracker,
-      dispatcher: mockDispatcher,
-      protocolEmitter: mockProtocolEmitter,
-      protocolId: 'test-protocol',
-      debug: false,
-      logger: null
-    })
+    // Create context
+    const mockConfig = {
+      DEBUG: false
+    }
+    context = new ProtocolContext({}, mockSocket, mockConfig)
+    
+    lifecycle = new LifecycleManager(context, mockRequestTracker, mockDispatcher, mockProtocolEmitter)
   })
   
   // ==========================================================================

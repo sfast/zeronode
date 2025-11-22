@@ -9,11 +9,8 @@
 import { Envelope, EnvelopType } from './envelope.js'
 
 export class HandlerExecutor {
-  constructor({ socket, config, debug, logger }) {
-    this.socket = socket
-    this.config = config
-    this.debug = debug
-    this.logger = logger
+  constructor(context) {
+    this.ctx = context
   }
   
   /**
@@ -109,7 +106,7 @@ export class HandlerExecutor {
     // Create reply functions
     const reply = (responseData) => {
       if (replyCalled) {
-        this.debug && this.logger?.warn('[HandlerExecutor] Reply already called, ignoring duplicate')
+        this.ctx.debug && this.ctx.logger?.warn('[HandlerExecutor] Reply already called, ignoring duplicate')
         return
       }
       replyCalled = true
@@ -118,7 +115,7 @@ export class HandlerExecutor {
     
     reply.error = (error) => {
       if (replyCalled) {
-        this.debug && this.logger?.warn('[HandlerExecutor] Reply already called, ignoring duplicate')
+        this.ctx.debug && this.ctx.logger?.warn('[HandlerExecutor] Reply already called, ignoring duplicate')
         return
       }
       replyCalled = true
@@ -168,7 +165,7 @@ export class HandlerExecutor {
         }
         
         // Debug log for async handlers
-        this.debug && this.logger?.debug('[Middleware] Handler executed', {
+        this.ctx.debug && this.ctx.logger?.debug('[Middleware] Handler executed', {
           arity,
           resultType: result === undefined ? 'undefined' : (result && result.then ? 'Promise' : typeof result),
           replyCalled,
@@ -186,7 +183,7 @@ export class HandlerExecutor {
                   // If async function returned undefined and it's a 2-param handler,
                   // continue to next handler instead of sending undefined response
                   if (responseData === undefined && arity !== 3) {
-                    this.debug && this.logger?.debug('[Middleware] Async 2-param handler returned undefined, auto-continuing')
+                    this.ctx.debug && this.ctx.logger?.debug('[Middleware] Async 2-param handler returned undefined, auto-continuing')
                     setImmediate(next)
                   } else {
                     // Send the response data
@@ -247,11 +244,11 @@ export class HandlerExecutor {
       type: EnvelopType.RESPONSE,
       id: envelope.id,
       data,
-      owner: this.socket.getId(),
+      owner: this.ctx.socket.getId(),
       recipient: envelope.owner
-    }, this.config.BUFFER_STRATEGY)
+    }, this.ctx.config.BUFFER_STRATEGY)
     
-    this.socket.sendBuffer(buffer, envelope.owner)
+    this.ctx.socket.sendBuffer(buffer, envelope.owner)
   }
   
   /**
@@ -266,7 +263,7 @@ export class HandlerExecutor {
       ? {
           message: error.message || 'Handler error',
           code: error.code || 'HANDLER_ERROR',
-          stack: this.config.DEBUG ? error.stack : undefined
+          stack: this.ctx.config.DEBUG ? error.stack : undefined
         }
       : { message: String(error), code: 'HANDLER_ERROR' }
     
@@ -274,11 +271,11 @@ export class HandlerExecutor {
       type: EnvelopType.ERROR,
       id: envelope.id,
       data: errorData,
-      owner: this.socket.getId(),
+      owner: this.ctx.socket.getId(),
       recipient: envelope.owner
-    }, this.config.BUFFER_STRATEGY)
+    }, this.ctx.config.BUFFER_STRATEGY)
     
-    this.socket.sendBuffer(buffer, envelope.owner)
+    this.ctx.socket.sendBuffer(buffer, envelope.owner)
   }
 }
 

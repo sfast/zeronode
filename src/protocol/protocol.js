@@ -18,6 +18,7 @@ import {
   mergeProtocolConfig, 
   validateEventName 
 } from './config.js'
+import { ProtocolContext } from './protocol-context.js'
 import { RequestTracker } from './request-tracker.js'
 import { HandlerExecutor } from './handler-executor.js'
 import { MessageDispatcher } from './message-dispatcher.js'
@@ -39,47 +40,21 @@ export default class Protocol extends EventEmitter {
     // Merge config (centralized in config module)
     const mergedConfig = mergeProtocolConfig(config)
     
+    // Create protocol context (shared by all components)
+    const context = new ProtocolContext(this, socket, mergedConfig)
+    
     // Create ID generator
     const idGenerator = new EnvelopeIdGenerator(socket.getId())
     
-    // Create request tracker
-    const requestTracker = new RequestTracker({
-      protocolId: socket.getId(),
-      config: mergedConfig,
-      debug: mergedConfig.DEBUG,
-      logger: socket.logger
-    })
-    
-    // Create handler executor
-    const handlerExecutor = new HandlerExecutor({
-      socket,
-      config: mergedConfig,
-      debug: mergedConfig.DEBUG,
-      logger: socket.logger
-    })
-    
-    // Create message dispatcher
-    const dispatcher = new MessageDispatcher({
-      socket,
-      requestTracker,
-      handlerExecutor,
-      debug: mergedConfig.DEBUG,
-      logger: socket.logger
-    })
-    
-    // Create lifecycle manager
-    const lifecycle = new LifecycleManager({
-      socket,
-      requestTracker,
-      dispatcher,
-      protocolEmitter: this, // Protocol is the EventEmitter
-      protocolId: socket.getId(),
-      debug: mergedConfig.DEBUG,
-      logger: socket.logger
-    })
+    // Create components with simplified constructors using context
+    const requestTracker = new RequestTracker(context)
+    const handlerExecutor = new HandlerExecutor(context)
+    const dispatcher = new MessageDispatcher(context, requestTracker, handlerExecutor)
+    const lifecycle = new LifecycleManager(context, requestTracker, dispatcher, this)
     
     // Store private state
     let _scope = {
+      context,
       socket,
       config: mergedConfig,
       idGenerator,

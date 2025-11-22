@@ -18,22 +18,11 @@ export const ProtocolEvent = {
 }
 
 export class LifecycleManager {
-  constructor({ 
-    socket, 
-    requestTracker, 
-    dispatcher,
-    protocolEmitter,
-    protocolId,
-    debug, 
-    logger 
-  }) {
-    this.socket = socket
+  constructor(context, requestTracker, dispatcher, protocolEmitter) {
+    this.ctx = context
     this.requestTracker = requestTracker
     this.dispatcher = dispatcher
     this.protocolEmitter = protocolEmitter
-    this.protocolId = protocolId
-    this.debug = debug
-    this.logger = logger
     this.closed = false
     
     // Bind handlers to preserve 'this' context
@@ -75,11 +64,11 @@ export class LifecycleManager {
     // - Message parsing (via Envelope)
     // ============================================================================
     
-    this.socket.on(TransportEvent.MESSAGE, this._onMessage)
-    this.socket.on(TransportEvent.READY, this._onReady)
-    this.socket.on(TransportEvent.NOT_READY, this._onNotReady)
-    this.socket.on(TransportEvent.CLOSED, this._onClosed)
-    this.socket.on(TransportEvent.ERROR, this._onError)
+    this.ctx.socket.on(TransportEvent.MESSAGE, this._onMessage)
+    this.ctx.socket.on(TransportEvent.READY, this._onReady)
+    this.ctx.socket.on(TransportEvent.NOT_READY, this._onNotReady)
+    this.ctx.socket.on(TransportEvent.CLOSED, this._onClosed)
+    this.ctx.socket.on(TransportEvent.ERROR, this._onError)
   }
   
   /**
@@ -87,18 +76,18 @@ export class LifecycleManager {
    * Safe to call multiple times (idempotent)
    */
   detachSocketEventHandlers() {
-    if (!this.socket || typeof this.socket.removeAllListeners !== 'function') return
+    if (!this.ctx.socket || typeof this.ctx.socket.removeAllListeners !== 'function') return
     
     try {
-      this.socket.removeAllListeners(TransportEvent.MESSAGE)
-      this.socket.removeAllListeners(TransportEvent.READY)
-      this.socket.removeAllListeners(TransportEvent.NOT_READY)
-      this.socket.removeAllListeners(TransportEvent.CLOSED)
-      this.socket.removeAllListeners(TransportEvent.ERROR)
+      this.ctx.socket.removeAllListeners(TransportEvent.MESSAGE)
+      this.ctx.socket.removeAllListeners(TransportEvent.READY)
+      this.ctx.socket.removeAllListeners(TransportEvent.NOT_READY)
+      this.ctx.socket.removeAllListeners(TransportEvent.CLOSED)
+      this.ctx.socket.removeAllListeners(TransportEvent.ERROR)
       
-      this.debug && this.logger?.debug('[Lifecycle] Detached socket event handlers')
+      this.ctx.debug && this.ctx.logger?.debug('[Lifecycle] Detached socket event handlers')
     } catch (err) {
-      this.debug && this.logger?.error('[Lifecycle] Failed to detach socket event listeners', err)
+      this.ctx.debug && this.ctx.logger?.error('[Lifecycle] Failed to detach socket event listeners', err)
     }
   }
   
@@ -120,7 +109,7 @@ export class LifecycleManager {
    * @private
    */
   _onReady() {
-    this.debug && this.logger?.info(`[Lifecycle] Transport ready (${this.protocolId})`)
+    this.ctx.debug && this.ctx.logger?.info(`[Lifecycle] Transport ready (${this.ctx.protocolId})`)
     this.protocolEmitter.emit(ProtocolEvent.TRANSPORT_READY)
   }
   
@@ -129,7 +118,7 @@ export class LifecycleManager {
    * @private
    */
   _onNotReady() {
-    this.debug && this.logger?.warn(`[Lifecycle] Transport not ready (${this.protocolId})`)
+    this.ctx.debug && this.ctx.logger?.warn(`[Lifecycle] Transport not ready (${this.ctx.protocolId})`)
     this.protocolEmitter.emit(ProtocolEvent.TRANSPORT_NOT_READY)
   }
   
@@ -139,7 +128,7 @@ export class LifecycleManager {
    * @private
    */
   _onClosed() {
-    this.debug && this.logger?.error(`[Lifecycle] Transport closed (${this.protocolId})`)
+    this.ctx.debug && this.ctx.logger?.error(`[Lifecycle] Transport closed (${this.ctx.protocolId})`)
     
     // Reject all pending requests
     this.requestTracker.rejectAll('Transport closed')
@@ -160,7 +149,7 @@ export class LifecycleManager {
    * @private
    */
   _onError(err) {
-    this.debug && this.logger?.error(`[Lifecycle] Transport error (${this.protocolId})`, err)
+    this.ctx.debug && this.ctx.logger?.error(`[Lifecycle] Transport error (${this.ctx.protocolId})`, err)
     this.protocolEmitter.emit(ProtocolEvent.ERROR, err)
   }
   
@@ -176,7 +165,7 @@ export class LifecycleManager {
    * - Does NOT close underlying transport
    */
   async disconnect() {
-    await this.socket.disconnect()
+    await this.ctx.socket.disconnect()
   }
   
   /**
@@ -189,7 +178,7 @@ export class LifecycleManager {
   async unbind() {
     // Keep socket event handlers attached so further transport events (e.g., CLOSED)
     // still propagate through Protocol to consumers. Just unbind transport here.
-    await this.socket.unbind()
+    await this.ctx.socket.unbind()
   }
   
   /**
@@ -206,15 +195,15 @@ export class LifecycleManager {
     this.closed = true
     
     // Close the transport - this will trigger CLOSED event which does full cleanup
-    if (this.socket && typeof this.socket.close === 'function') {
+    if (this.ctx.socket && typeof this.ctx.socket.close === 'function') {
       try {
-        await this.socket.close()
+        await this.ctx.socket.close()
       } catch (err) {
-        this.debug && this.logger?.error('[Lifecycle] Failed to close transport', err)
+        this.ctx.debug && this.ctx.logger?.error('[Lifecycle] Failed to close transport', err)
       }
     }
     
-    this.debug && this.logger?.debug('[Lifecycle] Protocol closed')
+    this.ctx.debug && this.ctx.logger?.debug('[Lifecycle] Protocol closed')
   }
 }
 

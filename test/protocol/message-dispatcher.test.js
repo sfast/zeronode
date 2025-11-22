@@ -5,6 +5,7 @@
 
 import { expect } from 'chai'
 import { MessageDispatcher } from '../../src/protocol/message-dispatcher.js'
+import { ProtocolContext } from '../../src/protocol/protocol-context.js'
 import { Envelope, EnvelopType } from '../../src/protocol/envelope.js'
 
 describe('Message Dispatcher', () => {
@@ -13,10 +14,12 @@ describe('Message Dispatcher', () => {
   let mockSocket
   let mockRequestTracker
   let mockHandlerExecutor
+  let context
   
   beforeEach(() => {
     mockSocket = {
-      getId: () => 'test-socket'
+      getId: () => 'test-socket',
+      logger: null
     }
     
     mockRequestTracker = {
@@ -32,13 +35,12 @@ describe('Message Dispatcher', () => {
       }
     }
     
-    dispatcher = new MessageDispatcher({
-      socket: mockSocket,
-      requestTracker: mockRequestTracker,
-      handlerExecutor: mockHandlerExecutor,
-      debug: false,
-      logger: null
-    })
+    const mockConfig = {
+      DEBUG: false
+    }
+    
+    context = new ProtocolContext({}, mockSocket, mockConfig)
+    dispatcher = new MessageDispatcher(context, mockRequestTracker, mockHandlerExecutor)
   })
   
   // ==========================================================================

@@ -9,11 +9,8 @@
 import { ProtocolError, ProtocolErrorCode } from './protocol-errors.js'
 
 export class RequestTracker {
-  constructor({ protocolId, config, debug, logger }) {
-    this.protocolId = protocolId
-    this.config = config
-    this.debug = debug
-    this.logger = logger
+  constructor(context) {
+    this.ctx = context
     this.requests = new Map() // requestId → { resolve, reject, timer, startTime }
   }
   
@@ -29,7 +26,7 @@ export class RequestTracker {
    * @returns {string} requestId (for chaining)
    */
   track(requestId, { resolve, reject, timeout }) {
-    const timeoutMs = timeout || this.config.PROTOCOL_REQUEST_TIMEOUT
+    const timeoutMs = timeout || this.ctx.config.PROTOCOL_REQUEST_TIMEOUT
     
     const timer = setTimeout(() => {
       this._handleTimeout(requestId, timeoutMs)
@@ -42,7 +39,7 @@ export class RequestTracker {
       startTime: Date.now()
     })
     
-    this.debug && this.logger?.debug(
+    this.ctx.debug && this.ctx.logger?.debug(
       `[RequestTracker] Tracking request ${requestId} (timeout: ${timeoutMs}ms)`
     )
     
@@ -62,7 +59,7 @@ export class RequestTracker {
     const request = this.requests.get(envelopeId)
     
     if (!request) {
-      this.debug && this.logger?.warn(
+      this.ctx.debug && this.ctx.logger?.warn(
         `[RequestTracker] Response for unknown request: ${envelopeId} (probably timed out)`
       )
       return false
@@ -72,7 +69,7 @@ export class RequestTracker {
     this.requests.delete(envelopeId)
     
     const duration = Date.now() - request.startTime
-    this.debug && this.logger?.debug(
+    this.ctx.debug && this.ctx.logger?.debug(
       `[RequestTracker] Matched response for ${envelopeId} (${duration}ms)`
     )
     
@@ -94,14 +91,14 @@ export class RequestTracker {
     const request = this.requests.get(requestId)
     this.requests.delete(requestId)
     
-    this.debug && this.logger?.warn(
+    this.ctx.debug && this.ctx.logger?.warn(
       `[RequestTracker] Request ${requestId} timed out after ${timeoutMs}ms`
     )
     
     request.reject(new ProtocolError({
       code: ProtocolErrorCode.REQUEST_TIMEOUT,
       message: `Request ${requestId} timed out after ${timeoutMs}ms`,
-      protocolId: this.protocolId,
+      protocolId: this.ctx.protocolId,
       envelopeId: requestId,
       context: { timeout: timeoutMs }
     }))
@@ -116,7 +113,7 @@ export class RequestTracker {
   rejectAll(reason) {
     if (this.requests.size === 0) return
     
-    this.debug && this.logger?.warn(
+    this.ctx.debug && this.ctx.logger?.warn(
       `[RequestTracker] Rejecting ${this.requests.size} pending requests: ${reason}`
     )
     
@@ -125,7 +122,7 @@ export class RequestTracker {
       request.reject(new ProtocolError({
         code: ProtocolErrorCode.REQUEST_TIMEOUT,
         message: reason,
-        protocolId: this.protocolId,
+        protocolId: this.ctx.protocolId,
         envelopeId: id
       }))
     })

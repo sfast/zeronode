@@ -5,6 +5,7 @@
 
 import { expect } from 'chai'
 import { HandlerExecutor } from '../../src/protocol/handler-executor.js'
+import { ProtocolContext } from '../../src/protocol/protocol-context.js'
 import { Envelope, EnvelopType } from '../../src/protocol/envelope.js'
 
 describe('Handler Executor', () => {
@@ -12,6 +13,7 @@ describe('Handler Executor', () => {
   let executor
   let sentBuffers
   let mockSocket
+  let context
   
   beforeEach(() => {
     sentBuffers = []
@@ -21,15 +23,17 @@ describe('Handler Executor', () => {
       getId: () => 'test-socket',
       sendBuffer: (buffer, recipient) => {
         sentBuffers.push({ buffer, recipient })
-      }
+      },
+      logger: null
     }
     
-    executor = new HandlerExecutor({
-      socket: mockSocket,
-      config: { BUFFER_STRATEGY: 'msgpack', DEBUG: false },
-      debug: false,
-      logger: null
-    })
+    const mockConfig = { 
+      BUFFER_STRATEGY: 'msgpack', 
+      DEBUG: false 
+    }
+    
+    context = new ProtocolContext({}, mockSocket, mockConfig)
+    executor = new HandlerExecutor(context)
   })
   
   // Helper: Create test envelope
