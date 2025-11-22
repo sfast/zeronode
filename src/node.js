@@ -757,9 +757,15 @@ export default class Node extends EventEmitter {
    * Send request to any matching node
    */
   async requestAny ({ event, data, timeout, filter, down = true, up = true } = {}) {
-    // Extract options from filter if wrapped
-    const filterOptions = filter?.options || filter
-    const filteredNodes = this._getFilteredNodes({ options: filterOptions, down, up })
+    // Extract options and predicate from filter if wrapped
+    const filterOptions = filter?.options || (filter?.predicate ? undefined : filter)
+    const filterPredicate = filter?.predicate
+    const filteredNodes = this._getFilteredNodes({ 
+      options: filterOptions, 
+      predicate: filterPredicate, 
+      down, 
+      up 
+    })
     
     if (filteredNodes.length === 0) {
       const error = new NodeError({
@@ -798,9 +804,15 @@ export default class Node extends EventEmitter {
    * Send tick to any matching node
    */
   tickAny ({ event, data, filter, down = true, up = true } = {}) {
-    // Extract options from filter if wrapped
-    const filterOptions = filter?.options || filter
-    const filteredNodes = this._getFilteredNodes({ options: filterOptions, down, up })
+    // Extract options and predicate from filter if wrapped
+    const filterOptions = filter?.options || (filter?.predicate ? undefined : filter)
+    const filterPredicate = filter?.predicate
+    const filteredNodes = this._getFilteredNodes({ 
+      options: filterOptions, 
+      predicate: filterPredicate, 
+      down, 
+      up 
+    })
     
     if (filteredNodes.length === 0) {
       const error = new NodeError({
@@ -834,9 +846,15 @@ export default class Node extends EventEmitter {
    * Send tick to all matching nodes
    */
   async   tickAll ({ event, data, filter, down = true, up = true } = {}) {
-    // Extract options from filter if wrapped
-    const filterOptions = filter?.options || filter
-    const filteredNodes = this._getFilteredNodes({ options: filterOptions, down, up })
+    // Extract options and predicate from filter if wrapped
+    const filterOptions = filter?.options || (filter?.predicate ? undefined : filter)
+    const filterPredicate = filter?.predicate
+    const filteredNodes = this._getFilteredNodes({ 
+      options: filterOptions, 
+      predicate: filterPredicate, 
+      down, 
+      up 
+    })
     
     const promises = filteredNodes.map(nodeId => {
       return this.tick({ to: nodeId, event, data })

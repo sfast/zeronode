@@ -32,13 +32,13 @@ import _ from 'underscore'
   }))
   
   console.log('\n📤 znode1 sending tickAll with predicate filter...')
-  console.log('   Filter: (options) => options.index % 2')
+  console.log('   Filter: { predicate: (options) => options.index % 2 }')
   console.log('   (Only odd-numbered nodes will receive)\n')
   
-  znode1.tickAll({
+  await znode1.tickAll({
     event: 'foo',
     data: 'tick from znode1.',
-    filter: (options) => options.index % 2
+    filter: { predicate: (options) => options.index % 2 }
   })
   
   setTimeout(() => {
