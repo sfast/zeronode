@@ -1,16 +1,59 @@
-.nyc_output
-benchmarks/
-coverage/
-examples/
-node_modules/
-src/
+# Development & Testing
 test/
-tmp/
+tests/
+*.test.js
+*.spec.js
+coverage/
+.nyc_output/
+.coverage/
+
+# Documentation (not needed in npm package)
+docs/
+cursor_docs/
+
+# Examples & Benchmarks
+examples/
+benchmark/
+
+# Build & Development
+src/
+scripts/
 .babelrc
+.eslintrc*
+.prettierrc*
+tsconfig.json
+webpack.config.js
+
+# Git & IDE
+.git/
+.github/
 .gitignore
-.npmignore
-Chanchelog.md
-TODO.md
+.gitattributes
 .idea/
+.vscode/
+.DS_Store
 .history/
-npm-debug.log
+
+# CI/CD
+.travis.yml
+.circleci/
+.gitlab-ci.yml
+azure-pipelines.yml
+appveyor.yml
+
+# Logs & Temp Files
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+tmp/
+temp/
+*.tmp
+
+# NPM
+.npmignore
+.npmrc
+
+# Misc
+*.md.backup
+.editorconfig

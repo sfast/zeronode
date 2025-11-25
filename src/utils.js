@@ -9,19 +9,32 @@ const checkNodeReducer = (node, predicate, accumulatorSet) => {
 }
 
 const optionsPredicateBuilder = (options) => {
+  // Handle undefined/null filter options
+  if (!options || typeof options !== 'object' || Object.keys(options).length === 0) {
+    // No filter - match all nodes
+    return () => true
+  }
+  
   return (nodeOptions) => {
+    // Handle undefined/null node options
+    if (!nodeOptions || typeof nodeOptions !== 'object') {
+      nodeOptions = {}
+    }
+    
     let optionsKeysArray = Object.keys(options)
     let notsatisfying = _.find(optionsKeysArray, (optionKey) => {
       let optionValue = options[optionKey]
       // ** which could also not exist
       let nodeOptionValue = nodeOptions[optionKey]
 
-      if (nodeOptionValue) {
+      // ✅ Check if key exists (not just truthy value)
+      // This allows 0, false, and empty string to be valid values
+      if (nodeOptionValue !== undefined && nodeOptionValue !== null) {
         if (_.isRegExp(optionValue)) {
           return !optionValue.test(nodeOptionValue)
         }
 
-        if (_.isString(optionValue) || _.isNumber(optionValue)) {
+        if (_.isString(optionValue) || _.isNumber(optionValue) || _.isBoolean(optionValue)) {
           return optionValue !== nodeOptionValue
         }
 

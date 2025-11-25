@@ -1,627 +1,1059 @@
 /**
- * Created by avar and dave on 2/14/17.
+ * Node - Network orchestration layer
+ * 
+ * Manages N clients + 1 server to create a mesh network node.
+ * Handles routing, options, and node identity.
+ * 
+ * Architecture:
+ * - One Node has one identity (node ID)
+ * - Server and Clients use the same node ID (envelope.owner)
+ * - Central handler registry (handlers work even if server/clients created later)
+ * - Smart routing based on node ID and options
+ * - Options sync for dynamic routing
+ * 
+ * STATE MODEL (Single Source of Truth):
+ * - Node tracks JOINED/LEFT state explicitly:
+ *   • joinedPeers: Set<peerId> - All joined (routable) peers
+ *   • peerOptions: Map<peerId, options> - Peer metadata for filtering
+ *   • peerDirection: Map<peerId, 'upstream'|'downstream'> - Connection direction
+ * 
+ * - Routing Guarantee: JOINED = ROUTABLE (strict)
+ *   • Peer in joinedPeers Set → routable ✅
+ *   • Peer NOT in joinedPeers Set → not routable ❌
+ * 
+ * - State Updates:
+ *   • PEER_JOINED event → Add to joinedPeers (from Server/Client events)
+ *   • PEER_LEFT event → Remove from joinedPeers (from Server/Client events)
+ * 
+ * - Benefits:
+ *   • No querying Server/Client during routing (faster)
+ *   • Single source of truth (no state divergence)
+ *   • Clean semantics: in Set = online, not in Set = offline
  */
+
 import winston from 'winston'
-import _ from 'underscore'
-import Promise from 'bluebird'
 import md5 from 'md5'
 import animal from 'animal-id'
 import { EventEmitter } from 'events'
+import { PatternEmitter } from '@sfast/pattern-emitter-ts'
 
-import { ZeronodeError, ErrorCodes } from './errors'
-import NodeUtils from './utils'
-import Server from './server'
-import Client from './client'
-import Metric from './metric'
-import { events } from './enum'
-import { Enum, Watchers } from './sockets'
+import { NodeError, NodeErrorCode } from './node-errors.js'
+import NodeUtils from './utils.js'
+import Server, { ServerEvent } from './protocol/server.js'
+import Client, { ClientEvent } from './protocol/client.js'
 
-let MetricType = Enum.MetricType
+// ============================================================================
+// NODE EVENTS (Orchestration Layer - Public API)
+// ============================================================================
+export const NodeEvent = {
+  READY: 'node:ready',             // Node is fully initialized and ready
+  PEER_JOINED: 'node:peer_joined', // New peer discovered (upstream or downstream)
+  PEER_LEFT: 'node:peer_left',     // Peer disconnected
+  STOPPED: 'node:stopped',         // Node stopped
+  ERROR: 'node:error'              // Node-level error (normalized payload)
+}
 
 const _private = new WeakMap()
 
-let defaultLogger = winston.createLogger({
+const defaultLogger = winston.createLogger({
   transports: [
-    new (winston.transports.Console)({ level: 'error' })
+    new winston.transports.Console({ level: 'error' })
   ]
 })
 
+/**
+ * Node - Network node with server and multiple client connections
+ */
 export default class Node extends EventEmitter {
   constructor ({ id, bind, options, config } = {}) {
     super()
-
+    
+    // Node identity
     id = id || _generateNodeId()
     options = options || {}
+    config = config || {}
+    
+    // Bind node identity to options (used for routing and handshakes)
     Object.defineProperty(options, '_id', {
       value: id,
       writable: false,
       configurable: true,
       enumerable: true
     })
-    config = config || {}
-    config.logger = defaultLogger
-
-    this.logger = config.logger || defaultLogger
-
-    // ** default metric is disabled
-    let metric = new Metric({ id })
-
-    let _scope = {
+    
+    // Private state
+    const _scope = {
       id,
-      bind,
       options,
       config,
-      metric,
-      nodeServer: null,
-      nodeClients: new Map(),
-      nodeClientsAddressIndex: new Map(),
-      tickWatcherMap: new Map(),
-      requestWatcherMap: new Map()
+      logger: config.logger || defaultLogger,
+      
+      // Server (created on bind) - Server manages its own state
+      server: null,
+      bindAddress: bind || null,  // Cache bind address for async initialization window
+      
+      // Clients (nodeId → Client) - Clients manage their own state
+      clients: new Map(),
+      clientsAddressIndex: new Map(), // addressHash → nodeId
+      
+      // Peer state tracking (Node's single source of truth for routing)
+      joinedPeers: new Set(),                    // peerId → boolean (JOINED = routable)
+      peerOptions: new Map(),                    // peerId → options (for filtering)
+      peerDirection: new Map(),                  // peerId → 'upstream' | 'downstream'
+      
+      // Central handler registry (single source of truth)
+      handlerRegistry: {
+        request: new PatternEmitter(),
+        tick: new PatternEmitter()
+      }
     }
-
+    
     _private.set(this, _scope)
-    this::_initNodeServer()
+    
+    // Default error handler for NO_NODES_MATCH_FILTER
+    // Users can override by adding their own 'error' listener
+    this.on('error', (err) => {
+      if (err.code === NodeErrorCode.NO_NODES_MATCH_FILTER) {
+        // Only throw if no other error listeners are registered
+        if (this.listenerCount('error') === 1) {
+          throw err
+        }
+      }
+    })
+    
+    // Initialize server if bind address provided
+    if (bind) {
+      // Initialize and bind server asynchronously
+      this._initServer(bind)
+      
+      // Bind in background (Node should be fully initialized when used)
+      setImmediate(() => {
+        this.bind(bind).catch(err => {
+          _scope.logger.error(`[Node] Failed to bind server to ${bind}:`, err)
+          this.emit('error', err)
+          this.emit(NodeEvent.ERROR, {
+            source: 'server',
+            stage: 'bind',
+            address: bind,
+            error: err
+          })
+        })
+      })
+    }
   }
-
+  
+  // ============================================================================
+  // IDENTITY & INFO
+  // ============================================================================
+  
   getId () {
-    let { id } = _private.get(this)
+    const { id } = _private.get(this)
     return id
   }
-
+  
   getAddress () {
-    let { nodeServer } = _private.get(this)
-    return nodeServer ? nodeServer.getAddress() : null
+    const { server, bindAddress } = _private.get(this)
+    // Prefer server's address (source of truth), fallback to cached bind address
+    return server?.getAddress() || bindAddress
   }
-
+  
   getOptions () {
-    let { options } = _private.get(this)
+    const { options } = _private.get(this)
     return options
   }
-
-  getServerInfo ({ address, id }) {
-    let { nodeClients, nodeClientsAddressIndex } = _private.get(this)
-
-    if (!id) {
-      let addressHash = md5(address)
-
-      if (!nodeClientsAddressIndex.has(addressHash)) return null
-      id = nodeClientsAddressIndex.get(addressHash)
+  
+  // ============================================================================
+  // PEER STATE TRACKING (Private Helpers)
+  // ============================================================================
+  
+  /**
+   * Add peer to joined state (single operation for consistency)
+   * @private
+   */
+  _addJoinedPeer (peerId, peerOptions, direction) {
+    const _scope = _private.get(this)
+    _scope.joinedPeers.add(peerId)
+    _scope.peerOptions.set(peerId, peerOptions || {})
+    _scope.peerDirection.set(peerId, direction)
+  }
+  
+  /**
+   * Remove peer from joined state (single operation for consistency)
+   * @private
+   */
+  _removeJoinedPeer (peerId) {
+    const _scope = _private.get(this)
+    _scope.joinedPeers.delete(peerId)
+    _scope.peerOptions.delete(peerId)
+    _scope.peerDirection.delete(peerId)
+  }
+  
+  // ============================================================================
+  // SERVER MANAGEMENT
+  // ============================================================================
+  
+  /**
+   * Initialize server (can be called later if not provided in constructor)
+   * @private
+   */
+  _initServer (bindAddress) {
+    const _scope = _private.get(this)
+    
+    if (_scope.server) {
+      _scope.logger.warn(`[Node] Server already initialized`)
+      return
     }
-
-    let client = nodeClients.get(id)
-
-    if (!client) return null
-
-    let serverActor = client.getServerActor()
-
-    return serverActor ? serverActor.toJSON() : null
+    
+    const { id, options, config } = _scope
+    
+    // Create server with node identity
+    const server = new Server({ 
+      id,              // ✅ Server uses Node's ID
+      bind: bindAddress, 
+      options, 
+      config 
+    })
+    
+    // Apply all registered handlers to server
+    this._syncHandlersToTarget(server)
+    
+    // Transform and forward server events to node
+    this._attachServerEvents(server)
+    
+    _scope.server = server
+    
+    _scope.logger.info(`[Node] Server initialized: ${id}`)
   }
-
-  getClientInfo ({ id }) {
-    let { nodeServer } = _private.get(this)
-
-    let client = nodeServer.getClientById(id)
-
-    return client ? client.toJSON() : null
-  }
-
-  getFilteredNodes ({ options, predicate, up = true, down = true } = {}) {
-    let _scope = _private.get(this)
-    let nodes = new Set()
-
-    // ** if the predicate is provided we'll use it, if not then filtering will hapen based on options
-    // ** options predicate is built via NodeUtils.optionsPredicateBuilder
-    predicate = _.isFunction(predicate) ? predicate : NodeUtils.optionsPredicateBuilder(options)
-
-    if (_scope.nodeServer && down) {
-      _scope.nodeServer.getOnlineClients().forEach((clientNode) => {
-        NodeUtils.checkNodeReducer(clientNode, predicate, nodes)
-      }, this)
+  
+  /**
+   * Bind server to address
+   * @returns {string} The bound address
+   */
+  async bind (address) {
+    const _scope = _private.get(this)
+    
+    // Use cached bind address if no address provided
+    if (!address) {
+      address = _scope.bindAddress
     }
-
-    if (_scope.nodeClients.size && up) {
-      _scope.nodeClients.forEach((client) => {
-        let actorModel = client.getServerActor()
-        if (actorModel && actorModel.isOnline()) {
-          NodeUtils.checkNodeReducer(actorModel, predicate, nodes)
-        }
-      }, this)
+    
+    // Cache the bind address
+    _scope.bindAddress = address
+    
+    // Initialize server if not already done
+    if (!_scope.server) {
+      this._initServer(address)
     }
-
-    return Array.from(nodes)
+    
+    // Server handles idempotency and state management
+    await _scope.server.bind(address)
+    
+    // Return the actual bound address (important for port 0)
+    return this.getAddress()
   }
-
-  setAddress (bind) {
-    let { nodeServer } = _private.get(this)
-    nodeServer ? nodeServer.setAddress(bind) : this.logger.info('No server available')
+  
+  /**
+   * Unbind server
+   */
+  async unbind () {
+    const { server } = _private.get(this)
+    
+    if (!server) {
+      return Promise.resolve()
+    }
+    
+    return server.unbind()
   }
-
-  // ** returns promise
-  bind (address) {
-    let { nodeServer } = _private.get(this)
-    return nodeServer.bind(address)
+  
+  /**
+   * Attach server event handlers and transform to Node events
+   * @private
+   */
+  _attachServerEvents (server) {
+    const { logger } = _private.get(this)
+    
+    // Forward errors
+    server.on('error', (err) => {
+      logger.error('[Node] Server error:', err)
+      
+      this.emit('error', err)
+      this.emit(NodeEvent.ERROR, {
+        source: 'server',
+        address: this.getAddress?.(),
+        error: err
+      })
+    })
+    
+    // Transform: Server.CLIENT_JOINED → Node.PEER_JOINED
+    server.on(ServerEvent.CLIENT_JOINED, ({ clientId, clientOptions }) => {
+      // ✅ Track JOINED state in Node (single operation)
+      this._addJoinedPeer(clientId, clientOptions, 'downstream')
+      
+      this.emit(NodeEvent.PEER_JOINED, {
+        peerId: clientId,
+        direction: 'downstream',   // Client connected TO our server
+        peerOptions: clientOptions
+      })
+    })
+    
+    // Transform: Server.CLIENT_LEFT → Node.PEER_LEFT
+    server.on(ServerEvent.CLIENT_LEFT, ({ clientId, reason }) => {
+      // ✅ Track LEFT state in Node (single operation)
+      this._removeJoinedPeer(clientId)
+      
+      this.emit(NodeEvent.PEER_LEFT, {
+        peerId: clientId,
+        direction: 'downstream',
+        reason: reason || 'disconnected'  // Pass through reason from server
+      })
+    })
+    
+    // Server ready
+    server.on(ServerEvent.READY, () => {
+      this.emit(NodeEvent.READY, {
+        nodeId: this.getId(),
+        hasServer: true
+      })
+    })
   }
-
-  // ** returns promise
-  unbind () {
-    let { nodeServer } = _private.get(this)
-    if (!nodeServer) return Promise.resolve()
-
-    return nodeServer.unbind()
-  }
-
-  // ** connect returns the id of the connected node
+  
+  // ============================================================================
+  // CLIENT MANAGEMENT
+  // ============================================================================
+  
+  /**
+   * Connect to remote node
+   * @param {Object} params
+   * @param {string} params.address - Remote address (tcp://...)
+   * @param {number} [params.timeout] - Connection timeout
+   * @param {number} [params.reconnectionTimeout] - Reconnection timeout
+   * @returns {Promise<Object>} Remote node info
+   */
   async connect ({ address, timeout, reconnectionTimeout } = {}) {
-    if (typeof address !== 'string' || address.length === 0) {
-      throw new Error(`Wrong type for argument address ${address}`)
+    if (!address || typeof address !== 'string') {
+      throw new NodeError({
+        code: NodeErrorCode.ROUTING_FAILED,
+        message: `Invalid address: ${address}`,
+        context: { address }
+      })
     }
-
-    let _scope = _private.get(this)
-    let { id, metric, nodeClientsAddressIndex, nodeClients, config } = _scope
+    
+    const _scope = _private.get(this)
+    const { id, options, config, clients, clientsAddressIndex, logger } = _scope
+    
+    const addressHash = md5(address)
+    
+    // Check if already connected
+    if (clientsAddressIndex.has(addressHash)) {
+      const existingNodeId = clientsAddressIndex.get(addressHash)
+      const client = clients.get(existingNodeId)
+      
+      logger.info(`[Node] Already connected to ${address}`)
+      
+      const serverId = client.getServerId()
+      if (!serverId) {
+        return null
+      }
+      
+      return {
+        id: serverId,
+        options: _scope.peerOptions.get(serverId) || {}
+      }
+    }
+    
+    // Prepare client config
     let clientConfig = config
-
-    if (reconnectionTimeout) clientConfig = Object.assign({}, config, { RECONNECTION_TIMEOUT: reconnectionTimeout })
-
-    address = address || 'tcp://127.0.0.1:3000'
-
-    let addressHash = md5(address)
-
-    if (nodeClientsAddressIndex.has(addressHash)) {
-      let client = nodeClients.get(nodeClientsAddressIndex.get(addressHash))
-      return client.getServerActor().toJSON()
+    if (reconnectionTimeout !== undefined) {
+      clientConfig = Object.assign({}, config, { 
+        RECONNECTION_TIMEOUT: reconnectionTimeout 
+      })
     }
-
-    let client = new Client({ id, options: _scope.options, config: clientConfig })
-
-    // ** attaching client handlers
-    client.on('error', (err) => this.emit('error', err))
-    client.on(events.SERVER_FAILURE, (serverActor) => this.emit(events.SERVER_FAILURE, serverActor))
-    client.on(events.SERVER_STOP, (serverActor) => this.emit(events.SERVER_STOP, serverActor))
-    client.on(events.SERVER_RECONNECT, (serverActor) => {
-      try {
-        let addressHash = md5(serverActor.address)
-        let oldId = nodeClientsAddressIndex.get(addressHash)
-        nodeClients.delete(oldId)
-        nodeClientsAddressIndex.set(addressHash, serverActor.id)
-        nodeClients.set(serverActor.id, client)
-      } catch (err) {
-        this.logger.error('Error while handling server reconnect', err)
-      }
-      this.emit(events.SERVER_RECONNECT, serverActor)
+    
+    // Create client with node identity
+    const client = new Client({ 
+      id,              // ✅ Client uses Node's ID
+      options,         // ✅ Node's options for handshake
+      config: clientConfig 
     })
-    client.on(events.SERVER_RECONNECT_FAILURE, (serverActor) => {
-      try {
-        nodeClients.delete(serverActor.id)
-        nodeClientsAddressIndex.delete(md5(serverActor.address))
-      } catch (err) {
-        this.logger.error('Error while handling server reconnect failure', err)
-      }
-      this.emit(events.SERVER_RECONNECT_FAILURE, serverActor)
-    })
-    client.on(events.OPTIONS_SYNC, ({ id, newOptions }) => this.emit(events.OPTIONS_SYNC, { id, newOptions }))
-
-    // **
-    client.setMetric(metric.status)
-
-    this::_addExistingListenersToClient(client)
-
-    let { actorId } = await client.connect(address, timeout)
-
-    this::_attachMetricsHandlers(client, metric)
-
-    this.logger.info(`Node connected: ${this.getId()} -> ${actorId}`)
-
-    nodeClientsAddressIndex.set(addressHash, actorId)
-    nodeClients.set(actorId, client)
-
-    this.emit(events.CONNECT_TO_SERVER, client.getServerActor().toJSON())
-
-    return client.getServerActor().toJSON()
+    
+    // Apply all registered handlers to client
+    this._syncHandlersToTarget(client)
+    
+    // Attach client event handlers
+    this._attachClientEvents(client)
+    
+    // Connect (Client.connect() waits for handshake to complete)
+    await client.connect(address, timeout)
+    
+    // Get server ID (now available after handshake)
+    const serverId = client.getServerId()
+    if (!serverId) {
+      throw new NodeError({
+        code: NodeErrorCode.ROUTING_FAILED,
+        message: `Failed to get server ID after connection to ${address}`,
+        context: { address }
+      })
+    }
+    
+    const remoteNodeId = serverId
+    
+    logger.info(`[Node] Connected: ${id} → ${remoteNodeId} (${address})`)
+    
+    // Store client by remote node's ID
+    clients.set(remoteNodeId, client)
+    clientsAddressIndex.set(addressHash, remoteNodeId)
+    
+    // Note: PEER_JOINED event will be emitted when ClientEvent.SERVER_JOINED fires (handshake complete)
+    
+    // Return server info with options from Node
+    return {
+      id: remoteNodeId,
+      options: _scope.peerOptions.get(remoteNodeId) || {}
+    }
   }
-
-  // TODO::avar maybe disconnect from node ?
-  async disconnect (address = 'tcp://127.0.0.1:3000') {
-    if (typeof address !== 'string' || address.length === 0) {
-      throw new Error(`Wrong type for argument address ${address}`)
+  
+  /**
+   * Disconnect from remote node
+   * @param {string} address - Remote address
+   */
+  async disconnect (address) {
+    if (!address || typeof address !== 'string') {
+      throw new NodeError({
+        code: NodeErrorCode.ROUTING_FAILED,
+        message: `Invalid address: ${address}`,
+        context: { address }
+      })
     }
-
-    let addressHash = md5(address)
-
-    let _scope = _private.get(this)
-    let { nodeClientsAddressIndex, nodeClients } = _scope
-
-    if (!nodeClientsAddressIndex.has(addressHash)) return true
-
-    let nodeId = nodeClientsAddressIndex.get(addressHash)
-    let client = nodeClients.get(nodeId)
-
-    client.removeAllListeners(events.SERVER_FAILURE)
-    client.removeAllListeners(MetricType.SEND_TICK)
-    client.removeAllListeners(MetricType.GOT_TICK)
-    client.removeAllListeners(MetricType.SEND_REQUEST)
-    client.removeAllListeners(MetricType.GOT_REQUEST)
-    client.removeAllListeners(MetricType.SEND_REPLY_SUCCESS)
-    client.removeAllListeners(MetricType.SEND_REPLY_ERROR)
-    client.removeAllListeners(MetricType.GOT_REPLY_SUCCESS)
-    client.removeAllListeners(MetricType.GOT_REPLY_ERROR)
-    client.removeAllListeners(MetricType.REQUEST_TIMEOUT)
-    client.removeAllListeners(MetricType.OPTIONS_SYNC)
-
+    
+    const _scope = _private.get(this)
+    const { clients, clientsAddressIndex, logger } = _scope
+    
+    const addressHash = md5(address)
+    
+    if (!clientsAddressIndex.has(addressHash)) {
+      logger.warn(`[Node] Not connected to ${address}`)
+      return true
+    }
+    
+    const nodeId = clientsAddressIndex.get(addressHash)
+    const client = clients.get(nodeId)
+    
+    // Disconnect client (will emit ClientEvent.NOT_READY or ClientEvent.CLOSED)
     await client.disconnect()
-    this::_removeClientAllListeners(client)
-    nodeClients.delete(nodeId)
-    nodeClientsAddressIndex.delete(addressHash)
+    
+    // Remove all event listeners AFTER disconnect completes
+    client.removeAllListeners()
+    
+    // Clean up
+    this._removeClientHandlers(client)
+    clients.delete(nodeId)
+    clientsAddressIndex.delete(addressHash)
+    
+    logger.info(`[Node] Disconnected from ${address}`)
+    
     return true
   }
-
-  async stop () {
-    let { nodeServer, nodeClients } = _private.get(this)
-    let stopPromise = []
-
-    this.disableMetrics()
-
-    if (nodeServer.isOnline()) {
-      stopPromise.push(nodeServer.close())
-    }
-
-    nodeClients.forEach((client) => {
-      stopPromise.push(client.close())
-    }, this)
-
-    await Promise.all(stopPromise)
-  }
-
-  onRequest (requestEvent, fn) {
-    let _scope = _private.get(this)
-    let { requestWatcherMap, nodeClients, nodeServer } = _scope
-
-    let requestWatcher = requestWatcherMap.get(requestEvent)
-    if (!requestWatcher) {
-      requestWatcher = new Watchers(requestEvent)
-      requestWatcherMap.set(requestEvent, requestWatcher)
-    }
-
-    requestWatcher.addFn(fn)
-
-    nodeServer.onRequest(requestEvent, fn)
-
-    nodeClients.forEach((client) => {
-      client.onRequest(requestEvent, fn)
-    }, this)
-  }
-
-  offRequest (requestEvent, fn) {
-    let _scope = _private.get(this)
-
-    _scope.nodeServer.offRequest(requestEvent, fn)
-    _scope.nodeClients.forEach((client) => {
-      client.offRequest(requestEvent, fn)
+  
+  /**
+   * Attach client event handlers and transform to Node events
+   * @private
+   */
+  _attachClientEvents (client) {
+    const _scope = _private.get(this)
+    const { logger } = _scope
+    
+    // Also listen to structured client error event
+    client.on(ClientEvent.ERROR, (err) => {
+      logger.error('[Node] Client error:', err)
+      const serverId = client.getServerId()
+      this.emit(NodeEvent.ERROR, {
+        source: 'client',
+        serverId: serverId || null,
+        error: err
+      })
     })
-
-    let requestWatcher = _scope.requestWatcherMap.get(requestEvent)
-    if (requestWatcher) {
-      requestWatcher.removeFn(fn)
-    }
-  }
-
-  onTick (event, fn) {
-    let _scope = _private.get(this)
-    let { tickWatcherMap, nodeClients, nodeServer } = _scope
-
-    let tickWatcher = tickWatcherMap.get(event)
-    if (!tickWatcher) {
-      tickWatcher = new Watchers(event)
-      tickWatcherMap.set(event, tickWatcher)
-    }
-
-    tickWatcher.addFn(fn)
-
-    // ** _scope.nodeServer is constructed in Node constructor
-    nodeServer.onTick(event, fn)
-
-    nodeClients.forEach((client) => {
-      client.onTick(event, fn)
+    
+    // Transform: Client.SERVER_JOINED → Node.PEER_JOINED (handshake complete, peer identified)
+    client.on(ClientEvent.SERVER_JOINED, ({ serverId, serverOptions }) => {
+      // ✅ Track JOINED state in Node (single operation)
+      this._addJoinedPeer(serverId, serverOptions, 'upstream')
+      
+      this.emit(NodeEvent.PEER_JOINED, {
+        peerId: serverId,
+        direction: 'upstream',     // We connected TO this server
+        peerOptions: serverOptions || {}
+      })
+    })
+    
+    // Transform: Client.NOT_READY → Node.PEER_LEFT (transport lost readiness)
+    client.on(ClientEvent.NOT_READY, ({ serverId, reason }) => {
+      // ✅ Track LEFT state in Node (single operation)
+      this._removeJoinedPeer(serverId)
+      
+      this.emit(NodeEvent.PEER_LEFT, {
+        peerId: serverId,
+        direction: 'upstream',
+        reason: reason || 'not_ready'
+      })
+      // Note: Don't cleanup client here - transport might recover
+    })
+    
+    // Transform: Client.CLOSED → Node.PEER_LEFT (transport permanently closed)
+    client.on(ClientEvent.CLOSED, ({ serverId }) => {
+      // ✅ Track LEFT state in Node (single operation)
+      this._removeJoinedPeer(serverId)
+      
+      this.emit(NodeEvent.PEER_LEFT, {
+        peerId: serverId,
+        direction: 'upstream',
+        reason: 'closed'
+      })
+      
+      // NOTE: Don't auto-cleanup here - client might be needed for reconnection
+      // Only cleanup on explicit disconnect() call
+    })
+    
+    // Transform: Client.SERVER_LEFT → Node.PEER_LEFT (server shutdown/stopped)
+    client.on(ClientEvent.SERVER_LEFT, ({ serverId }) => {
+      // ✅ Track LEFT state in Node (single operation)
+      this._removeJoinedPeer(serverId)
+      
+        this.emit(NodeEvent.PEER_LEFT, {
+        peerId: serverId,
+          direction: 'upstream',
+        reason: 'server_left'
+        })
+      
+      // NOTE: Don't auto-cleanup here - client might be needed for reconnection
+      // Only cleanup on explicit disconnect() call
     })
   }
-
-  offTick (event, fn) {
-    let _scope = _private.get(this)
-    _scope.nodeServer.offTick(event)
-    _scope.nodeClients.forEach((client) => {
-      client.offTick(event, fn)
-    }, this)
-
-    let tickWatcher = _scope.tickWatcherMap.get(event)
-    if (tickWatcher) {
-      tickWatcher.removeFn(fn)
+  
+  // ============================================================================
+  // HANDLER MANAGEMENT (Central Registry)
+  // ============================================================================
+  
+  /**
+   * Register request handler
+   * Handlers are stored centrally and applied to all servers/clients
+   */
+  onRequest (pattern, handler) {
+    const { handlerRegistry, server, clients, logger } = _private.get(this)
+    
+    // Store in central registry
+    handlerRegistry.request.on(pattern, handler)
+    
+    // Apply to server if it exists
+    if (server) {
+      server.onRequest(pattern, handler)
+    }
+    
+    // Apply to all existing clients
+    clients.forEach(client => {
+      client.onRequest(pattern, handler)
+    })
+  }
+  
+  /**
+   * Unregister request handler
+   */
+  offRequest (pattern, handler) {
+    const { handlerRegistry, server, clients } = _private.get(this)
+    
+    // Remove from registry
+    if (handler) {
+      handlerRegistry.request.off(pattern, handler)
+    } else {
+      handlerRegistry.request.removeAllListeners(pattern)
+    }
+    
+    // Remove from server
+    if (server) {
+      server.offRequest(pattern, handler)
+    }
+    
+    // Remove from clients
+    clients.forEach(client => {
+      client.offRequest(pattern, handler)
+    })
+  }
+  
+  /**
+   * Register tick handler
+   */
+  onTick (pattern, handler) {
+    const { handlerRegistry, server, clients } = _private.get(this)
+    
+    // Store in central registry
+    handlerRegistry.tick.on(pattern, handler)
+    
+    // Apply to server if it exists
+    if (server) {
+      server.onTick(pattern, handler)
+    }
+    
+    // Apply to all existing clients
+    clients.forEach(client => {
+      client.onTick(pattern, handler)
+    })
+  }
+  
+  /**
+   * Unregister tick handler
+   */
+  offTick (pattern, handler) {
+    const { handlerRegistry, server, clients } = _private.get(this)
+    
+    // Remove from registry
+    if (handler) {
+      handlerRegistry.tick.off(pattern, handler)
+    } else {
+      handlerRegistry.tick.removeAllListeners(pattern)
+    }
+    
+    // Remove from server
+    if (server) {
+      server.offTick(pattern, handler)
+    }
+    
+    // Remove from clients
+    clients.forEach(client => {
+      client.offTick(pattern, handler)
+    })
+  }
+  
+  /**
+   * Sync all registered handlers to a target (server or client)
+   * @private
+   */
+  _syncHandlersToTarget (target) {
+    const { handlerRegistry } = _private.get(this)
+    
+    // PatternEmitter.allListeners returns ALL listeners (string events + RegExp patterns)
+    // This is much simpler than before!
+    
+    // Apply all request handlers
+    for (const [pattern, handlers] of handlerRegistry.request.allListeners) {
+      handlers.forEach(handler => {
+        // Pattern can be string, symbol, or RegExp pattern string (like '/test.*/')
+        // If it starts with '/', it's a RegExp pattern string, convert back to RegExp
+        const eventPattern = (typeof pattern === 'string' && pattern.startsWith('/') && pattern.endsWith('/'))
+          ? new RegExp(pattern.slice(1, -1))
+          : pattern
+        target.onRequest(eventPattern, handler)
+      })
+    }
+    
+    // Apply all tick handlers
+    for (const [pattern, handlers] of handlerRegistry.tick.allListeners) {
+      handlers.forEach(handler => {
+        const eventPattern = (typeof pattern === 'string' && pattern.startsWith('/') && pattern.endsWith('/'))
+          ? new RegExp(pattern.slice(1, -1))
+          : pattern
+        target.onTick(eventPattern, handler)
+      })
     }
   }
-
+  
+  /**
+   * Remove all handlers from a client
+   * @private
+   */
+  _removeClientHandlers (client) {
+    const { handlerRegistry } = _private.get(this)
+    
+    // Remove all request handlers
+    for (const [pattern] of handlerRegistry.request.allListeners) {
+      const eventPattern = (typeof pattern === 'string' && pattern.startsWith('/') && pattern.endsWith('/'))
+        ? new RegExp(pattern.slice(1, -1))
+        : pattern
+      client.offRequest(eventPattern)
+    }
+    
+    // Remove all tick handlers
+    for (const [pattern] of handlerRegistry.tick.allListeners) {
+      const eventPattern = (typeof pattern === 'string' && pattern.startsWith('/') && pattern.endsWith('/'))
+        ? new RegExp(pattern.slice(1, -1))
+        : pattern
+      client.offTick(eventPattern)
+    }
+  }
+  
+  // ============================================================================
+  // ROUTING
+  // ============================================================================
+  
+  /**
+   * Find route to node
+   * @private
+   * @returns {{ type: 'server'|'client', target: Server|Client, targetId?: string } | null}
+   */
+  _findRoute (nodeId) {
+    const { server, clients, joinedPeers, peerDirection } = _private.get(this)
+    
+    // ✅ Check Node's joined state (single source of truth)
+    if (!joinedPeers.has(nodeId)) {
+      return null  // Not joined = not routable
+    }
+    
+    // Peer is joined - determine route based on direction
+    const direction = peerDirection.get(nodeId)
+    
+    if (direction === 'downstream') {
+      // Client connected TO our server
+      if (server && server.isOnline()) {
+        return { 
+          type: 'server', 
+          target: server, 
+          targetId: nodeId 
+        }
+      }
+    } else if (direction === 'upstream') {
+      // We connected TO this server
+      if (clients.has(nodeId)) {
+        const client = clients.get(nodeId)
+        return { 
+          type: 'client', 
+          target: client 
+        }
+      }
+    }
+    
+    return null
+  }
+  
+  /**
+   * Get filtered nodes by options/predicate
+   * @private
+   */
+  _getFilteredNodes ({ options, predicate, up = true, down = true } = {}) {
+    const { joinedPeers, peerOptions, peerDirection } = _private.get(this)
+    const nodes = new Set()
+    
+    // Build predicate function
+    const pred = predicate || NodeUtils.optionsPredicateBuilder(options)
+    
+    // ✅ Iterate through ALL joined peers (single source of truth)
+    joinedPeers.forEach(peerId => {
+      const direction = peerDirection.get(peerId)
+      const peerOpts = peerOptions.get(peerId) || {}
+      
+      // Filter by direction
+      if (direction === 'downstream' && !down) return
+      if (direction === 'upstream' && !up) return
+      
+      // Filter by predicate
+      if (pred(peerOpts)) {
+        nodes.add(peerId)
+      }
+    })
+    
+    return Array.from(nodes)
+  }
+  
+  /**
+   * Select node from list (load balancing strategy)
+   * @private
+   */
+  _selectNode (nodeIds, event) {
+    if (!nodeIds || nodeIds.length === 0) {
+      return null
+    }
+    
+    // Simple random selection
+    // Can be enhanced with round-robin, least-connections, etc.
+    const idx = Math.floor(Math.random() * nodeIds.length)
+    return nodeIds[idx]
+  }
+  
+  // ============================================================================
+  // MESSAGING API
+  // ============================================================================
+  
+  /**
+   * Send request to specific node
+   */
   async request ({ to, event, data, timeout } = {}) {
-    let _scope = _private.get(this)
-
-    let { nodeServer, nodeClients } = _scope
-
-    let clientActor = this::_getClientByNode(to)
-    if (clientActor) {
-      return nodeServer.request({ to: clientActor.getId(), event, data, timeout })
+    const route = this._findRoute(to)
+    
+    if (!route) {
+      throw new NodeError({
+        code: NodeErrorCode.NODE_NOT_FOUND,
+        message: `No route to node '${to}'`,
+        nodeId: to,
+        context: { event }
+      })
     }
-
-    if (nodeClients.has(to)) {
-      // ** to is the serverId of node so we request
-      return nodeClients.get(to).request({ event, data, timeout })
+    
+    if (route.type === 'server') {
+      // Route through our server to connected client
+      return route.target.request({ to: route.targetId, event, data, timeout })
+    } else {
+      // Route through client to remote server
+      return route.target.request({ event, data, timeout })
     }
-
-    throw new ZeronodeError({ message: `Node with id '${to}' is not found.`, code: ErrorCodes.NODE_NOT_FOUND })
   }
-
+  
+  /**
+   * Send tick to specific node
+   */
   tick ({ to, event, data } = {}) {
-    let _scope = _private.get(this)
-    let { nodeServer, nodeClients } = _scope
-    let clientActor = this::_getClientByNode(to)
-    if (clientActor) {
-      return nodeServer.tick({ to: clientActor.getId(), event, data })
+    const route = this._findRoute(to)
+    
+    if (!route) {
+      throw new NodeError({
+        code: NodeErrorCode.NODE_NOT_FOUND,
+        message: `No route to node '${to}'`,
+        nodeId: to,
+        context: { event }
+      })
     }
-    if (nodeClients.has(to)) {
-      return nodeClients.get(to).tick({ event, data })
+    
+    if (route.type === 'server') {
+      return route.target.tick({ to: route.targetId, event, data })
+    } else {
+      return route.target.tick({ event, data })
     }
-    throw new ZeronodeError({ message: `Node with id '${to}' is not found.`, code: ErrorCodes.NODE_NOT_FOUND })
   }
-
+  
+  /**
+   * Send request to any matching node
+   */
   async requestAny ({ event, data, timeout, filter, down = true, up = true } = {}) {
-    let nodesFilter = { down, up }
-    if (_.isFunction(filter)) {
-      nodesFilter.predicate = filter
-    } else {
-      nodesFilter.options = filter || {}
+    // Extract options and predicate from filter if wrapped
+    const filterOptions = filter?.options || (filter?.predicate ? undefined : filter)
+    const filterPredicate = filter?.predicate
+    const filteredNodes = this._getFilteredNodes({ 
+      options: filterOptions, 
+      predicate: filterPredicate, 
+      down, 
+      up 
+    })
+    
+    if (filteredNodes.length === 0) {
+      const error = new NodeError({
+        code: NodeErrorCode.NO_NODES_MATCH_FILTER,
+        message: 'No nodes match filter criteria',
+        context: { filter, down, up, event }
+      })
+      this.emit('error', error)
+      this.emit(NodeEvent.ERROR, {
+        source: 'router',
+        category: 'filter',
+        error
+      })
+      return Promise.reject(error)
     }
-
-    let filteredNodes = this.getFilteredNodes(nodesFilter)
-
-    if (!filteredNodes.length) {
-      throw new ZeronodeError({ message: `Node with filter is not found.`, code: ErrorCodes.NODE_NOT_FOUND })
-    }
-
-    // ** find the node id where the request will be sent
-    let to = this::_getWinnerNode(filteredNodes, event)
-    return this.request({ to, event, data, timeout })
+    
+    const targetNode = this._selectNode(filteredNodes, event)
+    return this.request({ to: targetNode, event, data, timeout })
   }
-
+  
+  /**
+   * Send request to any downstream node
+   */
   async requestDownAny ({ event, data, timeout, filter } = {}) {
-    let result = await this.requestAny({ event, data, timeout, filter, down: true, up: false })
-    return result
+    return this.requestAny({ event, data, timeout, filter, down: true, up: false })
   }
-
+  
+  /**
+   * Send request to any upstream node
+   */
   async requestUpAny ({ event, data, timeout, filter } = {}) {
-    let result = await this.requestAny({ event, data, timeout, filter, down: false, up: true })
-    return result
+    return this.requestAny({ event, data, timeout, filter, down: false, up: true })
   }
-
+  
+  /**
+   * Send tick to any matching node
+   */
   tickAny ({ event, data, filter, down = true, up = true } = {}) {
-    let nodesFilter = { down, up }
-    if (_.isFunction(filter)) {
-      nodesFilter.predicate = filter
-    } else {
-      nodesFilter.options = filter || {}
+    // Extract options and predicate from filter if wrapped
+    const filterOptions = filter?.options || (filter?.predicate ? undefined : filter)
+    const filterPredicate = filter?.predicate
+    const filteredNodes = this._getFilteredNodes({ 
+      options: filterOptions, 
+      predicate: filterPredicate, 
+      down, 
+      up 
+    })
+    
+    if (filteredNodes.length === 0) {
+      const error = new NodeError({
+        code: NodeErrorCode.NO_NODES_MATCH_FILTER,
+        message: 'No nodes match filter criteria',
+        context: { filter, down, up, event }
+      })
+      // Don't emit - just reject the promise for consistency with requestAny
+      return Promise.reject(error)
     }
-
-    let filteredNodes = this.getFilteredNodes(nodesFilter)
-
-    if (!filteredNodes.length) {
-      throw new ZeronodeError({ message: `Node with filter is not found.`, code: ErrorCodes.NODE_NOT_FOUND })
-    }
-    let nodeId = this::_getWinnerNode(filteredNodes, event)
-    return this.tick({ to: nodeId, event, data })
+    
+    const targetNode = this._selectNode(filteredNodes, event)
+    return this.tick({ to: targetNode, event, data })
   }
-
+  
+  /**
+   * Send tick to any downstream node
+   */
   tickDownAny ({ event, data, filter } = {}) {
     return this.tickAny({ event, data, filter, down: true, up: false })
   }
-
+  
+  /**
+   * Send tick to any upstream node
+   */
   tickUpAny ({ event, data, filter } = {}) {
     return this.tickAny({ event, data, filter, down: false, up: true })
   }
-
-  tickAll ({ event, data, filter, down = true, up = true } = {}) {
-    let nodesFilter = { down, up }
-    if (_.isFunction(filter)) {
-      nodesFilter.predicate = filter
-    } else {
-      nodesFilter.options = filter || {}
-    }
-
-    let filteredNodes = this.getFilteredNodes(nodesFilter)
-    let tickPromises = []
-
-    filteredNodes.forEach((nodeId) => {
-      tickPromises.push(this.tick({ to: nodeId, event, data }))
-    }, this)
-
-    return Promise.all(tickPromises)
+  
+  /**
+   * Send tick to all matching nodes
+   */
+  async   tickAll ({ event, data, filter, down = true, up = true } = {}) {
+    // Extract options and predicate from filter if wrapped
+    const filterOptions = filter?.options || (filter?.predicate ? undefined : filter)
+    const filterPredicate = filter?.predicate
+    const filteredNodes = this._getFilteredNodes({ 
+      options: filterOptions, 
+      predicate: filterPredicate, 
+      down, 
+      up 
+    })
+    
+    const promises = filteredNodes.map(nodeId => {
+      return this.tick({ to: nodeId, event, data })
+    })
+    
+    return Promise.all(promises)
   }
-
+  
+  /**
+   * Send tick to all downstream nodes
+   */
   tickDownAll ({ event, data, filter } = {}) {
     return this.tickAll({ event, data, filter, down: true, up: false })
   }
-
+  
+  /**
+   * Send tick to all upstream nodes
+   */
   tickUpAll ({ event, data, filter } = {}) {
     return this.tickAll({ event, data, filter, down: false, up: true })
   }
-
-  enableMetrics (flushInterval) {
-    let _scope = _private.get(this)
-    
-    let { metric, nodeClients, nodeServer } = _scope
-    metric.enable(flushInterval)
-
-    nodeClients.forEach((client) => {
-      client.setMetric(true)
-    }, this)
-
-    nodeServer.setMetric(true)
-  }
-
-  get metric () {
-    let { metric } = _private.get(this)
-    return metric
-  }
-
-  disableMetrics () {
-    let { metric, nodeClients, nodeServer } = _private.get(this)
-    metric.disable()
-
-    nodeClients.forEach((client) => {
-      client.setMetric(false)
-    }, this)
-    nodeServer.setMetric(false)
-  }
-
+  
+  // ============================================================================
+  // OPTIONS MANAGEMENT (Used for routing)
+  // ============================================================================
+  
+  /**
+   * Update node options and propagate to server/clients
+   */
   async setOptions (options = {}) {
-    let _scope = _private.get(this)
-    _scope.options = options
-
+    const _scope = _private.get(this)
+    
+    // Maintain node identity
     Object.defineProperty(options, '_id', {
       value: _scope.id,
       writable: false,
       configurable: true,
       enumerable: true
     })
-
-    let { nodeServer, nodeClients } = _scope
-    nodeServer.setOptions(options)
-    nodeClients.forEach((client) => {
-      client.setOptions(options)
-    }, this)
+    
+    _scope.options = options
+    
+    // Note: Options are used during handshakes and are part of Node's identity
+    // They don't need to be actively propagated to existing connections
+    // Server and clients will use updated options for new connections
+  }
+  
+  /**
+   * Get filtered nodes (with options/predicate)
+   */
+  getFilteredNodes ({ options, predicate, up = true, down = true } = {}) {
+    return this._getFilteredNodes({ options, predicate, up, down })
+  }
+  
+  // ============================================================================
+  // PEER INFO
+  // ============================================================================
+  
+  /**
+   * Get peer options by ID
+   * @param {string} peerId - Peer ID
+   * @returns {object|null} Peer options or null if peer not joined
+   */
+  getPeerOptions (peerId) {
+    const { peerOptions } = _private.get(this)
+    return peerOptions.get(peerId) || null
+  }
+  
+  /**
+   * Get server ID by connection address
+   * @param {string} address - Server address (e.g., 'tcp://127.0.0.1:5000')
+   * @returns {string|null} Server ID or null if not connected
+   */
+  getServerIdByAddress (address) {
+    const { clients, clientsAddressIndex } = _private.get(this)
+    
+    const addressHash = md5(address)
+    if (!clientsAddressIndex.has(addressHash)) {
+      return null
+    }
+    
+    const nodeId = clientsAddressIndex.get(addressHash)
+    const client = clients.get(nodeId)
+    
+    if (!client) {
+      return null
+    }
+    
+    // Return the actual server ID (not the node ID key)
+    return client.getServerId()
+  }
+  
+  // ============================================================================
+  // LIFECYCLE
+  // ============================================================================
+  
+  /**
+   * Close the node and all its connections.
+   * 
+   * This permanently closes:
+   * - The server (if bound)
+   * - All client connections
+   * - All underlying transport sockets
+   * 
+   * After closing, the node cannot be reused.
+   * Pending requests will be rejected.
+   * All handlers will be removed.
+   */
+  async close () {
+    const { server, clients, logger } = _private.get(this)
+    const promises = []
+    
+    // Close server
+    if (server && server.isOnline()) {
+      promises.push(server.close())
+    }
+    
+    // Close all clients
+    clients.forEach(client => {
+      promises.push(client.close())
+    })
+    
+    await Promise.all(promises)
+    
+    logger.info('[Node] Closed')
   }
 }
 
-// ** PRIVATE FUNCTIONS
+// ============================================================================
+// PRIVATE HELPERS
+// ============================================================================
 
-function _initNodeServer () {
-  let _scope = _private.get(this)
-  let { id, bind, options, metric, config } = _scope
-
-  let nodeServer = new Server({ id, bind, options, config })
-  // ** handlers for nodeServer
-  nodeServer.on('error', (err) => this.emit('error', err))
-  nodeServer.on(events.CLIENT_FAILURE, (clientActor) => this.emit(events.CLIENT_FAILURE, clientActor))
-  nodeServer.on(events.CLIENT_CONNECTED, (clientActor) => this.emit(events.CLIENT_CONNECTED, clientActor))
-  nodeServer.on(events.CLIENT_STOP, (clientActor) => this.emit(events.CLIENT_STOP, clientActor))
-  nodeServer.on(events.OPTIONS_SYNC, ({ id, newOptions }) => this.emit(events.OPTIONS_SYNC, { id, newOptions }))
-
-  // ** enabling metrics
-  nodeServer.setMetric(metric.status)
-  this::_attachMetricsHandlers(nodeServer, metric)
-
-  _scope.nodeServer = nodeServer
-}
-
-function _getClientByNode (nodeId) {
-  let _scope = _private.get(this)
-  let actors = _scope.nodeServer.getOnlineClients().filter((actor) => {
-    let node = actor.getId()
-    return node === nodeId
-  })
-
-  if (!actors.length) {
-    return null
-  }
-
-  if (actors.length > 1) {
-    return this.logger.warn(`We should have just 1 client from 1 node`)
-  }
-
-  return actors[0]
-}
-
+/**
+ * Generate random node ID
+ * @private
+ */
 function _generateNodeId () {
   return animal.getId()
-}
-
-// TODO::avar optimize this
-function _getWinnerNode (nodeIds, tag) {
-  let len = nodeIds.length
-  let idx = Math.floor(Math.random() * len)
-  return nodeIds[idx]
-}
-
-function _addExistingListenersToClient (client) {
-  let _scope = _private.get(this)
-
-  // ** adding previously added onTick-s for this client to
-  _scope.tickWatcherMap.forEach((tickWatcher, event) => {
-    // ** TODO what about order of functions ?
-    tickWatcher.getFnMap().forEach((index, fn) => {
-      client.onTick(event, this::fn)
-    }, this)
-  }, this)
-
-  // ** adding previously added onRequests-s for this client to
-  _scope.requestWatcherMap.forEach((requestWatcher, requestEvent) => {
-    // ** TODO what about order of functions ?
-    requestWatcher.getFnMap().forEach((index, fn) => {
-      client.onRequest(requestEvent, this::fn)
-    }, this)
-  }, this)
-}
-
-function _removeClientAllListeners (client) {
-  let _scope = _private.get(this)
-
-  // ** removing all handlers
-  _scope.tickWatcherMap.forEach((tickWatcher, event) => {
-    client.offTick(event)
-  }, this)
-
-  // ** removing all handlers
-  _scope.requestWatcherMap.forEach((requestWatcher, requestEvent) => {
-    client.offRequest(requestEvent)
-  }, this)
-}
-
-function _attachMetricsHandlers (socket, metric) {
-  socket.on(MetricType.SEND_TICK, (envelop) => {
-    this.emit(MetricType.SEND_TICK, envelop)
-    metric.sendTick(envelop)
-  })
-
-  socket.on(MetricType.SEND_REQUEST, (envelop) => {
-    this.emit(MetricType.SEND_REQUEST, envelop)
-    metric.sendRequest(envelop)
-  })
-
-  socket.on(MetricType.SEND_REPLY_SUCCESS, (envelop) => {
-    this.emit(MetricType.SEND_REPLY_SUCCESS, envelop)
-    metric.sendReplySuccess(envelop)
-  })
-
-  socket.on(MetricType.SEND_REPLY_ERROR, (envelop) => {
-    this.emit(MetricType.SEND_REPLY_ERROR, envelop)
-    metric.sendReplyError(envelop)
-  })
-
-  socket.on(MetricType.REQUEST_TIMEOUT, (envelop) => {
-    this.emit(MetricType.REQUEST_TIMEOUT, envelop)
-    metric.requestTimeout(envelop)
-  })
-
-  socket.on(MetricType.GOT_TICK, (envelop) => {
-    this.emit(MetricType.GOT_TICK, envelop)
-    metric.gotTick(envelop)
-  })
-
-  socket.on(MetricType.GOT_REQUEST, (envelop) => {
-    this.emit(MetricType.GOT_REQUEST, envelop)
-    metric.gotRequest(envelop)
-  })
-
-  socket.on(MetricType.GOT_REPLY_SUCCESS, (envelop) => {
-    this.emit(MetricType.GOT_REPLY_SUCCESS, envelop)
-    metric.gotReplySuccess(envelop)
-  })
-
-  socket.on(MetricType.GOT_REPLY_ERROR, (envelop) => {
-    this.emit(MetricType.GOT_REPLY_ERROR, envelop)
-    metric.gotReplyError(envelop)
-  })
 }

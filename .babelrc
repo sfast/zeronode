@@ -1,8 +1,6 @@
 {
   "presets": ["@babel/preset-env"],
   "plugins" : [
-    "@babel/plugin-proposal-function-bind",
-    "@babel/plugin-proposal-object-rest-spread",
     ["@babel/transform-runtime",
       {
         "helpers": false,
@@ -10,9 +8,6 @@
       }
     ]
   ],
-  "env": {
-    "test": {
-      "plugins": ["istanbul"]
-    }
-  }
+  "sourceMaps": "inline",
+  "retainLines": true
 }
