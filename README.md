@@ -1,7 +1,7 @@
-# ZeroNode
+# Zeronode
 
 <p align="center">
-  <img src="https://i.imgur.com/NZVXZPo.png" alt="ZeroNode Logo" width="100%"/>
+  <img src="https://i.imgur.com/NZVXZPo.png" alt="Zeronode Logo" width="100%"/>
 </p>
 
 <p align="center">
@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <a href="https://codecov.io/gh/sfast/zeronode"><img src="https://img.shields.io/badge/coverage-96.3%25-brightgreen" alt="Coverage"></a>
+  <a href="https://codecov.io/gh/sfast/zeronode"><img src="https://img.shields.io/badge/coverage-95%25-brightgreen" alt="Coverage"></a>
   <a href="https://www.npmjs.com/package/zeronode"><img src="https://img.shields.io/npm/v/zeronode.svg" alt="npm version"></a>
   <a href="https://github.com/sfast/zeronode/blob/master/LICENSE"><img src="https://img.shields.io/github/license/sfast/zeronode.svg" alt="MIT License"></a>
   <a href="https://gitter.im/npm-zeronode/Lobby"><img src="https://img.shields.io/gitter/room/nwjs/nw.js.svg" alt="Gitter"></a>
@@ -19,11 +19,33 @@
 
 ---
 
-## What is ZeroNode?
+## What is Zeronode?
 
-**ZeroNode is a lightweight, high-performance framework for building distributed systems in Node.js.** Each Node can simultaneously act as both a server (binding to an address) and a client (connecting to multiple remote nodes), forming a flexible peer-to-peer mesh network.
+**Zeronode is a lightweight, high-performance framework for building distributed systems in Node.js.** Each Node can simultaneously act as both a server (binding to an address) and a client (connecting to multiple remote nodes), forming a flexible peer-to-peer mesh network.
 
-Unlike traditional client-server architectures, ZeroNode provides:
+### Traditional vs Zeronode Architecture
+
+```
+Traditional Client-Server          Zeronode Mesh Network
+─────────────────────────         ────────────────────────
+
+   ┌────────┐                        ┌─────────┐
+   │Client 1│───┐                 ┌──│ Node A  │──┐
+   └────────┘   │                 │  └─────────┘  │
+                │                 │       ↕        │
+   ┌────────┐   │    ┌──────┐    │  ┌─────────┐  │
+   │Client 2│───┼───→│Server│    ├──│ Node B  │──┤
+   └────────┘   │    └──────┘    │  └─────────┘  │
+                │                 │       ↕        │
+   ┌────────┐   │                 │  ┌─────────┐  │
+   │Client 3│───┘                 └──│ Node C  │──┘
+   └────────┘                        └─────────┘
+   
+   One-way only                   Each node is both
+                                  client AND server!
+```
+
+Unlike traditional client-server architectures, Zeronode provides:
 
 - **N:M Connectivity**: One Node can bind as a server while connecting to N other nodes as a client
 - **Automatic Health Management**: Built-in ping from clients to server and server's heartbeat check protocol keeps track of live connections and failures.
@@ -42,7 +64,7 @@ Unlike traditional client-server architectures, ZeroNode provides:
 npm install zeronode
 ```
 
-ZeroNode automatically installs required dependencies for supported platforms.
+Zeronode automatically installs required dependencies for supported platforms.
 
 ### Basic Example
 
@@ -102,11 +124,71 @@ console.log(user)
 // Output: { id: 123, name: 'John Doe', email: 'john@example.com' }
 ```
 
+### Connection Flow Diagram
+
+```
+   Complete Connection & Request Flow
+   ══════════════════════════════════
+   
+   ┌─────────────────────────────────────────────────────────────┐
+   │                        SETUP PHASE                          │
+   └─────────────────────────────────────────────────────────────┘
+   
+   Client                                            Server
+   ──────                                            ──────
+   
+   new Node()                                        new Node()
+      │                                                  │
+      │                                                  ▼
+      │                                              bind('tcp://...')
+      │                                                  │
+      │                                                  ▼
+      │                                           ┌──────────────┐
+      │                                           │  LISTENING   │
+      │                                           └──────────────┘
+      │                                                  
+   connect('tcp://...')                                 
+      │━━━━━━━━━━━━━━━━ TCP Connection ━━━━━━━━━━━━━━━▶│
+      │                                                  │
+      │◀━━━━━━━━━━━━━━━━   Handshake   ━━━━━━━━━━━━━━━━│
+      │                 (exchange IDs & options)         │
+      │                                                  │
+   ┌──────────────┐                              ┌──────────────┐
+   │  CONNECTED   │                              │  CONNECTED   │
+   └──────────────┘                              └──────────────┘
+      │                                                  │
+      ├───────⏱ Periodic Ping ──────────────────────────▶
+      │◀──────⏱ Ping Response ──────────────────────────┤
+      │                                                  │
+   
+   ┌─────────────────────────────────────────────────────────────┐
+   │                     MESSAGING PHASE                         │
+   └─────────────────────────────────────────────────────────────┘
+   
+      │                                                  │
+   request({                                             │
+     to: 'api-server',                                   │
+     event: 'user:get'                                   │
+   })                                                    │
+      │━━━━━━━━━━━━━━━━ Request Envelope ━━━━━━━━━━━━━▶│
+      │                                                  │
+      │                                           onRequest('user:get')
+      │                                                  │
+      │                                            Execute handler
+      │                                                  │
+      │◀━━━━━━━━━━━━━━━ Response Envelope ━━━━━━━━━━━━━┤
+      │              (user data)                         │
+   resolve()                                             │
+      │                                                  │
+      ▼                                                  ▼
+   { id: 123,                                     [waiting for
+     name: 'John' }                                next request]
+```
+
 What does `client.connect()` do?
 - Establishes a transport connection to the server address
 - Performs a handshake to exchange identities and options
 - Starts periodic client→server pings and server-side heartbeat tracking
-- Subscribes to disconnection/failure events
 - Manages automatic reconnection with exponential backoff
 
 ---
@@ -119,6 +201,23 @@ What does `client.connect()` do?
 #### 1. Request/Reply (RPC-Style)
 
 Use when you need a response from the target service.
+
+```
+┌────────────┐                                    ┌────────────┐
+│   Client   │                                    │   Server   │
+└──────┬─────┘                                    └──────┬─────┘
+       │                                                 │
+       │  request('calculate:sum', [1,2,3,4,5])         │
+       │────────────────────────────────────────────────>│
+       │                                                 │
+       │                  Processing...                  │
+       │                  sum = 15                       │
+       │                                                 │
+       │<────────────────────────────────────────────────│
+       │           reply({ result: 15 })                 │
+       │                                                 │
+   ⏱ ~0.3ms latency
+```
 
 ```javascript
 // Server: Register a handler
@@ -146,6 +245,21 @@ console.log(response.result) // 15
 
 Use when you don't need a response (logging, notifications, analytics).
 
+```
+┌────────────┐                                    ┌────────────┐
+│   Client   │                                    │   Server   │
+└──────┬─────┘                                    └──────┬─────┘
+       │                                                 │
+       │  tick('log:info', { message: 'User login' })   │
+       │────────────────────────────────────────────────>│
+       │                                                 │
+       │ ← Returns immediately (non-blocking)            │
+       │                                                 │
+       │                                          Process async
+       │                                          └─> Log to DB
+       │                                          └─> Send to monitoring
+```
+
 ```javascript
 // Server: Register a tick handler
 server.onTick('log:info', ({data}) => {
@@ -172,6 +286,25 @@ client.tick({
 
 Send to multiple nodes simultaneously.
 
+```
+                         ┌─────────────┐
+                         │  Scheduler  │
+                         └──────┬──────┘
+                                │
+              tickAll('config:reload', { version: '2.0' })
+                                │
+          ┌─────────────────────┼─────────────────────┐
+          │                     │                     │
+          ▼                     ▼                     ▼
+    ┌──────────┐          ┌──────────┐          ┌──────────┐
+    │ Worker 1 │          │ Worker 2 │          │ Worker 3 │
+    │role:worker│         │role:worker│         │role:worker│
+    │status:ready│        │status:ready│        │status:ready│
+    └──────────┘          └──────────┘          └──────────┘
+         │                     │                     │
+         └──────> All receive config update <────────┘
+```
+
 ```javascript
 // Send to ALL nodes matching a filter
 await node.tickAll({
@@ -190,6 +323,23 @@ await node.tickAll({
 
 #### Direct Routing (by ID)
 
+```
+┌─────────┐
+│ Gateway │  request({ to: 'user-service-1' })
+└────┬────┘
+     │
+     │ Direct route by ID
+     │
+     ▼
+┌──────────────┐
+│user-service-1│ ← Exact match
+└──────────────┘
+
+┌──────────────┐
+│user-service-2│ ← Not selected
+└──────────────┘
+```
+
 ```javascript
 // Route to a specific node by ID
 const response = await node.request({
@@ -200,6 +350,26 @@ const response = await node.request({
 ```
 
 #### Filter-Based Routing / Load balancing 
+
+```
+┌─────────┐
+│ Gateway │  requestAny({ filter: { role: 'worker', status: 'idle' } })
+└────┬────┘
+     │
+     │ Smart routing picks ONE matching node
+     │ (automatic load balancing)
+     │
+     ├──────────────┬──────────────┐
+     ▼              ▼              ▼
+┌─────────┐    ┌─────────┐    ┌─────────┐
+│Worker 1 │    │Worker 2 │    │Worker 3 │
+│idle ✓   │    │busy ✗   │    │idle ✓   │
+└─────────┘    └─────────┘    └─────────┘
+     ▲                              │
+     │                              │
+     └──── One is selected ─────────┘
+            (round-robin)
+```
 
 ```javascript
 // Route to ANY node matching the filter (automatic load balancing)
@@ -217,7 +387,7 @@ const response = await node.requestAny({
 
 #### Pattern Matching
 
-ZeroNode supports pattern-based handlers using strings or RegExp. With RegExp you can register
+Zeronode supports pattern-based handlers using strings or RegExp. With RegExp you can register
 one handler for a family of events that share a common prefix. The incoming event name is available
 as `envelope.event`, so you can branch on the action and keep code DRY and fast.
 
@@ -242,6 +412,26 @@ server.onRequest(/^api:user:/, ({data, tag }, reply) => {
 ### Node Options and Metadata
 
 Use metadata (Node options) for service discovery and routing.
+
+```
+   Metadata for Smart Routing
+   ═══════════════════════════
+   
+   ┌──────────────────────────────┐
+   │      Worker Node             │
+   ├──────────────────────────────┤
+   │ id: 'worker-12345'           │
+   │                              │
+   │ options: {                   │
+   │   role: 'worker'             │ ◄─── Route by role
+   │   region: 'us-east-1'        │ ◄─── Geographic routing
+   │   version: '2.1.0'           │ ◄─── Version matching
+   │   capacity: 100              │ ◄─── Load-based routing
+   │   features: ['ml', 'image']  │ ◄─── Capability routing
+   │   status: 'ready'            │ ◄─── State-based routing
+   │ }                            │
+   └──────────────────────────────┘
+```
 
 ```javascript
 // Worker node with metadata
@@ -301,7 +491,41 @@ filter: {
 
 ## Middleware System
 
-ZeroNode provides **Express.js-style middleware chains** for composing request handling logic with automatic handler chaining.
+Zeronode provides **Express.js-style middleware chains** for composing request handling logic with automatic handler chaining.
+
+```
+   Middleware Chain Flow
+   ═════════════════════
+   
+   Request arrives
+        │
+        ▼
+   ┌─────────────────────┐
+   │  Logging Middleware │  ← 2-param: auto-continue
+   │  (2 parameters)     │
+   └──────────┬──────────┘
+              │ next() automatically called
+              ▼
+   ┌─────────────────────┐
+   │  Auth Middleware    │  ← 3-param: manual control
+   │  (3 parameters)     │
+   └──────────┬──────────┘
+              │ next() manually called
+              ▼
+   ┌─────────────────────┐
+   │  Business Handler   │  ← Final handler
+   │  Returns data       │
+   └──────────┬──────────┘
+              │
+              ▼
+          Response
+          
+   ╔════════════════════════╗
+   ║  If error occurs:      ║
+   ║  → Error Handler       ║
+   ║    (4 parameters)      ║
+   ╚════════════════════════╝
+```
 
 ```javascript
 // 2-parameter: Auto-continue (logging, metrics)
@@ -336,7 +560,45 @@ server.onRequest('api:user:get', async (envelope, reply) => {
 
 ## Real-World Examples
 
-ZeroNode provides comprehensive production-ready examples for common distributed system patterns:
+Zeronode provides comprehensive production-ready examples for common distributed system patterns:
+
+```
+   Common Architecture Patterns
+   ════════════════════════════
+   
+   API Gateway Pattern              Distributed Logging
+   ───────────────────              ───────────────────
+   
+        ┌─────────┐                     ┌────────┐
+        │ Gateway │                     │Services│
+        └────┬────┘                     └───┬────┘
+             │                               │
+      ┌──────┼──────┐                       │
+      ▼      ▼      ▼                       ▼
+   ┌────┐ ┌────┐ ┌────┐              ┌──────────┐
+   │API1│ │API2│ │API3│              │Log Server│
+   └────┘ └────┘ └────┘              └─────┬────┘
+                                            │
+   Task Queue                        ┌─────┴─────┐
+   ──────────                        ▼           ▼
+                                  [Store]    [Monitor]
+        ┌───────┐
+        │Queuer │
+        └───┬───┘
+            │
+     ┌──────┼──────┐              Microservices Mesh
+     ▼      ▼      ▼              ──────────────────
+  ┌─────┐┌─────┐┌─────┐
+  │Wrkr1││Wrkr2││Wrkr3│          ┌────┐   ┌────┐
+  └─────┘└─────┘└─────┘          │Auth│←─→│User│
+                                  └─┬──┘   └──┬─┘
+                                    │         │
+                                    └────┬────┘
+                                         │
+                                     ┌───┴───┐
+                                     │Payment│
+                                     └───────┘
+```
 
 - **API Gateway** - Load-balanced workers with automatic routing
 - **Distributed Logging** - Centralized log aggregation system
@@ -386,7 +648,7 @@ node.on(NodeEvent.ERROR, ({ code, message }) => {
 
 ### Getting Started
 - **[Quick Start Guide](#quick-start)** - Get up and running in minutes
-- **[Core Concepts](#core-concepts)** - Understanding ZeroNode fundamentals
+- **[Core Concepts](#core-concepts)** - Understanding Zeronode fundamentals
 
 ### Feature Guides
 - **[Middleware System](docs/MIDDLEWARE.md)** - Express-style middleware chains
@@ -405,10 +667,9 @@ node.on(NodeEvent.ERROR, ({ code, message }) => {
 
 ## Performance
 
-ZeroNode delivers **sub-millisecond latency** with high throughput:
+Zeronode delivers **sub-millisecond latency** with high throughput:
 
 - **Latency**: ~0.3ms average request-response time
-- **Throughput**: 2,000+ messages/second per node
 - **Efficiency**: Zero-copy buffer passing, lazy parsing
 
 ```bash
@@ -422,9 +683,7 @@ npm run benchmark
 
 ## Community & Support
 
-- 💬 **[Gitter Chat](https://gitter.im/npm-zeronode/Lobby)** - Community discussions
 - 🐛 **[Issue Tracker](https://github.com/sfast/zeronode/issues)** - Bug reports and feature requests
-- 📖 **[Wiki](https://github.com/sfast/zeronode/wiki)** - Community guides and tutorials
 - 🔧 **[Examples](https://github.com/sfast/zeronode/tree/master/examples)** - Code examples
 
 ---
@@ -443,13 +702,6 @@ npm test
 ---
 
 ## License
-
-[MIT](LICENSE) © [SFast](https://github.com/sfast)
+MIT
 
 ---
-
-<p align="center">
-  <strong>Built for the Node.js community</strong>
-  <br/>
-  <em>If ZeroNode helps your project, please ⭐ star this repository!</em>
-</p>
