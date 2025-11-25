@@ -47,9 +47,9 @@ describe('Node - Advanced Routing & Utilities', () => {
   
   afterEach(async () => {
     // Clean up in reverse order
-    if (nodeC) await nodeC.stop()
-    if (nodeB) await nodeB.stop()
-    if (nodeA) await nodeA.stop()
+    if (nodeC) await nodeC.close()
+    if (nodeB) await nodeB.close()
+    if (nodeA) await nodeA.close()
     
     // Critical: Wait for ports to be released by OS
     await wait(TIMING.PORT_RELEASE)
@@ -288,75 +288,72 @@ describe('Node - Advanced Routing & Utilities', () => {
   })
   
   // ============================================================================
-  // getServerInfo() - Line 843-861
+  // getServerIdByAddress() + getPeerOptions() - Clean API
   // ============================================================================
   
-  describe('getServerInfo() - Server Information', () => {
+  describe('getServerIdByAddress() + getPeerOptions() - Server Information', () => {
     beforeEach(async () => {
       // connect() already waits for handshake - peer info is ready
       await nodeA.connect({ address: `tcp://127.0.0.1:${ports.b}` })
     })
     
-    it('should get server info by address', () => {
-      const info = nodeA.getServerInfo({
-        address: `tcp://127.0.0.1:${ports.b}`
-      })
+    it('should get server ID by address', () => {
+      const serverId = nodeA.getServerIdByAddress(`tcp://127.0.0.1:${ports.b}`)
       
-      expect(info).to.exist
-      expect(info.id).to.equal('node-b')
+      expect(serverId).to.exist
+      expect(serverId).to.equal('node-b')
     })
     
-    it('should get server info by id', () => {
-      const info = nodeA.getServerInfo({ id: 'node-b' })
+    it('should get peer options by ID', () => {
+      const serverId = nodeA.getServerIdByAddress(`tcp://127.0.0.1:${ports.b}`)
+      const options = nodeA.getPeerOptions(serverId)
       
-      expect(info).to.exist
-      expect(info.id).to.equal('node-b')
+      expect(options).to.exist
+      expect(options).to.be.an('object')
     })
     
     it('should return null for nonexistent address', () => {
-      const info = nodeA.getServerInfo({
-        address: 'tcp://127.0.0.1:9999'
-      })
+      const serverId = nodeA.getServerIdByAddress('tcp://127.0.0.1:9999')
       
-      expect(info).to.be.null
+      expect(serverId).to.be.null
     })
     
-    it('should return null for nonexistent id', () => {
-      const info = nodeA.getServerInfo({ id: 'nonexistent' })
+    it('should return null options for nonexistent peer', () => {
+      const options = nodeA.getPeerOptions('nonexistent')
       
-      expect(info).to.be.null
+      expect(options).to.be.null
     })
   })
   
   // ============================================================================
-  // getClientInfo() - Line 866-875
+  // getPeerOptions() - Client Information
   // ============================================================================
   
-  describe('getClientInfo() - Client Information', () => {
+  describe('getPeerOptions() - Client Information', () => {
     beforeEach(async () => {
       // connect() already waits for handshake - peer info is ready
       await nodeB.connect({ address: `tcp://127.0.0.1:${ports.a}` })
     })
     
-    it('should get client info by id', () => {
-      const info = nodeA.getClientInfo({ id: 'node-b' })
+    it('should get client options by id', () => {
+      const options = nodeA.getPeerOptions('node-b')
       
-      expect(info).to.exist
-      expect(info.id).to.equal('node-b')
+      expect(options).to.exist
+      expect(options).to.be.an('object')
     })
     
     it('should return null for nonexistent client', () => {
-      const info = nodeA.getClientInfo({ id: 'nonexistent' })
+      const options = nodeA.getPeerOptions('nonexistent')
       
-      expect(info).to.be.null
+      expect(options).to.be.null
     })
     
     it('should return null when no server exists', () => {
       const nodeD = new Node({ id: 'node-d' })
       
-      const info = nodeD.getClientInfo({ id: 'some-id' })
+      const options = nodeD.getPeerOptions('some-id')
       
-      expect(info).to.be.null
+      expect(options).to.be.null
     })
   })
   
@@ -434,7 +431,7 @@ describe('Node - Additional Coverage', () => {
     // Stop all nodes in reverse order
     for (let i = testNodes.length - 1; i >= 0; i--) {
       if (testNodes[i]) {
-        await testNodes[i].stop().catch(() => {})
+        await testNodes[i].close().catch(() => {})
       }
     }
     

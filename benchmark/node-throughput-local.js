@@ -182,8 +182,8 @@ async function benchmarkMessageSize(messageSize) {
   }
   
   // Cleanup
-  await clientNode.stop()
-  await serverNode.stop()
+  await clientNode.close()
+  await serverNode.close()
   
   // No need for long sleep with local transport (no OS port cleanup)
   await sleep(100)

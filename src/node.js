@@ -10,6 +10,25 @@
  * - Central handler registry (handlers work even if server/clients created later)
  * - Smart routing based on node ID and options
  * - Options sync for dynamic routing
+ * 
+ * STATE MODEL (Single Source of Truth):
+ * - Node tracks JOINED/LEFT state explicitly:
+ *   • joinedPeers: Set<peerId> - All joined (routable) peers
+ *   • peerOptions: Map<peerId, options> - Peer metadata for filtering
+ *   • peerDirection: Map<peerId, 'upstream'|'downstream'> - Connection direction
+ * 
+ * - Routing Guarantee: JOINED = ROUTABLE (strict)
+ *   • Peer in joinedPeers Set → routable ✅
+ *   • Peer NOT in joinedPeers Set → not routable ❌
+ * 
+ * - State Updates:
+ *   • PEER_JOINED event → Add to joinedPeers (from Server/Client events)
+ *   • PEER_LEFT event → Remove from joinedPeers (from Server/Client events)
+ * 
+ * - Benefits:
+ *   • No querying Server/Client during routing (faster)
+ *   • Single source of truth (no state divergence)
+ *   • Clean semantics: in Set = online, not in Set = offline
  */
 
 import winston from 'winston'
@@ -70,12 +89,17 @@ export default class Node extends EventEmitter {
       logger: config.logger || defaultLogger,
       
       // Server (created on bind) - Server manages its own state
-      nodeServer: null,
+      server: null,
       bindAddress: bind || null,  // Cache bind address for async initialization window
       
       // Clients (nodeId → Client) - Clients manage their own state
-      nodeClients: new Map(),
-      nodeClientsAddressIndex: new Map(), // addressHash → nodeId
+      clients: new Map(),
+      clientsAddressIndex: new Map(), // addressHash → nodeId
+      
+      // Peer state tracking (Node's single source of truth for routing)
+      joinedPeers: new Set(),                    // peerId → boolean (JOINED = routable)
+      peerOptions: new Map(),                    // peerId → options (for filtering)
+      peerDirection: new Map(),                  // peerId → 'upstream' | 'downstream'
       
       // Central handler registry (single source of truth)
       handlerRegistry: {
@@ -128,14 +152,40 @@ export default class Node extends EventEmitter {
   }
   
   getAddress () {
-    const { nodeServer, bindAddress } = _private.get(this)
+    const { server, bindAddress } = _private.get(this)
     // Prefer server's address (source of truth), fallback to cached bind address
-    return nodeServer?.getAddress() || bindAddress
+    return server?.getAddress() || bindAddress
   }
   
   getOptions () {
     const { options } = _private.get(this)
     return options
+  }
+  
+  // ============================================================================
+  // PEER STATE TRACKING (Private Helpers)
+  // ============================================================================
+  
+  /**
+   * Add peer to joined state (single operation for consistency)
+   * @private
+   */
+  _addJoinedPeer (peerId, peerOptions, direction) {
+    const _scope = _private.get(this)
+    _scope.joinedPeers.add(peerId)
+    _scope.peerOptions.set(peerId, peerOptions || {})
+    _scope.peerDirection.set(peerId, direction)
+  }
+  
+  /**
+   * Remove peer from joined state (single operation for consistency)
+   * @private
+   */
+  _removeJoinedPeer (peerId) {
+    const _scope = _private.get(this)
+    _scope.joinedPeers.delete(peerId)
+    _scope.peerOptions.delete(peerId)
+    _scope.peerDirection.delete(peerId)
   }
   
   // ============================================================================
@@ -149,7 +199,7 @@ export default class Node extends EventEmitter {
   _initServer (bindAddress) {
     const _scope = _private.get(this)
     
-    if (_scope.nodeServer) {
+    if (_scope.server) {
       _scope.logger.warn(`[Node] Server already initialized`)
       return
     }
@@ -157,7 +207,7 @@ export default class Node extends EventEmitter {
     const { id, options, config } = _scope
     
     // Create server with node identity
-    const nodeServer = new Server({ 
+    const server = new Server({ 
       id,              // ✅ Server uses Node's ID
       bind: bindAddress, 
       options, 
@@ -165,12 +215,12 @@ export default class Node extends EventEmitter {
     })
     
     // Apply all registered handlers to server
-    this._syncHandlersToTarget(nodeServer)
+    this._syncHandlersToTarget(server)
     
     // Transform and forward server events to node
-    this._attachServerEvents(nodeServer)
+    this._attachServerEvents(server)
     
-    _scope.nodeServer = nodeServer
+    _scope.server = server
     
     _scope.logger.info(`[Node] Server initialized: ${id}`)
   }
@@ -191,12 +241,12 @@ export default class Node extends EventEmitter {
     _scope.bindAddress = address
     
     // Initialize server if not already done
-    if (!_scope.nodeServer) {
+    if (!_scope.server) {
       this._initServer(address)
     }
     
     // Server handles idempotency and state management
-    await _scope.nodeServer.bind(address)
+    await _scope.server.bind(address)
     
     // Return the actual bound address (important for port 0)
     return this.getAddress()
@@ -206,13 +256,13 @@ export default class Node extends EventEmitter {
    * Unbind server
    */
   async unbind () {
-    const { nodeServer } = _private.get(this)
+    const { server } = _private.get(this)
     
-    if (!nodeServer) {
+    if (!server) {
       return Promise.resolve()
     }
     
-    return nodeServer.unbind()
+    return server.unbind()
   }
   
   /**
@@ -236,6 +286,9 @@ export default class Node extends EventEmitter {
     
     // Transform: Server.CLIENT_JOINED → Node.PEER_JOINED
     server.on(ServerEvent.CLIENT_JOINED, ({ clientId, clientOptions }) => {
+      // ✅ Track JOINED state in Node (single operation)
+      this._addJoinedPeer(clientId, clientOptions, 'downstream')
+      
       this.emit(NodeEvent.PEER_JOINED, {
         peerId: clientId,
         direction: 'downstream',   // Client connected TO our server
@@ -244,19 +297,14 @@ export default class Node extends EventEmitter {
     })
     
     // Transform: Server.CLIENT_LEFT → Node.PEER_LEFT
-    server.on(ServerEvent.CLIENT_LEFT, ({ clientId }) => {
-      this.emit(NodeEvent.PEER_LEFT, {
-        peerId: clientId,
-        direction: 'downstream'
-      })
-    })
-    
-    // Transform: Server.CLIENT_TIMEOUT → Node.PEER_LEFT (ghost = left)
-    server.on(ServerEvent.CLIENT_TIMEOUT, ({ clientId }) => {
+    server.on(ServerEvent.CLIENT_LEFT, ({ clientId, reason }) => {
+      // ✅ Track LEFT state in Node (single operation)
+      this._removeJoinedPeer(clientId)
+      
       this.emit(NodeEvent.PEER_LEFT, {
         peerId: clientId,
         direction: 'downstream',
-        reason: 'timeout'
+        reason: reason || 'disconnected'  // Pass through reason from server
       })
     })
     
@@ -291,19 +339,26 @@ export default class Node extends EventEmitter {
     }
     
     const _scope = _private.get(this)
-    const { id, options, config, nodeClients, nodeClientsAddressIndex, logger } = _scope
+    const { id, options, config, clients, clientsAddressIndex, logger } = _scope
     
     const addressHash = md5(address)
     
     // Check if already connected
-    if (nodeClientsAddressIndex.has(addressHash)) {
-      const existingNodeId = nodeClientsAddressIndex.get(addressHash)
-      const client = nodeClients.get(existingNodeId)
+    if (clientsAddressIndex.has(addressHash)) {
+      const existingNodeId = clientsAddressIndex.get(addressHash)
+      const client = clients.get(existingNodeId)
       
       logger.info(`[Node] Already connected to ${address}`)
       
-      const serverPeer = client.getServerPeerInfo()
-      return serverPeer ? serverPeer.toJSON() : null
+      const serverId = client.getServerId()
+      if (!serverId) {
+        return null
+      }
+      
+      return {
+        id: serverId,
+        options: _scope.peerOptions.get(serverId) || {}
+      }
     }
     
     // Prepare client config
@@ -330,28 +385,31 @@ export default class Node extends EventEmitter {
     // Connect (Client.connect() waits for handshake to complete)
     await client.connect(address, timeout)
     
-    // Get server peer info (now available after handshake)
-    const serverPeer = client.getServerPeerInfo()
-    if (!serverPeer || !serverPeer.getId()) {
+    // Get server ID (now available after handshake)
+    const serverId = client.getServerId()
+    if (!serverId) {
       throw new NodeError({
         code: NodeErrorCode.ROUTING_FAILED,
-        message: `Failed to get server peer info after connection to ${address}`,
+        message: `Failed to get server ID after connection to ${address}`,
         context: { address }
       })
     }
     
-    const remoteNodeId = serverPeer.getId()
+    const remoteNodeId = serverId
     
     logger.info(`[Node] Connected: ${id} → ${remoteNodeId} (${address})`)
     
     // Store client by remote node's ID
-    nodeClients.set(remoteNodeId, client)
-    nodeClientsAddressIndex.set(addressHash, remoteNodeId)
+    clients.set(remoteNodeId, client)
+    clientsAddressIndex.set(addressHash, remoteNodeId)
     
-    // Emit connection event with server peer info
-    // Note: PEER_JOINED will be emitted when Client.READY fires
+    // Note: PEER_JOINED event will be emitted when ClientEvent.SERVER_JOINED fires (handshake complete)
     
-    return serverPeer.toJSON()
+    // Return server info with options from Node
+    return {
+      id: remoteNodeId,
+      options: _scope.peerOptions.get(remoteNodeId) || {}
+    }
   }
   
   /**
@@ -368,28 +426,28 @@ export default class Node extends EventEmitter {
     }
     
     const _scope = _private.get(this)
-    const { nodeClients, nodeClientsAddressIndex, logger } = _scope
+    const { clients, clientsAddressIndex, logger } = _scope
     
     const addressHash = md5(address)
     
-    if (!nodeClientsAddressIndex.has(addressHash)) {
+    if (!clientsAddressIndex.has(addressHash)) {
       logger.warn(`[Node] Not connected to ${address}`)
       return true
     }
     
-    const nodeId = nodeClientsAddressIndex.get(addressHash)
-    const client = nodeClients.get(nodeId)
+    const nodeId = clientsAddressIndex.get(addressHash)
+    const client = clients.get(nodeId)
     
-    // Remove all event listeners
-    client.removeAllListeners()
-    
-    // Disconnect client
+    // Disconnect client (will emit ClientEvent.NOT_READY or ClientEvent.CLOSED)
     await client.disconnect()
+    
+    // Remove all event listeners AFTER disconnect completes
+    client.removeAllListeners()
     
     // Clean up
     this._removeClientHandlers(client)
-    nodeClients.delete(nodeId)
-    nodeClientsAddressIndex.delete(addressHash)
+    clients.delete(nodeId)
+    clientsAddressIndex.delete(addressHash)
     
     logger.info(`[Node] Disconnected from ${address}`)
     
@@ -407,19 +465,19 @@ export default class Node extends EventEmitter {
     // Also listen to structured client error event
     client.on(ClientEvent.ERROR, (err) => {
       logger.error('[Node] Client error:', err)
-      let serverId = null
-      try {
-        serverId = client.getServerPeerInfo?.()?.getId?.() || null
-      } catch {}
+      const serverId = client.getServerId()
       this.emit(NodeEvent.ERROR, {
         source: 'client',
-        serverId,
+        serverId: serverId || null,
         error: err
       })
     })
     
-    // Transform: Client.READY → Node.PEER_JOINED
-    client.on(ClientEvent.READY, ({ serverId, serverOptions }) => {
+    // Transform: Client.SERVER_JOINED → Node.PEER_JOINED (handshake complete, peer identified)
+    client.on(ClientEvent.SERVER_JOINED, ({ serverId, serverOptions }) => {
+      // ✅ Track JOINED state in Node (single operation)
+      this._addJoinedPeer(serverId, serverOptions, 'upstream')
+      
       this.emit(NodeEvent.PEER_JOINED, {
         peerId: serverId,
         direction: 'upstream',     // We connected TO this server
@@ -427,34 +485,47 @@ export default class Node extends EventEmitter {
       })
     })
     
-    // Transform: Client.DISCONNECTED → Node.PEER_LEFT
-    client.on(ClientEvent.DISCONNECTED, ({ serverId }) => {
+    // Transform: Client.NOT_READY → Node.PEER_LEFT (transport lost readiness)
+    client.on(ClientEvent.NOT_READY, ({ serverId, reason }) => {
+      // ✅ Track LEFT state in Node (single operation)
+      this._removeJoinedPeer(serverId)
+      
       this.emit(NodeEvent.PEER_LEFT, {
         peerId: serverId,
         direction: 'upstream',
-        reason: 'disconnected'
+        reason: reason || 'not_ready'
       })
+      // Note: Don't cleanup client here - transport might recover
     })
     
-    // Transform: Client.FAILED → Node.PEER_LEFT
-    client.on(ClientEvent.FAILED, ({ serverId }) => {
+    // Transform: Client.CLOSED → Node.PEER_LEFT (transport permanently closed)
+    client.on(ClientEvent.CLOSED, ({ serverId }) => {
+      // ✅ Track LEFT state in Node (single operation)
+      this._removeJoinedPeer(serverId)
+      
       this.emit(NodeEvent.PEER_LEFT, {
         peerId: serverId,
         direction: 'upstream',
-        reason: 'failed'
+        reason: 'closed'
       })
+      
+      // NOTE: Don't auto-cleanup here - client might be needed for reconnection
+      // Only cleanup on explicit disconnect() call
     })
     
-    // Transform: Client.STOPPED → Node.PEER_LEFT
-    client.on(ClientEvent.STOPPED, () => {
-      const serverPeer = client.getServerPeerInfo()
-      if (serverPeer) {
+    // Transform: Client.SERVER_LEFT → Node.PEER_LEFT (server shutdown/stopped)
+    client.on(ClientEvent.SERVER_LEFT, ({ serverId }) => {
+      // ✅ Track LEFT state in Node (single operation)
+      this._removeJoinedPeer(serverId)
+      
         this.emit(NodeEvent.PEER_LEFT, {
-          peerId: serverPeer.getId(),
+        peerId: serverId,
           direction: 'upstream',
-          reason: 'stopped'
+        reason: 'server_left'
         })
-      }
+      
+      // NOTE: Don't auto-cleanup here - client might be needed for reconnection
+      // Only cleanup on explicit disconnect() call
     })
   }
   
@@ -467,18 +538,18 @@ export default class Node extends EventEmitter {
    * Handlers are stored centrally and applied to all servers/clients
    */
   onRequest (pattern, handler) {
-    const { handlerRegistry, nodeServer, nodeClients, logger } = _private.get(this)
+    const { handlerRegistry, server, clients, logger } = _private.get(this)
     
     // Store in central registry
     handlerRegistry.request.on(pattern, handler)
     
     // Apply to server if it exists
-    if (nodeServer) {
-      nodeServer.onRequest(pattern, handler)
+    if (server) {
+      server.onRequest(pattern, handler)
     }
     
     // Apply to all existing clients
-    nodeClients.forEach(client => {
+    clients.forEach(client => {
       client.onRequest(pattern, handler)
     })
   }
@@ -487,7 +558,7 @@ export default class Node extends EventEmitter {
    * Unregister request handler
    */
   offRequest (pattern, handler) {
-    const { handlerRegistry, nodeServer, nodeClients } = _private.get(this)
+    const { handlerRegistry, server, clients } = _private.get(this)
     
     // Remove from registry
     if (handler) {
@@ -497,12 +568,12 @@ export default class Node extends EventEmitter {
     }
     
     // Remove from server
-    if (nodeServer) {
-      nodeServer.offRequest(pattern, handler)
+    if (server) {
+      server.offRequest(pattern, handler)
     }
     
     // Remove from clients
-    nodeClients.forEach(client => {
+    clients.forEach(client => {
       client.offRequest(pattern, handler)
     })
   }
@@ -511,18 +582,18 @@ export default class Node extends EventEmitter {
    * Register tick handler
    */
   onTick (pattern, handler) {
-    const { handlerRegistry, nodeServer, nodeClients } = _private.get(this)
+    const { handlerRegistry, server, clients } = _private.get(this)
     
     // Store in central registry
     handlerRegistry.tick.on(pattern, handler)
     
     // Apply to server if it exists
-    if (nodeServer) {
-      nodeServer.onTick(pattern, handler)
+    if (server) {
+      server.onTick(pattern, handler)
     }
     
     // Apply to all existing clients
-    nodeClients.forEach(client => {
+    clients.forEach(client => {
       client.onTick(pattern, handler)
     })
   }
@@ -531,7 +602,7 @@ export default class Node extends EventEmitter {
    * Unregister tick handler
    */
   offTick (pattern, handler) {
-    const { handlerRegistry, nodeServer, nodeClients } = _private.get(this)
+    const { handlerRegistry, server, clients } = _private.get(this)
     
     // Remove from registry
     if (handler) {
@@ -541,12 +612,12 @@ export default class Node extends EventEmitter {
     }
     
     // Remove from server
-    if (nodeServer) {
-      nodeServer.offTick(pattern, handler)
+    if (server) {
+      server.offTick(pattern, handler)
     }
     
     // Remove from clients
-    nodeClients.forEach(client => {
+    clients.forEach(client => {
       client.offTick(pattern, handler)
     })
   }
@@ -618,26 +689,29 @@ export default class Node extends EventEmitter {
    * @returns {{ type: 'server'|'client', target: Server|Client, targetId?: string } | null}
    */
   _findRoute (nodeId) {
-    const { nodeServer, nodeClients } = _private.get(this)
+    const { server, clients, joinedPeers, peerDirection } = _private.get(this)
     
-    // Check if node is connected to our server (downstream)
-    if (nodeServer) {
-      const clientPeer = nodeServer.getClientPeerInfo(nodeId)
-      if (clientPeer && clientPeer.isOnline()) {
+    // ✅ Check Node's joined state (single source of truth)
+    if (!joinedPeers.has(nodeId)) {
+      return null  // Not joined = not routable
+    }
+    
+    // Peer is joined - determine route based on direction
+    const direction = peerDirection.get(nodeId)
+    
+    if (direction === 'downstream') {
+      // Client connected TO our server
+      if (server && server.isOnline()) {
         return { 
           type: 'server', 
-          target: nodeServer, 
+          target: server, 
           targetId: nodeId 
         }
       }
-    }
-    
-    // Check if we're connected to this node (upstream)
-    if (nodeClients.has(nodeId)) {
-      const client = nodeClients.get(nodeId)
-      const serverPeer = client.getServerPeerInfo()
-      
-      if (serverPeer && serverPeer.isOnline()) {
+    } else if (direction === 'upstream') {
+      // We connected TO this server
+      if (clients.has(nodeId)) {
+        const client = clients.get(nodeId)
         return { 
           type: 'client', 
           target: client 
@@ -653,37 +727,26 @@ export default class Node extends EventEmitter {
    * @private
    */
   _getFilteredNodes ({ options, predicate, up = true, down = true } = {}) {
-    const { nodeServer, nodeClients } = _private.get(this)
+    const { joinedPeers, peerOptions, peerDirection } = _private.get(this)
     const nodes = new Set()
     
     // Build predicate function
     const pred = predicate || NodeUtils.optionsPredicateBuilder(options)
     
-    // Downstream: Clients connected to our server
-    if (down && nodeServer) {
-      const allClientPeers = nodeServer.getAllClientPeers()
-      allClientPeers.forEach(clientPeer => {
-        if (clientPeer && clientPeer.isOnline()) {
-          // Predicate receives peer.options
-          if (pred(clientPeer.getOptions())) {
-            nodes.add(clientPeer.getId())
-          }
-        }
-      })
-    }
-    
-    // Upstream: Servers we're connected to
-    if (up) {
-      nodeClients.forEach((client, nodeId) => {
-        const serverPeer = client.getServerPeerInfo()
-        if (serverPeer && serverPeer.isOnline()) {
-          // Predicate receives peer.options
-          if (pred(serverPeer.getOptions())) {
-            nodes.add(nodeId)
-          }
-        }
-      })
-    }
+    // ✅ Iterate through ALL joined peers (single source of truth)
+    joinedPeers.forEach(peerId => {
+      const direction = peerDirection.get(peerId)
+      const peerOpts = peerOptions.get(peerId) || {}
+      
+      // Filter by direction
+      if (direction === 'downstream' && !down) return
+      if (direction === 'upstream' && !up) return
+      
+      // Filter by predicate
+      if (pred(peerOpts)) {
+        nodes.add(peerId)
+      }
+    })
     
     return Array.from(nodes)
   }
@@ -910,44 +973,41 @@ export default class Node extends EventEmitter {
   }
   
   // ============================================================================
-  // PEER INFO (Compatibility)
+  // PEER INFO
   // ============================================================================
   
   /**
-   * Get server info by address or ID
+   * Get peer options by ID
+   * @param {string} peerId - Peer ID
+   * @returns {object|null} Peer options or null if peer not joined
    */
-  getServerInfo ({ address, id }) {
-    const { nodeClients, nodeClientsAddressIndex } = _private.get(this)
+  getPeerOptions (peerId) {
+    const { peerOptions } = _private.get(this)
+    return peerOptions.get(peerId) || null
+  }
+  
+  /**
+   * Get server ID by connection address
+   * @param {string} address - Server address (e.g., 'tcp://127.0.0.1:5000')
+   * @returns {string|null} Server ID or null if not connected
+   */
+  getServerIdByAddress (address) {
+    const { clients, clientsAddressIndex } = _private.get(this)
     
-    if (!id && address) {
-      const addressHash = md5(address)
-      if (!nodeClientsAddressIndex.has(addressHash)) {
-        return null
-      }
-      id = nodeClientsAddressIndex.get(addressHash)
+    const addressHash = md5(address)
+    if (!clientsAddressIndex.has(addressHash)) {
+      return null
     }
     
-    const client = nodeClients.get(id)
+    const nodeId = clientsAddressIndex.get(addressHash)
+    const client = clients.get(nodeId)
+    
     if (!client) {
       return null
     }
     
-    const serverPeer = client.getServerPeerInfo()
-    return serverPeer ? serverPeer.toJSON() : null
-  }
-  
-  /**
-   * Get client info by ID
-   */
-  getClientInfo ({ id }) {
-    const { nodeServer } = _private.get(this)
-    
-    if (!nodeServer) {
-      return null
-    }
-    
-    const client = nodeServer.getClientPeerInfo(id)
-    return client ? client.toJSON() : null
+    // Return the actual server ID (not the node ID key)
+    return client.getServerId()
   }
   
   // ============================================================================
@@ -955,25 +1015,34 @@ export default class Node extends EventEmitter {
   // ============================================================================
   
   /**
-   * Stop node (close server and all clients)
+   * Close the node and all its connections.
+   * 
+   * This permanently closes:
+   * - The server (if bound)
+   * - All client connections
+   * - All underlying transport sockets
+   * 
+   * After closing, the node cannot be reused.
+   * Pending requests will be rejected.
+   * All handlers will be removed.
    */
-  async stop () {
-    const { nodeServer, nodeClients, logger } = _private.get(this)
+  async close () {
+    const { server, clients, logger } = _private.get(this)
     const promises = []
     
-    // Stop server
-    if (nodeServer && nodeServer.isOnline()) {
-      promises.push(nodeServer.close())
+    // Close server
+    if (server && server.isOnline()) {
+      promises.push(server.close())
     }
     
-    // Stop all clients
-    nodeClients.forEach(client => {
+    // Close all clients
+    clients.forEach(client => {
       promises.push(client.close())
     })
     
     await Promise.all(promises)
     
-    logger.info('[Node] Stopped')
+    logger.info('[Node] Closed')
   }
 }
 

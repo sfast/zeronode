@@ -71,7 +71,10 @@ describe('Client ↔ Server Integration', function () {
         console.log('[CLIENT] TRANSPORT_READY event')
       })
       client.on(ClientEvent.READY, ({ serverId }) => {
-        console.log(`[CLIENT] CLIENT_READY event, serverId: ${serverId}`)
+        console.log(`[CLIENT] READY event (transport ready), serverId: ${serverId}`)
+      })
+      client.on(ClientEvent.SERVER_JOINED, ({ serverId }) => {
+        console.log(`[CLIENT] SERVER_JOINED event (handshake complete), serverId: ${serverId}`)
       })
       client.on('transport:ready', () => {
         console.log('[CLIENT] transport:ready event')
@@ -92,20 +95,13 @@ describe('Client ↔ Server Integration', function () {
       // Client may be online before handshake completes; use isOnline for transport
       expect(client.isOnline()).to.be.true
       
-      // Verify server received client
-      const clientPeer = server.getClientPeerInfo('client-1')
-      expect(clientPeer).to.not.be.null
-      expect(clientPeer.getOptions()).to.deep.equal({
-        role: 'worker',
-        region: 'us-east'
-      })
+      // Verify server received client (using clean API)
+      expect(server.hasClient('client-1')).to.be.true
       
-      // Verify client received server options
-      const serverPeer = client.getServerPeerInfo()
-      expect(serverPeer.getOptions()).to.deep.equal({
-        role: 'server',
-        version: '1.0'
-      })
+      // Verify client received server (using clean API)
+      const serverId = client.getServerId()
+      expect(serverId).to.not.be.null
+      expect(serverId).to.equal('test-server')
       
       console.log('[TEST] Disconnecting client...')
       await client.disconnect()
@@ -145,10 +141,10 @@ describe('Client ↔ Server Integration', function () {
       })
     })
 
-    it('should emit CLIENT_READY event on client', (done) => {
+    it('should emit SERVER_JOINED event on client', (done) => {
       const client = new Client({ id: 'client-1' })
       
-      client.once(ClientEvent.READY, ({ serverId }) => {
+      client.once(ClientEvent.SERVER_JOINED, ({ serverId }) => {
         expect(serverId).to.equal('test-server')
         done()
       })
@@ -460,11 +456,11 @@ describe('Client ↔ Server Integration', function () {
         console.log('[BROADCAST] Sending broadcast to all clients')
         // Broadcast requires sending to each client explicitly
         // Router sockets cannot broadcast without specifying recipients
-        const clientPeers = server.getAllClientPeers()
-        console.log(`[BROADCAST] Server has ${clientPeers.length} connected clients`)
-        clientPeers.forEach(peer => {
+        const clientIds = server.getAllClientIds()
+        console.log(`[BROADCAST] Server has ${clientIds.length} connected clients`)
+        clientIds.forEach(clientId => {
           server.tick({
-            to: peer.getId(),
+            to: clientId,
             event: 'broadcast:message',
             data: { text: 'Hello everyone!' }
           })
@@ -473,12 +469,11 @@ describe('Client ↔ Server Integration', function () {
     })
 
     it('should track multiple clients', () => {
-      const clients = server.getAllClientPeers()
+      const clientIds = server.getAllClientIds()
       
-      expect(clients).to.be.an('array')
-      expect(clients.length).to.equal(3)
+      expect(clientIds).to.be.an('array')
+      expect(clientIds.length).to.equal(3)
       
-      const clientIds = clients.map(c => c.getId())
       expect(clientIds).to.include('client-1')
       expect(clientIds).to.include('client-2')
       expect(clientIds).to.include('client-3')

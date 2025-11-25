@@ -19,8 +19,8 @@ describe('Node - Middleware Chain (Node-to-Node)', () => {
   }
 
   afterEach(async () => {
-    if (nodeA) await nodeA.stop()
-    if (nodeB) await nodeB.stop()
+    if (nodeA) await nodeA.close()
+    if (nodeB) await nodeB.close()
     nodeA = null
     nodeB = null
   })

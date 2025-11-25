@@ -245,17 +245,20 @@ export enum NodeEvent {
  * Client-level events
  */
 export enum ClientEvent {
-  /** Client handshake complete */
+  /** Transport ready (can send/receive bytes) */
   READY = 'client:ready',
   
-  /** Client disconnected from server */
-  DISCONNECTED = 'client:disconnected',
+  /** Transport reported NOT_READY (lost connection, may recover) */
+  NOT_READY = 'client:not_ready',
   
-  /** Client connection failed */
-  FAILED = 'client:failed',
+  /** Transport permanently closed */
+  CLOSED = 'client:closed',
   
-  /** Client explicitly stopped */
-  STOPPED = 'client:stopped',
+  /** Server joined (handshake complete, session established) */
+  SERVER_JOINED = 'client:server_joined',
+  
+  /** Server left (shutdown, disconnect, timeout) */
+  SERVER_LEFT = 'client:server_left',
   
   /** Client error */
   ERROR = 'client:error'
@@ -278,10 +281,7 @@ export enum ServerEvent {
   CLIENT_JOINED = 'server:client_joined',
   
   /** Client left */
-  CLIENT_LEFT = 'server:client_left',
-  
-  /** Client timeout */
-  CLIENT_TIMEOUT = 'server:client_timeout'
+  CLIENT_LEFT = 'server:client_left'
 }
 
 /**
@@ -590,18 +590,18 @@ export default class Node extends EventEmitter {
   }): string[];
   
   /**
-   * Get server info by address or ID
-   * @param params - Search parameters
-   * @returns Server peer info or null
+   * Get peer options by ID
+   * @param peerId - Peer ID
+   * @returns Peer options or null if peer not joined
    */
-  getServerInfo(params: { address?: string; id?: string }): any | null;
+  getPeerOptions(peerId: string): any | null;
   
   /**
-   * Get client info by ID
-   * @param params - Client ID
-   * @returns Client peer info or null
+   * Get server ID by connection address
+   * @param address - Server address (e.g., 'tcp://127.0.0.1:5000')
+   * @returns Server ID or null if not connected
    */
-  getClientInfo(params: { id: string }): any | null;
+  getServerIdByAddress(address: string): string | null;
   
   // ============================================================================
   // Connection Management
@@ -631,9 +631,18 @@ export default class Node extends EventEmitter {
   disconnect(address: string): Promise<void>;
   
   /**
-   * Stop node (unbind + disconnect all)
+   * Close the node and all its connections.
+   * 
+   * This permanently closes:
+   * - The server (if bound)
+   * - All client connections
+   * - All underlying transport sockets
+   * 
+   * After closing, the node cannot be reused.
+   * Pending requests will be rejected.
+   * All handlers will be removed.
    */
-  stop(): Promise<void>;
+  close(): Promise<void>;
   
   // ============================================================================
   // Handler Registration

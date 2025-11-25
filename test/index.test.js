@@ -89,9 +89,11 @@ describe('Public API (index.js)', () => {
     it('should export ClientEvent', () => {
       expect(ClientEvent).to.be.an('object')
       expect(ClientEvent.READY).to.be.a('string')
-      expect(ClientEvent.DISCONNECTED).to.be.a('string')
-      expect(ClientEvent.FAILED).to.be.a('string')
-      expect(ClientEvent.STOPPED).to.be.a('string')
+      expect(ClientEvent.NOT_READY).to.be.a('string')
+      expect(ClientEvent.CLOSED).to.be.a('string')
+      expect(ClientEvent.SERVER_JOINED).to.be.a('string')
+      expect(ClientEvent.SERVER_LEFT).to.be.a('string')
+      expect(ClientEvent.ERROR).to.be.a('string')
     })
 
     it('should export ProtocolEvent', () => {
@@ -216,7 +218,7 @@ describe('Public API (index.js)', () => {
       expect(node).to.be.instanceof(Node)
       expect(node.getId()).to.equal('smoke-test')
       
-      await node.stop()
+      await node.close()
     })
 
     it('should create a working Server instance', async () => {

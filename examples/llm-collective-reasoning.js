@@ -347,8 +347,8 @@ async function runCollectiveReasoning(query, tokenBudget = 10000) {
   console.log('━'.repeat(60))
 
   // Cleanup
-  await orchestrator.stop()
-  await Promise.all(nodes.map(({ node }) => node.stop()))
+  await orchestrator.close()
+  await Promise.all(nodes.map(({ node }) => node.close()))
 }
 
 // ============================================================================

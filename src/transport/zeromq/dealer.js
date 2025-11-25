@@ -126,19 +126,16 @@ export default class DealerSocket extends Socket {
    * 
    * Order is critical:
    * 1. Disconnect from ZeroMQ router
-   * 2. Remove event listeners
-   * 3. Set offline state
+   * 2. Emit NOT_READY explicitly (ZeroMQ may not fire native 'disconnect')
+   * 3. Detach event listeners
+   * 4. Set offline state
    */
   async disconnect () {
     let _scope = _private.get(this)
     let { socket, routerAddress } = _scope
 
-    // 1. Detach only ZMQ socket event listeners to prevent duplicate low-level events
-    this.detachSocketEventListeners()
-    _scope.eventsAttached = false
-
     try {
-      // 2. Disconnect from current endpoint (idempotent)
+      // 1. Disconnect from current endpoint (idempotent)
       if (routerAddress) {
         socket.disconnect(routerAddress)
       }
@@ -147,8 +144,19 @@ export default class DealerSocket extends Socket {
       // ignore disconnect errors; socket may already be disconnected
     }
 
-    // 3. Mark offline
+    // 2. Mark offline
     this.setOffline()
+
+    // 3. Explicitly emit NOT_READY 
+    // (ZeroMQ doesn't reliably fire native 'disconnect' event on manual disconnect)
+    this.emit(TransportEvent.NOT_READY)
+
+    // 4. Wait a tick for event to propagate
+    await new Promise(resolve => setImmediate(resolve))
+
+    // 5. Now safe to detach socket event listeners
+    this.detachSocketEventListeners()
+    _scope.eventsAttached = false
   }
 
 

@@ -5,13 +5,18 @@
  * - Extends Protocol (inherits request/response, tick, handler management)
  * - Uses RouterSocket for transport (passed to Protocol)
  * - ONLY listens to ProtocolEvent (NEVER SocketEvent)
- * - Manages multiple client peers
+ * - Tracks client activity (clientLastSeen Map for health checks)
  * - Implements health check mechanism
  * - Handles application-level events
+ * 
+ * STATE MODEL:
+ * - Client is "joined" when: clientLastSeen.has(clientId) (in map)
+ * - Client is "left" when: !clientLastSeen.has(clientId) (not in map)
+ * - Health check removes clients on timeout (automatic cleanup)
+ * - Options are NOT stored (passed through to Node via events)
  */
 
 import Globals from '../globals.js'
-import PeerInfo from './peer.js'
 import Protocol, { ProtocolEvent, ProtocolSystemEvent } from './protocol.js'
 import { Transport } from '../transport/transport.js'
 
@@ -22,9 +27,8 @@ export const ServerEvent = {
   READY: 'server:ready',               // Server is ready to accept clients
   NOT_READY: 'server:not_ready',       // Server transport not ready
   CLOSED: 'server:closed',             // Server closed
-  CLIENT_JOINED: 'server:client_joined',   // New client connected & authenticated
-  CLIENT_LEFT: 'server:client_left',       // Client disconnected
-  CLIENT_TIMEOUT: 'server:client_timeout'  // Client timed out (ghost)
+  CLIENT_JOINED: 'server:client_joined',   // Client connected & authenticated
+  CLIENT_LEFT: 'server:client_left'        // Client left (graceful, timeout, or failed)
 }
 
 let _private = new WeakMap()
@@ -42,7 +46,7 @@ export default class Server extends Protocol {
 
     let _scope = {
       bindAddress: null,
-      clientPeers: new Map(),      // clientId → PeerInfo
+      clientLastSeen: new Map(),    // clientId → timestamp (for health checks)
       healthCheckInterval: null,
       options  // ✅ Store node options for handshake responses
     }
@@ -94,42 +98,28 @@ export default class Server extends Protocol {
     // ============================================================================
     // HANDSHAKE - Client discovery via messages
     // ============================================================================
-    // New explicit name
     this.onTick(ProtocolSystemEvent.HANDSHAKE_INIT_FROM_CLIENT, (envelope) => {
-      let { clientPeers } = _private.get(this)
+      let { clientLastSeen } = _private.get(this)
       
       const clientId = envelope.owner
-      const clientOptions = envelope.data
-      let peerInfo = clientPeers.get(clientId)
+      const clientOptions = envelope.data  // ✅ Get from envelope, don't store
       
-      if (!peerInfo) {
-        // NEW CLIENT - Discover peer from handshake message
-        peerInfo = new PeerInfo({ 
-          id: clientId,
-          options: clientOptions  // Store any client metadata
-        })
-        peerInfo.setState('CONNECTED')
-        clientPeers.set(clientId, peerInfo)
-        
-        // Emit peer joined event
-        this.emit(ServerEvent.CLIENT_JOINED, { 
-          clientId,
-          clientOptions
-        })
-      } else {
-        // EXISTING CLIENT - Reconnected, update state
-        peerInfo.setState('HEALTHY')
-      }
+      // Mark as seen (this IS the "joined" state)
+      clientLastSeen.set(clientId, Date.now())
+      
+      // ✅ Emit CLIENT_JOINED with options (pass through to Node)
+      this.emit(ServerEvent.CLIENT_JOINED, { 
+        clientId,
+        clientOptions: clientOptions || {}
+      })
       
       // Send welcome response (complete handshake) with server options
-      // Note: serverId is automatically in envelope.owner
-      const { options } = _private.get(this)
+      const { options: serverOptions } = _private.get(this)
       
-      // ✅ Use internal API to send system event (handshake response)
       this._sendSystemTick({
         to: clientId,
-        event: ProtocolSystemEvent.HANDSHAKE_ACK_FROM_SERVER,  // '_system:handshake_ack_from_server'
-        data: options || {}
+        event: ProtocolSystemEvent.HANDSHAKE_ACK_FROM_SERVER,
+        data: serverOptions || {}
       })
     })
     
@@ -137,34 +127,30 @@ export default class Server extends Protocol {
     // HEARTBEAT - Client ping
     // ============================================================================
     this.onTick(ProtocolSystemEvent.CLIENT_PING, (envelope) => {
-      let { clientPeers } = _private.get(this)
+      let { clientLastSeen } = _private.get(this)
       
       const clientId = envelope.owner
-      const peerInfo = clientPeers.get(clientId)
       
-      if (peerInfo) {
-        peerInfo.updateLastSeen()
-        peerInfo.setState('HEALTHY')
-      }
+      // Update last seen timestamp
+      clientLastSeen.set(clientId, Date.now())
     })
     
     // ============================================================================
     // CLIENT LIFECYCLE
     // ============================================================================
     this.onTick(ProtocolSystemEvent.CLIENT_STOP, (envelope) => {
-      let { clientPeers } = _private.get(this)
+      let { clientLastSeen } = _private.get(this)
       
       const clientId = envelope.owner
-      const peerInfo = clientPeers.get(clientId)
       
-      if (peerInfo) {
-        peerInfo.setState('STOPPED')
-      }
+      // Remove client data (this IS the state change - client is now "left")
+      clientLastSeen.delete(clientId)
       
-      // ✅ Graceful disconnect: Remove immediately (client explicitly stopped)
-      clientPeers.delete(clientId)
-      
-      this.emit(ServerEvent.CLIENT_LEFT, { clientId })
+      this.emit(ServerEvent.CLIENT_LEFT, { 
+        clientId,
+        // dont change the name of reason to CLIENT_STOP - it is used by client to identify the reason for the disconnect
+        reason: "CLIENT_STOP"
+      })
     })
   }
 
@@ -195,18 +181,27 @@ export default class Server extends Protocol {
     
     // Notify all clients individually with system event before unbind
     try {
-      let { clientPeers } = _private.get(this)
-      for (const clientId of clientPeers.keys()) {
+      let { clientLastSeen } = _private.get(this)
+      for (const clientId of clientLastSeen.keys()) {
         this._sendSystemTick({
           to: clientId,
           event: ProtocolSystemEvent.SERVER_STOP,
           data: { serverId: this.getId() }
         })
       }
+      
+      // ⏱️ Wait a tick to ensure messages are delivered before unbinding
+      // This prevents ZeroMQ pipe state assertion failures
+      await new Promise(resolve => setImmediate(resolve))
     } catch (err) {
       this.debug && this.logger?.error('Error sending server stop: ', err)
     }
     
+    // Clear state
+    let _scope = _private.get(this)
+    _scope.clientLastSeen.clear()
+    
+    // unbind from transport and detach listeners
     await super.unbind()
   }
   
@@ -220,32 +215,50 @@ export default class Server extends Protocol {
     return socket.getAddress()
   }
   
-  getClientPeerInfo (clientId) {
-    let { clientPeers } = _private.get(this)
-    return clientPeers.get(clientId)
-  }
-  
-  getAllClientPeers () {
-    let { clientPeers } = _private.get(this)
-    return Array.from(clientPeers.values())
-  }
-  
-  getConnectedClientCount () {
-    return this.getAllClientPeers().filter(peer => 
-      peer.getState() === 'CONNECTED' || peer.getState() === 'HEALTHY'
-    ).length
+  /**
+   * Check if client is joined (has active session)
+   * @param {string} clientId - Client ID to check
+   * @returns {boolean} True if client is joined
+   */
+  hasClient (clientId) {
+    let { clientLastSeen } = _private.get(this)
+    return clientLastSeen.has(clientId)
   }
   
   /**
-   * Remove a client from the server's peer map
+   * Get all joined client IDs
+   * @returns {string[]} Array of client IDs
+   */
+  getAllClientIds () {
+    let { clientLastSeen } = _private.get(this)
+    return Array.from(clientLastSeen.keys())
+  }
+  
+  /**
+   * Get client's last seen timestamp
+   * @param {string} clientId - Client ID
+   * @returns {number|null} Timestamp or null if not found
+   */
+  getClientLastSeen (clientId) {
+    let { clientLastSeen } = _private.get(this)
+    return clientLastSeen.get(clientId) || null
+  }
+  
+  getConnectedClientCount () {
+    let { clientLastSeen } = _private.get(this)
+    return clientLastSeen.size
+  }
+  
+  /**
+   * Remove a client from the server's maps
    * Useful for cleaning up disconnected clients from memory
    * 
    * @param {string} clientId - The client ID to remove
    * @returns {boolean} - True if client was removed, false if not found
    */
   removeClient (clientId) {
-    let { clientPeers } = _private.get(this)
-    return clientPeers.delete(clientId)
+    let { clientLastSeen } = _private.get(this)
+    return clientLastSeen.delete(clientId)
   }
   
   // ============================================================================
@@ -279,42 +292,21 @@ export default class Server extends Protocol {
   }
   
   _checkClientHealth (ghostThreshold) {
-    let { clientPeers } = _private.get(this)
+    let { clientLastSeen } = _private.get(this)
     const now = Date.now()
     
-    clientPeers.forEach((peerInfo, clientId) => {
-      const state = peerInfo.getState()
-      
-      // ✅ Skip clients that are already in terminal states
-      if (state === 'STOPPED' || state === 'FAILED') {
-        return
-      }
-      
-      const timeSinceLastSeen = now - peerInfo.getLastSeen()
+    clientLastSeen.forEach((lastSeen, clientId) => {
+      const timeSinceLastSeen = now - lastSeen
       
       if (timeSinceLastSeen > ghostThreshold) {
-        if (state === 'GHOST') {
-          // ✅ Second timeout: Already GHOST, now mark as FAILED and remove
-          peerInfo.setState('FAILED')
+        // Client timeout - remove and emit LEFT
+        clientLastSeen.delete(clientId)
           
-          this.emit(ServerEvent.CLIENT_TIMEOUT, { 
+        // Emit CLIENT_LEFT - client is gone
+          this.emit(ServerEvent.CLIENT_LEFT, { 
             clientId, 
-            lastSeen: peerInfo.getLastSeen(),
-            timeSinceLastSeen,
-            final: true  // ✅ Indicate this is the final timeout
+            reason: 'TIMEOUT'
           })
-          
-        } else {
-          // ✅ First timeout: Mark as GHOST (client may recover)
-          peerInfo.setState('GHOST')
-          
-          this.emit(ServerEvent.CLIENT_TIMEOUT, { 
-            clientId, 
-            lastSeen: peerInfo.getLastSeen(),
-            timeSinceLastSeen,
-            final: false  // ✅ Client may still recover
-          })
-        }
       }
     })
   }

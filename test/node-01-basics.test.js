@@ -46,7 +46,7 @@ describe('Node - Orchestration Layer', () => {
     
     afterEach(async () => {
       if (node) {
-        await node.stop()
+        await node.close()
         node = null
       }
     })
@@ -97,7 +97,7 @@ describe('Node - Orchestration Layer', () => {
     
     afterEach(async () => {
       if (node) {
-        await node.stop()
+        await node.close()
         node = null
       }
     })
@@ -165,8 +165,8 @@ describe('Node - Orchestration Layer', () => {
         expect(handlerCalled).to.be.false // Not called yet
         
       } finally {
-        await node1.stop()
-        await node2.stop()
+        await node1.close()
+        await node2.close()
       }
     })
     
@@ -204,7 +204,7 @@ describe('Node - Orchestration Layer', () => {
     
     afterEach(async () => {
       if (node) {
-        await node.stop()
+        await node.close()
         node = null
       }
     })
@@ -274,11 +274,11 @@ describe('Node - Orchestration Layer', () => {
     
     afterEach(async () => {
       if (node1) {
-        await node1.stop()
+        await node1.close()
         node1 = null
       }
       if (node2) {
-        await node2.stop()
+        await node2.close()
         node2 = null
       }
     })
@@ -346,6 +346,121 @@ describe('Node - Orchestration Layer', () => {
         expect(err.code).to.equal(NodeErrorCode.ROUTING_FAILED)
       }
     })
+    
+    // =========================================================================
+    // DISCONNECT LIFECYCLE & PEER_LEFT EVENTS
+    // =========================================================================
+    
+    it('should emit PEER_LEFT on graceful disconnect (server perspective)', async () => {
+      node1 = new Node({ id: 'server-peer-left', bind: 'tcp://127.0.0.1:7099' })
+      node2 = new Node({ id: 'client-peer-left' })
+      
+      await node1.bind()
+      
+      const peerEvents = []
+      
+      // Track server events
+      node1.on(NodeEvent.PEER_JOINED, (data) => {
+        peerEvents.push({ event: 'JOINED', ...data })
+      })
+      
+      node1.on(NodeEvent.PEER_LEFT, (data) => {
+        peerEvents.push({ event: 'LEFT', ...data })
+      })
+      
+      // Client connects
+      await node2.connect({ address: 'tcp://127.0.0.1:7099' })
+      await wait(100)
+      
+      // Client disconnects gracefully
+      await node2.disconnect('tcp://127.0.0.1:7099')
+      await wait(100)
+      
+      // Verify events
+      expect(peerEvents).to.have.lengthOf(2)
+      
+      expect(peerEvents[0].event).to.equal('JOINED')
+      expect(peerEvents[0].peerId).to.equal('client-peer-left')
+      expect(peerEvents[0].direction).to.equal('downstream')
+      
+      expect(peerEvents[1].event).to.equal('LEFT')
+      expect(peerEvents[1].peerId).to.equal('client-peer-left')
+      expect(peerEvents[1].direction).to.equal('downstream')
+      expect(peerEvents[1].reason).to.equal('CLIENT_STOP')  // Raw reason from client disconnect
+    })
+    
+    it('should emit PEER_LEFT on graceful disconnect (client perspective)', async () => {
+      node1 = new Node({ id: 'server-peer-left-2', bind: 'tcp://127.0.0.1:7098' })
+      node2 = new Node({ id: 'client-peer-left-2' })
+      
+      await node1.bind()
+      
+      const peerEvents = []
+      
+      // Track client events
+      node2.on(NodeEvent.PEER_JOINED, (data) => {
+        peerEvents.push({ event: 'JOINED', ...data })
+      })
+      
+      node2.on(NodeEvent.PEER_LEFT, (data) => {
+        peerEvents.push({ event: 'LEFT', ...data })
+      })
+      
+      // Client connects
+      await node2.connect({ address: 'tcp://127.0.0.1:7098' })
+      await wait(100)
+      
+      // Client disconnects gracefully
+      await node2.disconnect('tcp://127.0.0.1:7098')
+      await wait(100)
+      
+      // Verify events
+      expect(peerEvents).to.have.lengthOf(2)
+      
+      expect(peerEvents[0].event).to.equal('JOINED')
+      expect(peerEvents[0].peerId).to.equal('server-peer-left-2')
+      expect(peerEvents[0].direction).to.equal('upstream')
+      
+      expect(peerEvents[1].event).to.equal('LEFT')
+      expect(peerEvents[1].peerId).to.equal('server-peer-left-2')
+      expect(peerEvents[1].direction).to.equal('upstream')
+      expect(peerEvents[1].reason).to.equal('TRANSPORT_NOT_READY')  // Transport lost readiness on disconnect
+    })
+    
+    it('should emit PEER_LEFT on reconnect', async () => {
+      node1 = new Node({ id: 'server-reconnect', bind: 'tcp://127.0.0.1:7097' })
+      node2 = new Node({ id: 'client-reconnect' })
+      
+      await node1.bind()
+      
+      const peerEvents = []
+      
+      node1.on(NodeEvent.PEER_JOINED, (data) => {
+        peerEvents.push({ event: 'JOINED', peerId: data.peerId })
+      })
+      
+      node1.on(NodeEvent.PEER_LEFT, (data) => {
+        peerEvents.push({ event: 'LEFT', peerId: data.peerId, reason: data.reason })
+      })
+      
+      // First connection
+      await node2.connect({ address: 'tcp://127.0.0.1:7097' })
+      await wait(100)
+      
+      // Disconnect
+      await node2.disconnect('tcp://127.0.0.1:7097')
+      await wait(100)
+      
+      // Reconnect
+      await node2.connect({ address: 'tcp://127.0.0.1:7097' })
+      await wait(100)
+      
+      // Verify: JOINED → LEFT → JOINED
+      expect(peerEvents).to.have.lengthOf(3)
+      expect(peerEvents[0]).to.deep.include({ event: 'JOINED', peerId: 'client-reconnect' })
+      expect(peerEvents[1]).to.deep.include({ event: 'LEFT', peerId: 'client-reconnect', reason: 'CLIENT_STOP' })  // Client disconnect
+      expect(peerEvents[2]).to.deep.include({ event: 'JOINED', peerId: 'client-reconnect' })
+    })
   })
   
   // ============================================================================
@@ -356,8 +471,8 @@ describe('Node - Orchestration Layer', () => {
     let node1, node2
     
     afterEach(async () => {
-      if (node1) await node1.stop()
-      if (node2) await node2.stop()
+      if (node1) await node1.close()
+      if (node2) await node2.close()
       node1 = node2 = null
     })
     
@@ -449,9 +564,9 @@ describe('Node - Orchestration Layer', () => {
     let node1, node2, node3
     
     afterEach(async () => {
-      if (node1) await node1.stop()
-      if (node2) await node2.stop()
-      if (node3) await node3.stop()
+      if (node1) await node1.close()
+      if (node2) await node2.close()
+      if (node3) await node3.close()
       node1 = node2 = node3 = null
     })
     
@@ -573,9 +688,9 @@ describe('Node - Orchestration Layer', () => {
     let node1, node2, node3
     
     afterEach(async () => {
-      if (node1) await node1.stop()
-      if (node2) await node2.stop()
-      if (node3) await node3.stop()
+      if (node1) await node1.close()
+      if (node2) await node2.close()
+      if (node3) await node3.close()
       node1 = node2 = node3 = null
     })
     
@@ -656,8 +771,8 @@ describe('Node - Orchestration Layer', () => {
     let node1, node2
     
     afterEach(async () => {
-      if (node1) await node1.stop()
-      if (node2) await node2.stop()
+      if (node1) await node1.close()
+      if (node2) await node2.close()
       node1 = node2 = null
     })
     
@@ -713,7 +828,7 @@ describe('Node - Orchestration Layer', () => {
     
     afterEach(async () => {
       if (node) {
-        await node.stop()
+        await node.close()
         node = null
       }
     })
@@ -727,12 +842,12 @@ describe('Node - Orchestration Layer', () => {
         await node1.connect({ address: 'tcp://127.0.0.1:7021' })
         
         // Stop node1
-        await node1.stop()
+        await node1.close()
         
         // Should have cleaned up
         expect(node1).to.be.ok
       } finally {
-        await node2.stop()
+        await node2.close()
       }
     })
   })
@@ -745,7 +860,7 @@ describe('Node - Orchestration Layer', () => {
     let node
     
     afterEach(async () => {
-      if (node) await node.stop()
+      if (node) await node.close()
       node = null
     })
     

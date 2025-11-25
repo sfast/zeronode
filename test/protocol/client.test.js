@@ -67,10 +67,10 @@ describe('Client', () => {
     })
   })
 
-  describe('isReady()', () => {
+  describe('isOnline()', () => {
     it('should return false before connection', () => {
       client = new Client({ id: 'test' })
-      expect(client.isReady()).to.be.false
+      expect(client.isOnline()).to.be.false
     })
   })
 
@@ -78,8 +78,8 @@ describe('Client', () => {
     it('should return null if not connected', () => {
       client = new Client({ id: 'disconnected' })
       
-      // Client doesn't have getServerActor, it has getServerPeerInfo
-      expect(client.isReady()).to.be.false
+      // Client doesn't have getServerActor, it has getServerInfo
+      expect(client.isOnline()).to.be.false
     })
   })
 
@@ -104,9 +104,9 @@ describe('Client', () => {
       client = new Client({ id: 'test-client' })
       
       client.connect('tcp://127.0.0.1:19998', 1000).catch((err) => {
-        const serverPeer = client.getServerPeerInfo()
-        expect(serverPeer).to.not.be.null
-        expect(serverPeer.getState()).to.equal('FAILED')
+        const serverId = client.getServerId()
+        // On handshake timeout, server ID should be null (not joined)
+        expect(serverId).to.be.null
         done()
       })
     })
@@ -117,7 +117,7 @@ describe('Client', () => {
       client = new Client({ id: 'test-client' })
       
       client.connect('tcp://127.0.0.1:19997', 1000).catch((err) => {
-        expect(client.isReady()).to.be.false
+        expect(client.isOnline()).to.be.false
         done()
       })
     })
@@ -129,7 +129,7 @@ describe('Client', () => {
       
       // Should not throw
       await client.disconnect()
-      expect(client.isReady()).to.be.false
+      expect(client.isOnline()).to.be.false
     })
 
     it('should set serverPeerInfo to STOPPED after disconnect', async () => {
@@ -137,7 +137,7 @@ describe('Client', () => {
       // For unit test, we just verify disconnect doesn't crash
       client = new Client({ id: 'test-client' })
       await client.disconnect()
-      expect(client.isReady()).to.be.false
+      expect(client.isOnline()).to.be.false
     })
   })
 
@@ -147,7 +147,7 @@ describe('Client', () => {
       
       await client.close()
       
-      expect(client.isReady()).to.be.false
+      expect(client.isOnline()).to.be.false
     })
 
     it('should close underlying socket', async () => {
@@ -156,7 +156,7 @@ describe('Client', () => {
       await client.close()
       
       // After close, client should not be ready
-      expect(client.isReady()).to.be.false
+      expect(client.isOnline()).to.be.false
     })
   })
 

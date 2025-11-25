@@ -234,8 +234,9 @@ export default class Protocol extends EventEmitter {
       )
     }
     
-    // Check if transport is online
-    if (!this.isOnline()) {
+    // Check if transport is online (direct check, not isOnline() which may be overridden)
+    let { socket, closed } = _private.get(this)
+    if (!socket.isOnline() || closed) {
       throw new ProtocolError({
         code: ProtocolErrorCode.NOT_READY,
         message: `Cannot send system tick: Protocol '${this.getId()}' is not ready (transport offline)`,

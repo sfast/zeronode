@@ -176,8 +176,8 @@ async function benchmarkMessageSize(messageSize) {
   }
   
   // Cleanup
-  await clientNode.stop()
-  await serverNode.stop()
+  await clientNode.close()
+  await serverNode.close()
   
   // Wait for socket cleanup and OS to release port
   await sleep(3000)
