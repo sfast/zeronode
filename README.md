@@ -27,19 +27,19 @@
 
 ```
 Traditional Client-Server          Zeronode Mesh Network
-─────────────────────────         ────────────────────────
+-------------------------          ------------------------
 
-   ┌────────┐                        ┌─────────┐
-   │Client 1│───┐                 ┌──│ Node A  │──┐
-   └────────┘   │                 │  └─────────┘  │
-                │                 │       ↕        │
-   ┌────────┐   │    ┌──────┐    │  ┌─────────┐  │
-   │Client 2│───┼───→│Server│    ├──│ Node B  │──┤
-   └────────┘   │    └──────┘    │  └─────────┘  │
-                │                 │       ↕        │
-   ┌────────┐   │                 │  ┌─────────┐  │
-   │Client 3│───┘                 └──│ Node C  │──┘
-   └────────┘                        └─────────┘
+   +--------+                        +---------+
+   |Client 1|---+                 +--|  Node A |--+
+   +--------+   |                 |  +---------+  |
+                |                 |      <->      |
+   +--------+   |    +------+     |  +---------+  |
+   |Client 2|---+--->|Server|     +--|  Node B |--+
+   +--------+   |    +------+     |  +---------+  |
+                |                 |      <->      |
+   +--------+   |                 |  +---------+  |
+   |Client 3|---+                 +--|  Node C |--+
+   +--------+                        +---------+
    
    One-way only                   Each node is both
                                   client AND server!
@@ -124,67 +124,6 @@ console.log(user)
 // Output: { id: 123, name: 'John Doe', email: 'john@example.com' }
 ```
 
-### Connection Flow Diagram
-
-```
-   Complete Connection & Request Flow
-   ══════════════════════════════════
-   
-   ┌─────────────────────────────────────────────────────────────┐
-   │                        SETUP PHASE                          │
-   └─────────────────────────────────────────────────────────────┘
-   
-   Client                                            Server
-   ──────                                            ──────
-   
-   new Node()                                        new Node()
-      │                                                  │
-      │                                                  ▼
-      │                                              bind('tcp://...')
-      │                                                  │
-      │                                                  ▼
-      │                                           ┌──────────────┐
-      │                                           │  LISTENING   │
-      │                                           └──────────────┘
-      │                                                  
-   connect('tcp://...')                                 
-      │━━━━━━━━━━━━━━━━ TCP Connection ━━━━━━━━━━━━━━━▶│
-      │                                                  │
-      │◀━━━━━━━━━━━━━━━━   Handshake   ━━━━━━━━━━━━━━━━│
-      │                 (exchange IDs & options)         │
-      │                                                  │
-   ┌──────────────┐                              ┌──────────────┐
-   │  CONNECTED   │                              │  CONNECTED   │
-   └──────────────┘                              └──────────────┘
-      │                                                  │
-      ├───────⏱ Periodic Ping ──────────────────────────▶
-      │◀──────⏱ Ping Response ──────────────────────────┤
-      │                                                  │
-   
-   ┌─────────────────────────────────────────────────────────────┐
-   │                     MESSAGING PHASE                         │
-   └─────────────────────────────────────────────────────────────┘
-   
-      │                                                  │
-   request({                                             │
-     to: 'api-server',                                   │
-     event: 'user:get'                                   │
-   })                                                    │
-      │━━━━━━━━━━━━━━━━ Request Envelope ━━━━━━━━━━━━━▶│
-      │                                                  │
-      │                                           onRequest('user:get')
-      │                                                  │
-      │                                            Execute handler
-      │                                                  │
-      │◀━━━━━━━━━━━━━━━ Response Envelope ━━━━━━━━━━━━━┤
-      │              (user data)                         │
-   resolve()                                             │
-      │                                                  │
-      ▼                                                  ▼
-   { id: 123,                                     [waiting for
-     name: 'John' }                                next request]
-```
-
 What does `client.connect()` do?
 - Establishes a transport connection to the server address
 - Performs a handshake to exchange identities and options
@@ -203,20 +142,20 @@ What does `client.connect()` do?
 Use when you need a response from the target service.
 
 ```
-┌────────────┐                                    ┌────────────┐
-│   Client   │                                    │   Server   │
-└──────┬─────┘                                    └──────┬─────┘
-       │                                                 │
-       │  request('calculate:sum', [1,2,3,4,5])         │
-       │────────────────────────────────────────────────>│
-       │                                                 │
-       │                  Processing...                  │
-       │                  sum = 15                       │
-       │                                                 │
-       │<────────────────────────────────────────────────│
-       │           reply({ result: 15 })                 │
-       │                                                 │
-   ⏱ ~0.3ms latency
++------------+                                         +------------+
+|   Client   |                                         |   Server   |
++------+-----+                                         +------+-----+
+       |                                                      |
+       |  request('calculate:sum', [1,2,3,4,5])               |
+       +----------------------------------------------------->|
+       |                                                      |
+       |                  Processing...                       |
+       |                  sum = 15                            |
+       |                                                      |
+       |<-----------------------------------------------------+
+       |           reply({ result: 15 })                      |
+       |                                                      |
+   [~0.3ms latency]
 ```
 
 ```javascript
@@ -246,18 +185,18 @@ console.log(response.result) // 15
 Use when you don't need a response (logging, notifications, analytics).
 
 ```
-┌────────────┐                                    ┌────────────┐
-│   Client   │                                    │   Server   │
-└──────┬─────┘                                    └──────┬─────┘
-       │                                                 │
-       │  tick('log:info', { message: 'User login' })   │
-       │────────────────────────────────────────────────>│
-       │                                                 │
-       │ ← Returns immediately (non-blocking)            │
-       │                                                 │
-       │                                          Process async
-       │                                          └─> Log to DB
-       │                                          └─> Send to monitoring
++------------+                                         +------------+
+|   Client   |                                         |   Server   |
++------+-----+                                         +------+-----+
+       |                                                      |
+       |  tick('log:info', { message: 'User login' })         |
+       +----------------------------------------------------->|
+       |                                                      |
+       | <- Returns immediately (non-blocking)                |
+       |                                                      |
+       |                                          Process async
+       |                                          +-> Log to DB
+       |                                          +-> Send to monitoring
 ```
 
 ```javascript
@@ -287,22 +226,22 @@ client.tick({
 Send to multiple nodes simultaneously.
 
 ```
-                         ┌─────────────┐
-                         │  Scheduler  │
-                         └──────┬──────┘
-                                │
+                         +-------------+
+                         |  Scheduler  |
+                         +------+------+
+                                |
               tickAll('config:reload', { version: '2.0' })
-                                │
-          ┌─────────────────────┼─────────────────────┐
-          │                     │                     │
-          ▼                     ▼                     ▼
-    ┌──────────┐          ┌──────────┐          ┌──────────┐
-    │ Worker 1 │          │ Worker 2 │          │ Worker 3 │
-    │role:worker│         │role:worker│         │role:worker│
-    │status:ready│        │status:ready│        │status:ready│
-    └──────────┘          └──────────┘          └──────────┘
-         │                     │                     │
-         └──────> All receive config update <────────┘
+                                |
+          +---------------------+---------------------+
+          |                     |                     |
+          v                     v                     v
+    +----------+          +----------+          +----------+
+    | Worker 1 |          | Worker 2 |          | Worker 3 |
+    |role:worker          |role:worker          |role:worker
+    |status:ready         |status:ready         |status:ready
+    +----------+          +----------+          +----------+
+         |                     |                     |
+         +-------> All receive config update <-------+
 ```
 
 ```javascript
@@ -324,20 +263,20 @@ await node.tickAll({
 #### Direct Routing (by ID)
 
 ```
-┌─────────┐
-│ Gateway │  request({ to: 'user-service-1' })
-└────┬────┘
-     │
-     │ Direct route by ID
-     │
-     ▼
-┌──────────────┐
-│user-service-1│ ← Exact match
-└──────────────┘
++---------+
+| Gateway |  request({ to: 'user-service-1' })
++----+----+
+     |
+     | Direct route by ID
+     |
+     v
++--------------+
+|user-service-1| <- Exact match
++--------------+
 
-┌──────────────┐
-│user-service-2│ ← Not selected
-└──────────────┘
++--------------+
+|user-service-2| <- Not selected
++--------------+
 ```
 
 ```javascript
@@ -352,22 +291,22 @@ const response = await node.request({
 #### Filter-Based Routing / Load balancing 
 
 ```
-┌─────────┐
-│ Gateway │  requestAny({ filter: { role: 'worker', status: 'idle' } })
-└────┬────┘
-     │
-     │ Smart routing picks ONE matching node
-     │ (automatic load balancing)
-     │
-     ├──────────────┬──────────────┐
-     ▼              ▼              ▼
-┌─────────┐    ┌─────────┐    ┌─────────┐
-│Worker 1 │    │Worker 2 │    │Worker 3 │
-│idle ✓   │    │busy ✗   │    │idle ✓   │
-└─────────┘    └─────────┘    └─────────┘
-     ▲                              │
-     │                              │
-     └──── One is selected ─────────┘
++---------+
+| Gateway |  requestAny({ filter: { role: 'worker', status: 'idle' } })
++----+----+
+     |
+     | Smart routing picks ONE matching node
+     | (automatic load balancing)
+     |
+     +--------------+--------------+
+     v              v              v
++---------+    +---------+    +---------+
+|Worker 1 |    |Worker 2 |    |Worker 3 |
+|idle (Y) |    |busy (N) |    |idle (Y) |
++---------+    +---------+    +---------+
+     ^                              |
+     |                              |
+     +---- One is selected ---------+
             (round-robin)
 ```
 
@@ -415,22 +354,22 @@ Use metadata (Node options) for service discovery and routing.
 
 ```
    Metadata for Smart Routing
-   ═══════════════════════════
+   ===========================
    
-   ┌──────────────────────────────┐
-   │      Worker Node             │
-   ├──────────────────────────────┤
-   │ id: 'worker-12345'           │
-   │                              │
-   │ options: {                   │
-   │   role: 'worker'             │ ◄─── Route by role
-   │   region: 'us-east-1'        │ ◄─── Geographic routing
-   │   version: '2.1.0'           │ ◄─── Version matching
-   │   capacity: 100              │ ◄─── Load-based routing
-   │   features: ['ml', 'image']  │ ◄─── Capability routing
-   │   status: 'ready'            │ ◄─── State-based routing
-   │ }                            │
-   └──────────────────────────────┘
+   +------------------------------+
+   |      Worker Node             |
+   +------------------------------+
+   | id: 'worker-12345'           |
+   |                              |
+   | options: {                   |
+   |   role: 'worker'             | <--- Route by role
+   |   region: 'us-east-1'        | <--- Geographic routing
+   |   version: '2.1.0'           | <--- Version matching
+   |   capacity: 100              | <--- Load-based routing
+   |   features: ['ml', 'image']  | <--- Capability routing
+   |   status: 'ready'            | <--- State-based routing
+   | }                            |
+   +------------------------------+
 ```
 
 ```javascript
@@ -495,36 +434,36 @@ Zeronode provides **Express.js-style middleware chains** for composing request h
 
 ```
    Middleware Chain Flow
-   ═════════════════════
+   =====================
    
    Request arrives
-        │
-        ▼
-   ┌─────────────────────┐
-   │  Logging Middleware │  ← 2-param: auto-continue
-   │  (2 parameters)     │
-   └──────────┬──────────┘
-              │ next() automatically called
-              ▼
-   ┌─────────────────────┐
-   │  Auth Middleware    │  ← 3-param: manual control
-   │  (3 parameters)     │
-   └──────────┬──────────┘
-              │ next() manually called
-              ▼
-   ┌─────────────────────┐
-   │  Business Handler   │  ← Final handler
-   │  Returns data       │
-   └──────────┬──────────┘
-              │
-              ▼
+        |
+        v
+   +---------------------+
+   |  Logging Middleware |  <- 2-param: auto-continue
+   |  (2 parameters)     |
+   +----------+----------+
+              | next() automatically called
+              v
+   +---------------------+
+   |  Auth Middleware    |  <- 3-param: manual control
+   |  (3 parameters)     |
+   +----------+----------+
+              | next() manually called
+              v
+   +---------------------+
+   |  Business Handler   |  <- Final handler
+   |  Returns data       |
+   +----------+----------+
+              |
+              v
           Response
           
-   ╔════════════════════════╗
-   ║  If error occurs:      ║
-   ║  → Error Handler       ║
-   ║    (4 parameters)      ║
-   ╚════════════════════════╝
+   +========================+
+   |  If error occurs:      |
+   |  -> Error Handler      |
+   |    (4 parameters)      |
+   +========================+
 ```
 
 ```javascript
@@ -564,40 +503,40 @@ Zeronode provides comprehensive production-ready examples for common distributed
 
 ```
    Common Architecture Patterns
-   ════════════════════════════
+   ============================
    
    API Gateway Pattern              Distributed Logging
-   ───────────────────              ───────────────────
+   -------------------              -------------------
    
-        ┌─────────┐                     ┌────────┐
-        │ Gateway │                     │Services│
-        └────┬────┘                     └───┬────┘
-             │                               │
-      ┌──────┼──────┐                       │
-      ▼      ▼      ▼                       ▼
-   ┌────┐ ┌────┐ ┌────┐              ┌──────────┐
-   │API1│ │API2│ │API3│              │Log Server│
-   └────┘ └────┘ └────┘              └─────┬────┘
-                                            │
-   Task Queue                        ┌─────┴─────┐
-   ──────────                        ▼           ▼
+        +---------+                     +--------+
+        | Gateway |                     |Services|
+        +----+----+                     +---+----+
+             |                               |
+      +------+------+                        |
+      v      v      v                        v
+   +----+ +----+ +----+              +----------+
+   |API1| |API2| |API3|              |Log Server|
+   +----+ +----+ +----+              +-----+----+
+                                           |
+   Task Queue                        +-----+-----+
+   ----------                        v           v
                                   [Store]    [Monitor]
-        ┌───────┐
-        │Queuer │
-        └───┬───┘
-            │
-     ┌──────┼──────┐              Microservices Mesh
-     ▼      ▼      ▼              ──────────────────
-  ┌─────┐┌─────┐┌─────┐
-  │Wrkr1││Wrkr2││Wrkr3│          ┌────┐   ┌────┐
-  └─────┘└─────┘└─────┘          │Auth│←─→│User│
-                                  └─┬──┘   └──┬─┘
-                                    │         │
-                                    └────┬────┘
-                                         │
-                                     ┌───┴───┐
-                                     │Payment│
-                                     └───────┘
+        +-------+
+        |Queuer |
+        +---+---+
+            |
+     +------+------+              Microservices Mesh
+     v      v      v              ------------------
+  +-----++-----++-----+
+  |Wrkr1||Wrkr2||Wrkr3|          +----+   +----+
+  +-----++-----++-----+          |Auth|<->|User|
+                                  +-+--+   +--+-+
+                                    |         |
+                                    +----+----+
+                                         |
+                                     +---+---+
+                                     |Payment|
+                                     +-------+
 ```
 
 - **API Gateway** - Load-balanced workers with automatic routing
