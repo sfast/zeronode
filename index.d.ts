@@ -225,9 +225,6 @@ export type TickHandler = (envelope: Envelope) => void | Promise<void>;
  * Node-level events
  */
 export enum NodeEvent {
-  /** Node is ready */
-  READY = 'node:ready',
-  
   /** Peer joined the network */
   PEER_JOINED = 'node:peer_joined',
   
@@ -318,14 +315,8 @@ export enum NodeErrorCode {
   /** No nodes match filter */
   NO_NODES_MATCH_FILTER = 'NO_NODES_MATCH_FILTER',
   
-  /** Routing failed */
-  ROUTING_FAILED = 'ROUTING_FAILED',
-  
-  /** Duplicate connection */
-  DUPLICATE_CONNECTION = 'DUPLICATE_CONNECTION',
-  
-  /** Server not initialized */
-  SERVER_NOT_INITIALIZED = 'SERVER_NOT_INITIALIZED'
+  /** Invalid address */
+  INVALID_ADDRESS = 'INVALID_ADDRESS'
 }
 
 /**
@@ -347,6 +338,12 @@ export class NodeError extends Error {
   
   toJSON(): any;
 }
+
+/**
+ * Assert that address is valid
+ * @throws {NodeError} If address is invalid
+ */
+export function assertValidAddress(address: string): void;
 
 /**
  * Protocol error codes
@@ -757,14 +754,12 @@ export default class Node extends EventEmitter {
   // Event Emitter (typed events)
   // ============================================================================
   
-  on(event: NodeEvent.READY, listener: () => void): this;
   on(event: NodeEvent.PEER_JOINED, listener: (payload: PeerJoinedPayload) => void): this;
   on(event: NodeEvent.PEER_LEFT, listener: (payload: PeerLeftPayload) => void): this;
   on(event: NodeEvent.STOPPED, listener: () => void): this;
   on(event: NodeEvent.ERROR, listener: (payload: NodeErrorPayload) => void): this;
   on(event: string | symbol, listener: (...args: any[]) => void): this;
   
-  once(event: NodeEvent.READY, listener: () => void): this;
   once(event: NodeEvent.PEER_JOINED, listener: (payload: PeerJoinedPayload) => void): this;
   once(event: NodeEvent.PEER_LEFT, listener: (payload: PeerLeftPayload) => void): this;
   once(event: NodeEvent.STOPPED, listener: () => void): this;

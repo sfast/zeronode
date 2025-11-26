@@ -11,9 +11,7 @@
 export const NodeErrorCode = {
   NODE_NOT_FOUND: 'NODE_NOT_FOUND',               // Target node not found in routing table
   NO_NODES_MATCH_FILTER: 'NO_NODES_MATCH_FILTER', // Filter matched zero nodes
-  ROUTING_FAILED: 'ROUTING_FAILED',               // Routing logic failed
-  DUPLICATE_CONNECTION: 'DUPLICATE_CONNECTION',   // Already connected to this address
-  SERVER_NOT_INITIALIZED: 'SERVER_NOT_INITIALIZED' // Server required but not created
+  INVALID_ADDRESS: 'INVALID_ADDRESS'              // Invalid or missing address
 }
 
 /**
@@ -60,8 +58,24 @@ export class NodeError extends Error {
   }
 }
 
+/**
+ * Assert that address is valid
+ * @param {string} address - Address to validate
+ * @throws {NodeError} If address is invalid
+ */
+export function assertValidAddress (address) {
+  if (!address || typeof address !== 'string') {
+    throw new NodeError({
+      code: NodeErrorCode.INVALID_ADDRESS,
+      message: `Invalid address: ${address}`,
+      context: { address }
+    })
+  }
+}
+
 export default {
   NodeError,
-  NodeErrorCode
+  NodeErrorCode,
+  assertValidAddress
 }
 

@@ -1,545 +1,575 @@
 # Configuration Guide
 
-## Overview
+Complete reference for all Zeronode configuration options.
 
-ZeroNode provides sensible defaults for all configuration options, requiring **zero configuration** to get started. However, for production deployments and specific use cases, you can customize various aspects of the framework's behavior.
-
----
-
-## Basic Configuration
-
-### Constructor Configuration
-
-Pass configuration options when creating a Node:
+## Quick Start
 
 ```javascript
-import Node, { BufferStrategy } from 'zeronode'
+import { Node } from 'zeronode'
 
 const node = new Node({
-  id: 'my-node',
-  options: { role: 'api', version: 1 },
-  config: {
-    // Protocol-level settings
-    PROTOCOL_REQUEST_TIMEOUT: 15000,
-    PROTOCOL_BUFFER_STRATEGY: BufferStrategy.POWER_OF_2,
-    
-    // Client-level settings
-    CLIENT_PING_INTERVAL: 5000,
-    CLIENT_HEALTH_CHECK_INTERVAL: 15000,
-    CLIENT_GHOST_TIMEOUT: 30000,
-    
-    // Debug mode
-    DEBUG: true
+  id: 'my-node',                    // Node identity
+  options: {                         // Node metadata (for routing)
+    role: 'worker',
+    region: 'us-east-1'
+  },
+  config: {                          // System configuration
+    PING_INTERVAL: 2000,             // Client ping every 2 seconds
+    CLIENT_GHOST_TIMEOUT: 10000      // Server timeout after 10 seconds
   }
 })
 ```
 
+## Node Configuration
+
+### Node Identity & Options
+
+```javascript
+{
+  id: string,        // Node ID (auto-generated if not provided)
+  options: Object,   // Node metadata for smart routing
+  bind: string,      // Auto-bind address (optional)
+  config: Object     // System configuration (see below)
+}
+```
+
+### ID (Node Identifier)
+
+**Type:** `string`  
+**Default:** Auto-generated (e.g., `'sleepy-giraffe-42'`)  
+**Required:** No
+
+The unique identifier for this node. Used in routing and peer identification.
+
+```javascript
+const node = new Node({
+  id: 'api-server-1'  // Custom ID
+})
+
+// Or let Zeronode generate one
+const node = new Node()  // Auto: 'sleepy-giraffe-42'
+```
+
+### Options (Node Metadata)
+
+**Type:** `Object`  
+**Default:** `{}`  
+**Required:** No
+
+Arbitrary metadata attached to this node. Used for smart routing and filtering.
+
+```javascript
+const node = new Node({
+  id: 'worker-1',
+  options: {
+    role: 'worker',
+    region: 'us-east-1',
+    version: '2.1.0',
+    capacity: 100,
+    features: ['ml', 'image-processing'],
+    status: 'ready',
+    // Any custom fields you need
+    customField: 'value'
+  }
+})
+```
+
+**Dynamic updates:**
+```javascript
+// Update options at runtime
+await node.setOptions({ status: 'busy' })
+await node.setOptions({ status: 'ready', capacity: 80 })
+```
+
+### Bind (Auto-bind Address)
+
+**Type:** `string`  
+**Default:** `null`  
+**Required:** No
+
+If provided, node will automatically bind to this address on creation.
+
+```javascript
+const node = new Node({
+  id: 'server',
+  bind: 'tcp://0.0.0.0:5000'  // Auto-bind
+})
+
+// Equivalent to:
+const node = new Node({ id: 'server' })
+await node.bind('tcp://0.0.0.0:5000')
+```
+
 ---
 
-## Configuration Options
+## System Configuration
 
-### Protocol Settings
+### Client Configuration
 
-#### `PROTOCOL_REQUEST_TIMEOUT`
+#### PING_INTERVAL
 
 **Type:** `number` (milliseconds)  
 **Default:** `10000` (10 seconds)  
-**Description:** Global timeout for request/reply operations. If no response is received within this time, the request promise is rejected.
+**Range:** `1000` - `60000` recommended  
+
+How often clients send heartbeat pings to servers.
 
 ```javascript
-const node = new Node({
-  config: {
-    PROTOCOL_REQUEST_TIMEOUT: 15000  // 15 seconds
-  }
-})
-
-// Override per-request
-await node.request({
-  to: 'server',
-  event: 'slow:operation',
-  timeout: 30000  // 30 seconds for this request only
-})
+config: {
+  PING_INTERVAL: 2000  // Ping every 2 seconds
+}
 ```
 
-**Use Cases:**
-- **Fast operations**: `3000` (3s) for low-latency internal services
-- **Standard operations**: `10000` (10s, default) for typical microservices
-- **Slow operations**: `30000`+ (30s+) for ML inference, complex queries
+**Tuning guide:**
+- **1000-2000ms**: Low latency requirements, fast disconnect detection
+- **5000-10000ms**: Balanced (recommended for most use cases)
+- **30000-60000ms**: Low traffic, can tolerate slow disconnect detection
 
-**Notes:**
-- Cannot be set to infinity (must have a timeout)
-- Individual requests can override this value
-- Timeout starts when request is sent, not when queued
-
----
-
-#### `PROTOCOL_BUFFER_STRATEGY`
-
-**Type:** `BufferStrategy.EXACT | BufferStrategy.POWER_OF_2`  
-**Default:** `BufferStrategy.EXACT`  
-**Description:** Buffer allocation strategy for envelope creation.
-
-```javascript
-import { BufferStrategy } from 'zeronode'
-
-// Option 1: Exact allocation (default)
-const node1 = new Node({
-  config: {
-    PROTOCOL_BUFFER_STRATEGY: BufferStrategy.EXACT
-  }
-})
-
-// Option 2: Power-of-2 allocation
-const node2 = new Node({
-  config: {
-    PROTOCOL_BUFFER_STRATEGY: BufferStrategy.POWER_OF_2
-  }
-})
-```
-
-**EXACT (Default):**
-- ✅ Zero memory waste
-- ✅ Predictable memory usage
-- ⚠️ More GC pressure (varied buffer sizes)
-- **Best for:** Memory-constrained environments, small-scale deployments
-
-**POWER_OF_2:**
-- ✅ CPU cache-friendly (aligned allocations)
-- ✅ Less GC pressure (fewer distinct sizes)
-- ✅ Potential for buffer pooling
-- ⚠️ ~25% memory overhead on average
-- **Best for:** High-throughput systems, performance-critical applications
-
-**Benchmark Results:**
-
-| Strategy | Throughput | Memory | GC Pauses |
-|----------|------------|--------|-----------|
-| EXACT | 100K msg/s | 50 MB | 120/min |
-| POWER_OF_2 | 130K msg/s | 63 MB | 45/min |
-
----
-
-### Client Settings
-
-These settings control client behavior when connecting to servers.
-
-#### `CLIENT_PING_INTERVAL`
+#### CLIENT_HANDSHAKE_TIMEOUT
 
 **Type:** `number` (milliseconds)  
 **Default:** `10000` (10 seconds)  
-**Description:** Interval at which clients send ping messages to servers to maintain connection health.
+**Range:** `1000` - `30000` recommended  
+
+Maximum time to wait for server handshake response.
 
 ```javascript
-const node = new Node({
-  config: {
-    CLIENT_PING_INTERVAL: 5000  // Ping every 5 seconds
-  }
-})
+config: {
+  CLIENT_HANDSHAKE_TIMEOUT: 5000  // 5 second timeout
+}
 ```
-
-**Recommendations:**
-- **High-latency networks**: `15000-30000` (15-30s) - reduce overhead
-- **Standard networks**: `10000` (10s, default) - balanced
-- **Low-latency/critical**: `3000-5000` (3-5s) - fast failure detection
-
-**Trade-offs:**
-- **Shorter interval**: Faster failure detection, higher network overhead
-- **Longer interval**: Lower overhead, slower failure detection
 
 ---
 
-#### `CLIENT_HEALTH_CHECK_INTERVAL`
+### Server Configuration
+
+#### CLIENT_HEALTH_CHECK_INTERVAL
 
 **Type:** `number` (milliseconds)  
 **Default:** `30000` (30 seconds)  
-**Description:** Interval at which the server checks client health (last ping time).
+**Range:** `1000` - `60000` recommended  
+
+How often server checks client health (last ping time).
 
 ```javascript
-const node = new Node({
-  config: {
-    CLIENT_HEALTH_CHECK_INTERVAL: 15000  // Check every 15 seconds
-  }
-})
+config: {
+  CLIENT_HEALTH_CHECK_INTERVAL: 2000  // Check every 2 seconds
+}
 ```
 
-**How it works:**
-1. Server starts health check timer when client connects
-2. Every `CLIENT_HEALTH_CHECK_INTERVAL`, server checks last ping time
-3. If client hasn't pinged within `CLIENT_GHOST_TIMEOUT`, mark as GHOST
-4. If GHOST client doesn't ping within another `CLIENT_GHOST_TIMEOUT`, mark as FAILED and remove
-
-**Recommendations:**
-- Set to 2-3x `CLIENT_PING_INTERVAL` for normal conditions
-- Increase for high-latency networks to avoid false positives
-
----
-
-#### `CLIENT_GHOST_TIMEOUT`
+#### CLIENT_GHOST_TIMEOUT
 
 **Type:** `number` (milliseconds)  
 **Default:** `60000` (60 seconds)  
-**Description:** Time after last ping before a client is considered "ghost" (potentially disconnected).
+**Range:** `5000` - `300000` recommended  
+
+How long without a ping before server considers client dead.
 
 ```javascript
-const node = new Node({
-  config: {
-    CLIENT_GHOST_TIMEOUT: 30000  // Mark ghost after 30s
-  }
-})
+config: {
+  CLIENT_GHOST_TIMEOUT: 10000  // Timeout after 10 seconds
+}
 ```
 
-**Client Lifecycle:**
+**Important:** Should be significantly larger than `PING_INTERVAL`:
 ```
-CONNECTED → (no ping for GHOST_TIMEOUT) → GHOST → (no ping for another GHOST_TIMEOUT) → FAILED → REMOVED
-```
-
-**Recommendations:**
-- **Stable networks**: `30000-60000` (30-60s, default range)
-- **Unstable networks**: `90000-120000` (90-120s)
-- **Critical systems**: `15000-30000` (15-30s) - fast cleanup
-
-**Notes:**
-- Should be at least 2x `CLIENT_PING_INTERVAL`
-- Clients in GHOST state can recover by sending a ping
-- Clients in FAILED state are removed and must reconnect
-
----
-
-### Debug Settings
-
-#### `DEBUG`
-
-**Type:** `boolean`  
-**Default:** `false`  
-**Description:** Enable verbose debug logging for troubleshooting.
-
-```javascript
-const node = new Node({
-  config: {
-    DEBUG: true
-  }
-})
-```
-
-**Debug Output Includes:**
-- Envelope serialization/deserialization
-- Request/response matching
-- Middleware execution details
-- Handler invocation
-- Connection lifecycle events
-
-**Example Debug Logs:**
-```
-[Envelope] Serializing REQUEST: { owner: 'client', recipient: 'server', event: 'user:get' }
-[RequestTracker] Tracking request: id=123456n, timeout=10000ms
-[HandlerExecutor] Handler executed: { arity: 2, resultType: 'object', duration: 2.3ms }
-[MessageDispatcher] Request 'user:get' matched 3 handler(s)
-```
-
-**⚠️ Warning:** Debug mode has performance overhead. **Only use in development or troubleshooting.**
-
----
-
-## Transport Configuration
-
-### ZeroMQ Settings
-
-ZeroNode uses ZeroMQ for transport by default. You can configure ZeroMQ-specific options:
-
-```javascript
-import Node from 'zeronode'
-
-const node = new Node({
-  id: 'my-node',
-  config: {
-    // ZeroMQ transport options
-    reconnectInterval: 1000,      // Reconnect after 1s
-    reconnectMaxInterval: 30000,  // Max exponential backoff: 30s
-    heartbeatInterval: 10000,     // ZMQ internal heartbeat
-    heartbeatTimeout: 30000,      // ZMQ heartbeat timeout
-    heartbeatTtl: 60000          // ZMQ heartbeat TTL
-  }
-})
-```
-
-#### Reconnection Settings
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `reconnectInterval` | `1000` | Initial reconnect delay (ms) |
-| `reconnectMaxInterval` | `30000` | Max reconnect delay with exponential backoff (ms) |
-
-**Reconnection Behavior:**
-- Automatic reconnection is **always enabled**
-- Exponential backoff: 1s → 2s → 4s → 8s → ... → 30s (max)
-- Infinite retries (no give-up)
-
-```javascript
-// Fast reconnection (for stable networks)
-const node = new Node({
-  config: {
-    reconnectInterval: 500,       // Start at 500ms
-    reconnectMaxInterval: 5000    // Max 5s
-  }
-})
-
-// Conservative reconnection (for unstable networks)
-const node = new Node({
-  config: {
-    reconnectInterval: 5000,      // Start at 5s
-    reconnectMaxInterval: 60000   // Max 60s
-  }
-})
+CLIENT_GHOST_TIMEOUT >= PING_INTERVAL * 3
 ```
 
 ---
 
-## Complete Configuration Example
+### Protocol Configuration
+
+#### PROTOCOL_REQUEST_TIMEOUT
+
+**Type:** `number` (milliseconds)  
+**Default:** `10000` (10 seconds)  
+**Range:** `1000` - `60000` recommended  
+
+Default timeout for request/reply operations.
 
 ```javascript
-import Node, { BufferStrategy } from 'zeronode'
+config: {
+  PROTOCOL_REQUEST_TIMEOUT: 5000  // 5 second default timeout
+}
+```
 
-const node = new Node({
-  id: 'production-api-server',
+Can be overridden per-request:
+```javascript
+const response = await node.request({
+  to: 'peer-id',
+  event: 'operation',
+  data: payload,
+  timeout: 3000  // Override: 3 seconds for this request
+})
+```
+
+#### BUFFER_STRATEGY
+
+**Type:** `string`  
+**Default:** `'msgpack'`  
+**Options:** `'msgpack'`, `'json'`  
+
+Message serialization format.
+
+```javascript
+config: {
+  BUFFER_STRATEGY: 'msgpack'  // Faster, smaller (recommended)
+  // or
+  BUFFER_STRATEGY: 'json'     // Human-readable, debugging
+}
+```
+
+---
+
+### Transport Configuration (ZeroMQ)
+
+#### ZMQ_LINGER
+
+**Type:** `number` (milliseconds)  
+**Default:** `0`  
+**Range:** `0` - `30000`  
+
+How long to wait for pending messages when closing socket.
+
+```javascript
+config: {
+  ZMQ_LINGER: 1000  // Wait 1 second for pending messages
+}
+```
+
+- **`0`**: Don't wait, discard pending messages (default, fast shutdown)
+- **`> 0`**: Wait up to N ms for messages to send
+
+#### ZMQ_SEND_HWM / ZMQ_RECV_HWM
+
+**Type:** `number` (messages)  
+**Default:** `1000`  
+**Range:** `100` - `100000`  
+
+High water mark - maximum queued messages before blocking/dropping.
+
+```javascript
+config: {
+  ZMQ_SEND_HWM: 10000,  // Queue up to 10,000 outgoing messages
+  ZMQ_RECV_HWM: 10000   // Queue up to 10,000 incoming messages
+}
+```
+
+**Tuning guide:**
+- **Low (100-1000)**: Low memory, may drop messages under load
+- **Medium (1000-10000)**: Balanced (recommended)
+- **High (10000+)**: High throughput, more memory usage
+
+#### ZMQ_SEND_TIMEOUT / ZMQ_RECV_TIMEOUT
+
+**Type:** `number` (milliseconds)  
+**Default:** `5000`  
+**Range:** `100` - `30000`  
+
+Send/receive operation timeouts at socket level.
+
+```javascript
+config: {
+  ZMQ_SEND_TIMEOUT: 5000,  // 5 second send timeout
+  ZMQ_RECV_TIMEOUT: 5000   // 5 second receive timeout
+}
+```
+
+#### ZMQ_RECONNECT_IVL / ZMQ_RECONNECT_IVL_MAX
+
+**Type:** `number` (milliseconds)  
+**Default:** `100` / `0` (no max)  
+**Range:** `10` - `60000`  
+
+Reconnection interval and maximum interval (exponential backoff).
+
+```javascript
+config: {
+  ZMQ_RECONNECT_IVL: 1000,      // Start at 1 second
+  ZMQ_RECONNECT_IVL_MAX: 30000  // Max 30 seconds between attempts
+}
+```
+
+---
+
+## Configuration Presets
+
+### Low Latency
+
+Fast disconnect detection, high responsiveness:
+
+```javascript
+const lowLatencyConfig = {
+  // Client
+  PING_INTERVAL: 1000,                    // 1 second
+  CLIENT_HANDSHAKE_TIMEOUT: 3000,         // 3 seconds
+  
+  // Server
+  CLIENT_HEALTH_CHECK_INTERVAL: 1000,     // 1 second
+  CLIENT_GHOST_TIMEOUT: 3000,             // 3 seconds
+  
+  // Protocol
+  PROTOCOL_REQUEST_TIMEOUT: 3000,         // 3 seconds
+  
+  // Trade-off: More network traffic, more CPU usage
+}
+```
+
+### Balanced (Recommended)
+
+Good balance between responsiveness and efficiency:
+
+```javascript
+const balancedConfig = {
+  // Client
+  PING_INTERVAL: 2000,                    // 2 seconds
+  CLIENT_HANDSHAKE_TIMEOUT: 10000,        // 10 seconds
+  
+  // Server
+  CLIENT_HEALTH_CHECK_INTERVAL: 2000,     // 2 seconds
+  CLIENT_GHOST_TIMEOUT: 10000,            // 10 seconds
+  
+  // Protocol
+  PROTOCOL_REQUEST_TIMEOUT: 10000,        // 10 seconds
+}
+```
+
+### Efficient
+
+Low overhead, slow disconnect detection:
+
+```javascript
+const efficientConfig = {
+  // Client
+  PING_INTERVAL: 10000,                   // 10 seconds
+  CLIENT_HANDSHAKE_TIMEOUT: 30000,        // 30 seconds
+  
+  // Server
+  CLIENT_HEALTH_CHECK_INTERVAL: 30000,    // 30 seconds
+  CLIENT_GHOST_TIMEOUT: 60000,            // 60 seconds
+  
+  // Protocol
+  PROTOCOL_REQUEST_TIMEOUT: 30000,        // 30 seconds
+  
+  // Trade-off: Slower disconnect detection
+}
+```
+
+---
+
+## Complete Example
+
+```javascript
+import { Node } from 'zeronode'
+
+const server = new Node({
+  // Identity
+  id: 'api-server-1',
+  
+  // Metadata for routing
   options: {
-    role: 'api',
-    version: 2,
-    region: 'us-east-1'
+    role: 'api-server',
+    region: 'us-east-1',
+    version: '2.0.0',
+    capacity: 100
+  },
+  
+  // Auto-bind (optional)
+  bind: 'tcp://0.0.0.0:5000',
+  
+  // System configuration
+  config: {
+    // Server health checks
+    CLIENT_HEALTH_CHECK_INTERVAL: 2000,
+    CLIENT_GHOST_TIMEOUT: 10000,
+    
+    // Protocol
+    PROTOCOL_REQUEST_TIMEOUT: 10000,
+    BUFFER_STRATEGY: 'msgpack',
+    
+    // ZeroMQ transport
+    ZMQ_LINGER: 1000,
+    ZMQ_SEND_HWM: 10000,
+    ZMQ_RECV_HWM: 10000,
+    ZMQ_SEND_TIMEOUT: 5000,
+    ZMQ_RECV_TIMEOUT: 5000,
+    ZMQ_RECONNECT_IVL: 1000,
+    ZMQ_RECONNECT_IVL_MAX: 30000
+  }
+})
+
+const client = new Node({
+  id: 'web-client-1',
+  options: {
+    role: 'client',
+    version: '1.0.0'
   },
   config: {
-    // Protocol settings
-    PROTOCOL_REQUEST_TIMEOUT: 15000,
-    PROTOCOL_BUFFER_STRATEGY: BufferStrategy.POWER_OF_2,
+    // Client pings
+    PING_INTERVAL: 2000,
+    CLIENT_HANDSHAKE_TIMEOUT: 10000,
     
-    // Client health management
-    CLIENT_PING_INTERVAL: 5000,
-    CLIENT_HEALTH_CHECK_INTERVAL: 15000,
-    CLIENT_GHOST_TIMEOUT: 30000,
-    
-    // Transport settings
-    reconnectInterval: 1000,
-    reconnectMaxInterval: 30000,
-    heartbeatInterval: 10000,
-    heartbeatTimeout: 30000,
-    
-    // Debug (disable in production!)
-    DEBUG: process.env.NODE_ENV !== 'production'
-  }
-})
-
-await node.bind('tcp://0.0.0.0:3000')
-console.log('Server ready with custom config')
-```
-
----
-
-## Environment-Based Configuration
-
-### Development
-
-```javascript
-const devNode = new Node({
-  config: {
-    PROTOCOL_REQUEST_TIMEOUT: 30000,  // Generous timeouts for debugging
-    CLIENT_PING_INTERVAL: 5000,       // Frequent pings
-    CLIENT_GHOST_TIMEOUT: 30000,      // Quick cleanup
-    DEBUG: true                        // Verbose logging
-  }
-})
-```
-
-### Production
-
-```javascript
-const prodNode = new Node({
-  config: {
-    PROTOCOL_REQUEST_TIMEOUT: 10000,
-    PROTOCOL_BUFFER_STRATEGY: BufferStrategy.POWER_OF_2,  // Performance
-    CLIENT_PING_INTERVAL: 10000,
-    CLIENT_HEALTH_CHECK_INTERVAL: 30000,
-    CLIENT_GHOST_TIMEOUT: 60000,      // Avoid false positives
-    DEBUG: false,                      // No overhead
-    
-    // Conservative reconnection
-    reconnectInterval: 2000,
-    reconnectMaxInterval: 60000
-  }
-})
-```
-
-### High-Performance
-
-```javascript
-const hpNode = new Node({
-  config: {
-    PROTOCOL_REQUEST_TIMEOUT: 5000,   // Fast failure
-    PROTOCOL_BUFFER_STRATEGY: BufferStrategy.POWER_OF_2,  // Less GC
-    CLIENT_PING_INTERVAL: 3000,       // Fast detection
-    CLIENT_HEALTH_CHECK_INTERVAL: 10000,
-    CLIENT_GHOST_TIMEOUT: 20000,
-    DEBUG: false
+    // Protocol
+    PROTOCOL_REQUEST_TIMEOUT: 10000
   }
 })
 ```
 
 ---
 
-## Per-Operation Overrides
+## Environment Variables
 
-### Request Timeout Override
+You can also use environment variables for configuration:
 
-```javascript
-// Use global timeout (10s)
-await node.request({ to: 'server', event: 'quick' })
+```bash
+# Server
+export ZERONODE_CLIENT_HEALTH_CHECK_INTERVAL=2000
+export ZERONODE_CLIENT_GHOST_TIMEOUT=10000
 
-// Override for slow operation
-await node.request({
-  to: 'server',
-  event: 'ml:inference',
-  timeout: 60000  // 60 seconds
-})
+# Client
+export ZERONODE_PING_INTERVAL=2000
+
+# Protocol
+export ZERONODE_PROTOCOL_REQUEST_TIMEOUT=10000
 ```
 
-### Connection-Specific Config
-
+Then in code:
 ```javascript
-// Default reconnection
-await node.connect({ address: 'tcp://127.0.0.1:3000' })
-
-// Custom reconnection for unstable connection
-await node.connect({
-  address: 'tcp://192.168.1.100:3000',
-  config: {
-    reconnectInterval: 5000,
-    reconnectMaxInterval: 120000
-  }
-})
+const config = {
+  CLIENT_HEALTH_CHECK_INTERVAL: parseInt(process.env.ZERONODE_CLIENT_HEALTH_CHECK_INTERVAL) || 30000,
+  CLIENT_GHOST_TIMEOUT: parseInt(process.env.ZERONODE_CLIENT_GHOST_TIMEOUT) || 60000,
+  PING_INTERVAL: parseInt(process.env.ZERONODE_PING_INTERVAL) || 10000,
+  PROTOCOL_REQUEST_TIMEOUT: parseInt(process.env.ZERONODE_PROTOCOL_REQUEST_TIMEOUT) || 10000
+}
 ```
 
 ---
 
 ## Configuration Best Practices
 
-### 1. Start with Defaults
+### 1. Match Timeout to Ping Interval
 
 ```javascript
-// ✅ Good: Use defaults first
-const node = new Node({ id: 'my-node' })
+// Good: Timeout is 5x ping interval
+{
+  PING_INTERVAL: 2000,
+  CLIENT_GHOST_TIMEOUT: 10000  // 2s * 5 = 10s
+}
 
-// ❌ Bad: Premature optimization
-const node = new Node({
-  config: {
-    // Copying defaults unnecessarily
-    PROTOCOL_REQUEST_TIMEOUT: 10000,
-    CLIENT_PING_INTERVAL: 10000,
-    // ...
-  }
-})
-```
-
-### 2. Tune Based on Measurements
-
-```javascript
-// ✅ Good: Measure first, then tune
-console.time('request')
-const result = await node.request({ to: 'server', event: 'test' })
-console.timeEnd('request')  // Measure actual latency
-
-// Then adjust if needed
-if (averageLatency > 5000) {
-  node.config.PROTOCOL_REQUEST_TIMEOUT = 20000
+// Bad: Timeout too close to ping interval
+{
+  PING_INTERVAL: 2000,
+  CLIENT_GHOST_TIMEOUT: 3000  // Too tight!
 }
 ```
 
-### 3. Match Network Characteristics
+### 2. Match Health Check to Timeout
 
 ```javascript
-// ✅ Good: LAN deployment (low latency)
-const lanNode = new Node({
-  config: {
-    CLIENT_PING_INTERVAL: 5000,
-    CLIENT_GHOST_TIMEOUT: 15000
-  }
-})
+// Good: Check frequently relative to timeout
+{
+  CLIENT_HEALTH_CHECK_INTERVAL: 2000,  // Check every 2s
+  CLIENT_GHOST_TIMEOUT: 10000           // Timeout at 10s
+}
 
-// ✅ Good: WAN deployment (high latency)
-const wanNode = new Node({
-  config: {
-    CLIENT_PING_INTERVAL: 15000,
-    CLIENT_GHOST_TIMEOUT: 60000
-  }
-})
+// Bad: Check infrequently
+{
+  CLIENT_HEALTH_CHECK_INTERVAL: 30000,  // Check every 30s
+  CLIENT_GHOST_TIMEOUT: 10000           // But timeout at 10s? Won't work!
+}
 ```
 
-### 4. Use Environment Variables
+### 3. Consider Your Use Case
+
+| Use Case | Configuration Style |
+|----------|-------------------|
+| **Real-time gaming** | Low latency (1-3s timeouts) |
+| **Chat application** | Low latency (1-3s timeouts) |
+| **API services** | Balanced (10s timeouts) |
+| **Background workers** | Efficient (30-60s timeouts) |
+| **Batch processing** | Efficient (60s+ timeouts) |
+
+### 4. Start Conservative, Then Tune
 
 ```javascript
-const node = new Node({
-  config: {
-    PROTOCOL_REQUEST_TIMEOUT: parseInt(
-      process.env.REQUEST_TIMEOUT || '10000'
-    ),
-    CLIENT_PING_INTERVAL: parseInt(
-      process.env.PING_INTERVAL || '10000'
-    ),
-    DEBUG: process.env.DEBUG === 'true'
-  }
-})
+// Start with balanced defaults
+const config = {
+  PING_INTERVAL: 2000,
+  CLIENT_GHOST_TIMEOUT: 10000
+}
+
+// Monitor in production
+// Adjust based on actual needs
 ```
 
 ---
 
-## Troubleshooting Configuration Issues
+## Troubleshooting
 
-### Requests Timing Out
+### Problem: Peers keep timing out
+
+**Solution:** Increase `CLIENT_GHOST_TIMEOUT` and reduce `CLIENT_HEALTH_CHECK_INTERVAL`
 
 ```javascript
-// Increase request timeout
 config: {
-  PROTOCOL_REQUEST_TIMEOUT: 30000
+  CLIENT_HEALTH_CHECK_INTERVAL: 1000,  // Check more often
+  CLIENT_GHOST_TIMEOUT: 30000          // More lenient timeout
+}
+```
+
+### Problem: Slow disconnect detection
+
+**Solution:** Decrease `PING_INTERVAL` and `CLIENT_GHOST_TIMEOUT`
+
+```javascript
+config: {
+  PING_INTERVAL: 1000,                // Ping more often
+  CLIENT_GHOST_TIMEOUT: 3000          // Timeout faster
+}
+```
+
+### Problem: High network traffic
+
+**Solution:** Increase `PING_INTERVAL`
+
+```javascript
+config: {
+  PING_INTERVAL: 10000  // Ping less often
+}
+```
+
+### Problem: Requests timing out
+
+**Solution:** Increase `PROTOCOL_REQUEST_TIMEOUT` or per-request timeout
+
+```javascript
+// Global default
+config: {
+  PROTOCOL_REQUEST_TIMEOUT: 30000  // 30 seconds
 }
 
 // Or per-request
-await node.request({ event: 'slow', timeout: 60000 })
-```
-
-### Frequent Disconnections
-
-```javascript
-// Increase ghost timeout to avoid false positives
-config: {
-  CLIENT_GHOST_TIMEOUT: 120000  // 2 minutes
+await node.request({
+  to: 'peer',
+  event: 'slow-operation',
+  data: payload,
+  timeout: 60000  // 60 seconds for this specific request
 }
-```
 
-### High Memory Usage
-
-```javascript
-// Use EXACT strategy instead of POWER_OF_2
-config: {
-  PROTOCOL_BUFFER_STRATEGY: BufferStrategy.EXACT
-}
-```
-
-### Slow Performance
-
-```javascript
-// Use POWER_OF_2 for better GC behavior
-config: {
-  PROTOCOL_BUFFER_STRATEGY: BufferStrategy.POWER_OF_2
-}
+)
 ```
 
 ---
 
 ## Summary
 
-✅ **Zero config by default**: Sensible defaults for most use cases  
-✅ **Protocol settings**: Timeout and buffer strategy  
-✅ **Client health**: Ping intervals and ghost timeouts  
-✅ **Transport config**: ZeroMQ reconnection and heartbeat  
-✅ **Debug mode**: Verbose logging for troubleshooting  
-✅ **Per-operation overrides**: Fine-grained control when needed  
+| Configuration | Purpose | Recommended |
+|--------------|---------|-------------|
+| `PING_INTERVAL` | Client ping frequency | 2000ms |
+| `CLIENT_HEALTH_CHECK_INTERVAL` | Server check frequency | 2000ms |
+| `CLIENT_GHOST_TIMEOUT` | Disconnect threshold | 10000ms |
+| `PROTOCOL_REQUEST_TIMEOUT` | Request timeout | 10000ms |
+| `BUFFER_STRATEGY` | Serialization format | 'msgpack' |
 
-**Start simple, measure, then tune!** 🎛️
-
+**Start with the balanced preset and tune based on your specific needs!**

@@ -18,9 +18,7 @@ describe('Node Errors', () => {
       expect(NodeErrorCode).to.be.an('object')
       expect(NodeErrorCode.NODE_NOT_FOUND).to.be.a('string')
       expect(NodeErrorCode.NO_NODES_MATCH_FILTER).to.be.a('string')
-      expect(NodeErrorCode.ROUTING_FAILED).to.be.a('string')
-      expect(NodeErrorCode.DUPLICATE_CONNECTION).to.be.a('string')
-      expect(NodeErrorCode.SERVER_NOT_INITIALIZED).to.be.a('string')
+      expect(NodeErrorCode.INVALID_ADDRESS).to.be.a('string')
     })
     
     it('should have unique error codes', () => {
@@ -32,9 +30,7 @@ describe('Node Errors', () => {
     it('should have descriptive error code names', () => {
       expect(NodeErrorCode.NODE_NOT_FOUND).to.equal('NODE_NOT_FOUND')
       expect(NodeErrorCode.NO_NODES_MATCH_FILTER).to.equal('NO_NODES_MATCH_FILTER')
-      expect(NodeErrorCode.ROUTING_FAILED).to.equal('ROUTING_FAILED')
-      expect(NodeErrorCode.DUPLICATE_CONNECTION).to.equal('DUPLICATE_CONNECTION')
-      expect(NodeErrorCode.SERVER_NOT_INITIALIZED).to.equal('SERVER_NOT_INITIALIZED')
+      expect(NodeErrorCode.INVALID_ADDRESS).to.equal('INVALID_ADDRESS')
     })
     
     it('should be immutable (frozen)', () => {
@@ -69,10 +65,10 @@ describe('Node Errors', () => {
     
     it('should default message to code if not provided', () => {
       const error = new NodeError({
-        code: NodeErrorCode.ROUTING_FAILED
+        code: NodeErrorCode.INVALID_ADDRESS
       })
       
-      expect(error.message).to.equal(NodeErrorCode.ROUTING_FAILED)
+      expect(error.message).to.equal(NodeErrorCode.INVALID_ADDRESS)
     })
     
     it('should include nodeId', () => {
@@ -264,34 +260,14 @@ describe('Node Errors', () => {
       expect(error.code).to.equal('NO_NODES_MATCH_FILTER')
     })
     
-    it('should create ROUTING_FAILED error', () => {
+    it('should create INVALID_ADDRESS error', () => {
       const error = new NodeError({
-        code: NodeErrorCode.ROUTING_FAILED,
-        message: 'Routing logic failed',
-        nodeId: 'worker-1'
+        code: NodeErrorCode.INVALID_ADDRESS,
+        message: 'Invalid address provided',
+        context: { address: null }
       })
       
-      expect(error.code).to.equal('ROUTING_FAILED')
-    })
-    
-    it('should create DUPLICATE_CONNECTION error', () => {
-      const error = new NodeError({
-        code: NodeErrorCode.DUPLICATE_CONNECTION,
-        message: 'Already connected to this address',
-        context: { address: 'tcp://127.0.0.1:5000' }
-      })
-      
-      expect(error.code).to.equal('DUPLICATE_CONNECTION')
-    })
-    
-    it('should create SERVER_NOT_INITIALIZED error', () => {
-      const error = new NodeError({
-        code: NodeErrorCode.SERVER_NOT_INITIALIZED,
-        message: 'Server required but not created',
-        nodeId: 'master-1'
-      })
-      
-      expect(error.code).to.equal('SERVER_NOT_INITIALIZED')
+      expect(error.code).to.equal('INVALID_ADDRESS')
     })
   })
   

@@ -568,11 +568,6 @@ node.on(NodeEvent.PEER_LEFT, ({ peerId, direction }) => {
   console.log(`Peer left: ${peerId}`)
 })
 
-// Node ready
-node.on(NodeEvent.READY, () => {
-  console.log('Node is ready')
-})
-
 // Handle errors
 node.on(NodeEvent.ERROR, ({ code, message }) => {
   console.error(`Error [${code}]: ${message}`)

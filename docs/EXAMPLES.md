@@ -27,7 +27,7 @@ This document provides complete, production-ready examples demonstrating ZeroNod
 
 ```javascript
 // examples/api-gateway/gateway.js
-import Node from 'zeronode'
+import { Node, NodeEvent } from 'zeronode'
 
 const gateway = new Node({
   id: 'api-gateway',
@@ -68,8 +68,8 @@ gateway.onRequest(/^api:/, async (envelope, reply) => {
 })
 
 // Error handling
-gateway.on('node:error', ({ code, message }) => {
-  console.error(`Gateway error [${code}]: ${message}`)
+gateway.on(NodeEvent.ERROR, ({ source, error }) => {
+  console.error(`Gateway error from ${source}:`, error.message)
 })
 ```
 

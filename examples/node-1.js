@@ -76,11 +76,6 @@ import { Node, NodeEvent, ServerEvent } from '../src/index.js'
 
     let connectedPeers = new Set()
 
-    node1.on(NodeEvent.READY, () => {
-      const time = new Date().toLocaleTimeString()
-      console.log(`✅ [${time}] [EVENT] Node ready`)
-    })
-
     node1.on(NodeEvent.PEER_JOINED, ({ peerId, peerOptions, direction }) => {
       const time = new Date().toLocaleTimeString()
       console.log(`🤝 [${time}] [EVENT] Peer joined: ${peerId}`)

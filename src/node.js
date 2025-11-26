@@ -37,7 +37,7 @@ import animal from 'animal-id'
 import { EventEmitter } from 'events'
 import { PatternEmitter } from '@sfast/pattern-emitter-ts'
 
-import { NodeError, NodeErrorCode } from './node-errors.js'
+import { NodeError, NodeErrorCode, assertValidAddress } from './node-errors.js'
 import NodeUtils from './utils.js'
 import Server, { ServerEvent } from './protocol/server.js'
 import Client, { ClientEvent } from './protocol/client.js'
@@ -46,7 +46,6 @@ import Client, { ClientEvent } from './protocol/client.js'
 // NODE EVENTS (Orchestration Layer - Public API)
 // ============================================================================
 export const NodeEvent = {
-  READY: 'node:ready',             // Node is fully initialized and ready
   PEER_JOINED: 'node:peer_joined', // New peer discovered (upstream or downstream)
   PEER_LEFT: 'node:peer_left',     // Peer disconnected
   STOPPED: 'node:stopped',         // Node stopped
@@ -310,10 +309,8 @@ export default class Node extends EventEmitter {
     
     // Server ready
     server.on(ServerEvent.READY, () => {
-      this.emit(NodeEvent.READY, {
-        nodeId: this.getId(),
-        hasServer: true
-      })
+      // Server is bound and ready to accept clients
+      // No event emitted - users can await bind() if needed
     })
   }
   
@@ -330,13 +327,7 @@ export default class Node extends EventEmitter {
    * @returns {Promise<Object>} Remote node info
    */
   async connect ({ address, timeout, reconnectionTimeout } = {}) {
-    if (!address || typeof address !== 'string') {
-      throw new NodeError({
-        code: NodeErrorCode.ROUTING_FAILED,
-        message: `Invalid address: ${address}`,
-        context: { address }
-      })
-    }
+    assertValidAddress(address)
     
     const _scope = _private.get(this)
     const { id, options, config, clients, clientsAddressIndex, logger } = _scope
@@ -387,13 +378,6 @@ export default class Node extends EventEmitter {
     
     // Get server ID (now available after handshake)
     const serverId = client.getServerId()
-    if (!serverId) {
-      throw new NodeError({
-        code: NodeErrorCode.ROUTING_FAILED,
-        message: `Failed to get server ID after connection to ${address}`,
-        context: { address }
-      })
-    }
     
     const remoteNodeId = serverId
     
@@ -417,13 +401,7 @@ export default class Node extends EventEmitter {
    * @param {string} address - Remote address
    */
   async disconnect (address) {
-    if (!address || typeof address !== 'string') {
-      throw new NodeError({
-        code: NodeErrorCode.ROUTING_FAILED,
-        message: `Invalid address: ${address}`,
-        context: { address }
-      })
-    }
+    assertValidAddress(address)
     
     const _scope = _private.get(this)
     const { clients, clientsAddressIndex, logger } = _scope
@@ -836,12 +814,7 @@ export default class Node extends EventEmitter {
         message: 'No nodes match filter criteria',
         context: { filter, down, up, event }
       })
-      this.emit('error', error)
-      this.emit(NodeEvent.ERROR, {
-        source: 'router',
-        category: 'filter',
-        error
-      })
+
       return Promise.reject(error)
     }
     
@@ -883,7 +856,7 @@ export default class Node extends EventEmitter {
         message: 'No nodes match filter criteria',
         context: { filter, down, up, event }
       })
-      // Don't emit - just reject the promise for consistency with requestAny
+
       return Promise.reject(error)
     }
     

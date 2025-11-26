@@ -343,7 +343,7 @@ describe('Node - Orchestration Layer', () => {
         expect.fail('Should have thrown error')
       } catch (err) {
         expect(err).to.be.instanceOf(NodeError)
-        expect(err.code).to.equal(NodeErrorCode.ROUTING_FAILED)
+        expect(err.code).to.equal(NodeErrorCode.INVALID_ADDRESS)
       }
     })
     

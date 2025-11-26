@@ -79,10 +79,6 @@ import { Node, NodeEvent } from '../src/index.js'
     // Event Listeners - Track all node lifecycle events
     // ========================================================================
 
-    node2.on(NodeEvent.READY, () => {
-      console.log('✅ [EVENT] Node ready')
-    })
-
     node2.on(NodeEvent.PEER_JOINED, ({ peerId, peerOptions, direction }) => {
       console.log(`🤝 [EVENT] Peer joined: ${peerId}`)
       console.log(`   Direction: ${direction}`)

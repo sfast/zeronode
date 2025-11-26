@@ -73,10 +73,10 @@ describe('Public API (index.js)', () => {
   describe('Event Objects', () => {
     it('should export NodeEvent', () => {
       expect(NodeEvent).to.be.an('object')
-      expect(NodeEvent.READY).to.be.a('string')
       expect(NodeEvent.PEER_JOINED).to.be.a('string')
       expect(NodeEvent.PEER_LEFT).to.be.a('string')
       expect(NodeEvent.STOPPED).to.be.a('string')
+      expect(NodeEvent.ERROR).to.be.a('string')
     })
 
     it('should export ServerEvent', () => {
@@ -118,7 +118,7 @@ describe('Public API (index.js)', () => {
     })
 
     it('should have properly namespaced event names', () => {
-      expect(NodeEvent.READY).to.include('node:')
+      expect(NodeEvent.PEER_JOINED).to.include('node:')
       expect(ServerEvent.READY).to.include('server:')
       expect(ClientEvent.READY).to.include('client:')
       expect(ProtocolEvent.TRANSPORT_READY).to.include('protocol:')
@@ -245,7 +245,7 @@ describe('Public API (index.js)', () => {
   describe('API Stability', () => {
     it('should maintain stable event names', () => {
       // These event names should never change (breaking change)
-      expect(NodeEvent.READY).to.equal('node:ready')
+      expect(NodeEvent.PEER_JOINED).to.equal('node:peer_joined')
       expect(ServerEvent.READY).to.equal('server:ready')
       expect(ClientEvent.READY).to.equal('client:ready')
     })

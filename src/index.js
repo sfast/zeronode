@@ -6,7 +6,7 @@
 // Core classes
 import Node from './node.js'
 import { NodeEvent } from './node.js'
-import { NodeError, NodeErrorCode } from './node-errors.js'
+import { NodeError, NodeErrorCode, assertValidAddress } from './node-errors.js'
 
 // Protocol layer
 import Server from './protocol/server.js'
@@ -46,6 +46,7 @@ export {
   // Errors (by layer)
   NodeError,
   NodeErrorCode,
+  assertValidAddress,
   ProtocolError,
   ProtocolErrorCode,
   TransportError,
