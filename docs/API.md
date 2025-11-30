@@ -40,6 +40,120 @@ const node = new Node({
 
 ---
 
+## Router Class
+
+The `Router` is a specialized `Node` subclass designed for service discovery and message forwarding in distributed systems.
+
+### Constructor
+
+```javascript
+import { Router } from 'zeronode'
+
+const router = new Router(options)
+```
+
+**Parameters:** Same as `Node` constructor (automatically sets `options.router = true`)
+
+**Example:**
+```javascript
+const router = new Router({
+  id: 'main-router',
+  bind: 'tcp://0.0.0.0:8080',
+  config: {
+    DEBUG: false
+  }
+})
+```
+
+### How Routers Work
+
+When a node cannot find a matching peer locally:
+1. Node attempts local `requestAny` / `tickAny`
+2. If no match found, checks for connected routers (`router: true` option)
+3. Forwards request to router via system proxy message
+4. Router performs its own `requestAny` / `tickAny` across its connections
+5. Router returns result back to original requesting node
+
+**Architecture:**
+```
+Client Node → (no local match) → Router → Worker Nodes
+     ↓                                           ↓
+  Receives ←──────────────────────────────── Response
+```
+
+### Router-Specific Methods
+
+#### `getRoutingStats()`
+
+Get routing statistics for monitoring router performance.
+
+**Returns:** `Object` - Statistics object
+
+**Example:**
+```javascript
+const stats = router.getRoutingStats()
+console.log(stats)
+// {
+//   proxyRequests: { total: 150, successful: 145, failed: 5 },
+//   proxyTicks: { total: 300 },
+//   uptime: 3600.5,
+//   averageResponseTime: 23.4
+// }
+```
+
+#### `resetRoutingStats()`
+
+Reset routing statistics to zero.
+
+**Returns:** `void`
+
+**Example:**
+```javascript
+router.resetRoutingStats()
+```
+
+### Router Example
+
+```javascript
+import { Router, Node } from 'zeronode'
+
+// Start router
+const router = new Router({
+  id: 'main-router',
+  bind: 'tcp://0.0.0.0:8080'
+})
+
+// Service node registers with router
+const service = new Node({
+  id: 'auth-service',
+  options: { role: 'auth' },
+  bind: 'tcp://0.0.0.0:9000'
+})
+
+await service.connect({ address: 'tcp://127.0.0.1:8080' })
+
+service.onRequest('auth:login', async ({ data }) => {
+  return { token: 'abc123', userId: data.username }
+})
+
+// Client node connects to router
+const client = new Node({ id: 'api-client' })
+await client.connect({ address: 'tcp://127.0.0.1:8080' })
+
+// Client requests auth service through router
+const result = await client.requestAny({
+  event: 'auth:login',
+  data: { username: 'john', password: 'secret' },
+  filter: { role: 'auth' }
+})
+// Router automatically forwards to auth-service and returns response
+console.log(result)  // { token: 'abc123', userId: 'john' }
+```
+
+See [Router-Based Discovery](./ROUTING.md#router-based-discovery) for more details.
+
+---
+
 ## Server Methods
 
 ### `bind(address)`
@@ -139,6 +253,7 @@ Send request to specific node, wait for response.
   - `event` (string): Event name
   - `data` (any): Request data
   - `timeout` (number, optional): Request timeout in milliseconds (default: 10000)
+  - `metadata` (Object, optional): Additional routing metadata
 
 **Returns:** `Promise<any>` - Response data
 
@@ -168,6 +283,7 @@ Send one-way message to specific node (no response).
   - `to` (string): Target node ID
   - `event` (string): Event name
   - `data` (any): Message data
+  - `metadata` (Object, optional): Additional routing metadata
 
 **Returns:** `void`
 
@@ -193,6 +309,7 @@ Send request to any node matching filter (automatic load balancing).
   - `down` (boolean, optional): Include downstream peers (default: true)
   - `up` (boolean, optional): Include upstream peers (default: true)
   - `timeout` (number, optional): Request timeout
+  - `metadata` (Object, optional): Additional routing metadata
 
 **Returns:** `Promise<any>` - Response data
 
@@ -221,7 +338,15 @@ const response = await node.requestAny({
 
 Send one-way message to any node matching filter.
 
-**Parameters:** Same as `requestAny` (without timeout)
+**Parameters:**
+- `options` (Object)
+  - `event` (string): Event name
+  - `data` (any): Message data
+  - `filter` (Object, optional): Filter criteria
+  - `predicate` (Function, optional): Custom filter function
+  - `down` (boolean, optional): Include downstream peers (default: true)
+  - `up` (boolean, optional): Include upstream peers (default: true)
+  - `metadata` (Object, optional): Additional routing metadata
 
 **Returns:** `void`
 
@@ -273,6 +398,110 @@ node.tickAll({
   event: 'config:reload',
   data: { version: '2.0', config: newConfig },
   filter: { role: 'worker' }
+})
+```
+
+### `requestDownAny(options)`
+
+Send request to any **downstream** node matching filter.
+
+**Parameters:** Same as `requestAny` (automatically sets `down: true, up: false`)
+
+**Returns:** `Promise<any>` - Response data
+
+**Example:**
+```javascript
+// Request only downstream clients
+const response = await node.requestDownAny({
+  event: 'task:process',
+  data: { taskId: 789 },
+  filter: { role: 'worker' }
+})
+```
+
+### `requestUpAny(options)`
+
+Send request to any **upstream** node matching filter.
+
+**Parameters:** Same as `requestAny` (automatically sets `down: false, up: true`)
+
+**Returns:** `Promise<any>` - Response data
+
+**Example:**
+```javascript
+// Request only upstream servers
+const response = await node.requestUpAny({
+  event: 'auth:verify',
+  data: { token: 'abc123' },
+  filter: { role: 'auth-server' }
+})
+```
+
+### `tickDownAny(options)`
+
+Send one-way message to any **downstream** node matching filter.
+
+**Parameters:** Same as `tickAny` (automatically sets `down: true, up: false`)
+
+**Returns:** `void`
+
+**Example:**
+```javascript
+node.tickDownAny({
+  event: 'cache:invalidate',
+  data: { key: 'user:123' },
+  filter: { role: 'cache' }
+})
+```
+
+### `tickUpAny(options)`
+
+Send one-way message to any **upstream** node matching filter.
+
+**Parameters:** Same as `tickAny` (automatically sets `down: false, up: true`)
+
+**Returns:** `void`
+
+**Example:**
+```javascript
+node.tickUpAny({
+  event: 'metrics:report',
+  data: { cpu: 80, memory: 60 },
+  filter: { role: 'monitor' }
+})
+```
+
+### `tickDownAll(options)`
+
+Send one-way message to all **downstream** nodes matching filter.
+
+**Parameters:** Same as `tickAll` (automatically sets `down: true, up: false`)
+
+**Returns:** `void`
+
+**Example:**
+```javascript
+node.tickDownAll({
+  event: 'config:reload',
+  data: { newConfig },
+  filter: { role: 'worker' }
+})
+```
+
+### `tickUpAll(options)`
+
+Send one-way message to all **upstream** nodes matching filter.
+
+**Parameters:** Same as `tickAll` (automatically sets `down: false, up: true`)
+
+**Returns:** `void`
+
+**Example:**
+```javascript
+node.tickUpAll({
+  event: 'health:report',
+  data: { status: 'healthy', uptime: 3600 },
+  filter: { role: 'monitor' }
 })
 ```
 
@@ -462,17 +691,57 @@ await node.setOptions({
 })
 ```
 
-### `getPeers()`
+### `getPeers(options)`
 
-Get all connected peers.
+Get all connected peers with optional filtering by direction.
+
+**Parameters:**
+- `options` (Object, optional)
+  - `direction` (string, optional): Filter by direction (`'upstream'` or `'downstream'`)
+
+**Returns:** `Array<Object>` - Array of peer info objects `{ id, options, direction }`
+
+**Example:**
+```javascript
+// Get all peers
+const peers = node.getPeers()
+console.log(peers)
+// [
+//   { id: 'server-node-1', options: { role: 'api' }, direction: 'upstream' },
+//   { id: 'worker-node-2', options: { role: 'worker' }, direction: 'downstream' }
+// ]
+
+// Get only downstream peers
+const downstreamPeers = node.getPeers({ direction: 'downstream' })
+
+// Get only upstream peers
+const upstreamPeers = node.getPeers({ direction: 'upstream' })
+```
+
+### `getNodesDownstream()`
+
+Get IDs of all downstream peers (clients connected to this node).
 
 **Returns:** `Array<string>` - Array of peer IDs
 
 **Example:**
 ```javascript
-const peers = node.getPeers()
-console.log(`Connected peers:`, peers)
-// ['server-node-1', 'worker-node-2', 'worker-node-3']
+const downstream = node.getNodesDownstream()
+console.log(`Downstream peers:`, downstream)
+// ['worker-node-1', 'worker-node-2', 'worker-node-3']
+```
+
+### `getNodesUpstream()`
+
+Get IDs of all upstream peers (servers this node is connected to).
+
+**Returns:** `Array<string>` - Array of peer IDs
+
+**Example:**
+```javascript
+const upstream = node.getNodesUpstream()
+console.log(`Upstream peers:`, upstream)
+// ['router-1', 'router-2']
 ```
 
 ### `getPeerOptions(peerId)`
@@ -491,11 +760,56 @@ console.log(`Worker options:`, peerOptions)
 // { role: 'worker', status: 'idle', capacity: 100 }
 ```
 
+### `getFilteredNodes(filter)`
+
+Get IDs of all nodes matching a filter criteria.
+
+**Parameters:**
+- `filter` (Object): Filter criteria (same format as `requestAny` filter)
+
+**Returns:** `Array<string>` - Array of matching peer IDs
+
+**Example:**
+```javascript
+const workers = node.getFilteredNodes({ role: 'worker', status: 'idle' })
+console.log(`Available workers:`, workers)
+// ['worker-1', 'worker-3']
+```
+
+### `getServerIdByAddress(address)`
+
+Get the peer ID of a server at a specific address.
+
+**Parameters:**
+- `address` (string): Server address
+
+**Returns:** `string | null` - Peer ID or null if not found
+
+**Example:**
+```javascript
+const serverId = node.getServerIdByAddress('tcp://127.0.0.1:5000')
+console.log(`Server ID:`, serverId)
+// 'router-1'
+```
+
+### `getLogger()`
+
+Get the node's Winston logger instance.
+
+**Returns:** `winston.Logger`
+
+**Example:**
+```javascript
+const logger = node.getLogger()
+logger.info('Custom log message')
+logger.error('Error occurred', { details: errorData })
+```
+
 ---
 
 ## Lifecycle Methods
 
-### `stop()`
+### `close()`
 
 Stop the node (unbind server, disconnect all clients, cleanup).
 
@@ -503,7 +817,7 @@ Stop the node (unbind server, disconnect all clients, cleanup).
 
 **Example:**
 ```javascript
-await node.stop()
+await node.close()
 console.log('Node stopped')
 ```
 
@@ -518,7 +832,6 @@ Node-level events (application layer).
 ```javascript
 import { NodeEvent } from 'zeronode'
 
-NodeEvent.READY         // 'node:ready'
 NodeEvent.PEER_JOINED   // 'node:peer_joined'
 NodeEvent.PEER_LEFT     // 'node:peer_left'
 NodeEvent.STOPPED       // 'node:stopped'
@@ -526,6 +839,28 @@ NodeEvent.ERROR         // 'node:error'
 ```
 
 See [Events Reference](./EVENTS.md) for complete documentation.
+
+### `ReconnectPolicy`
+
+Auto-reconnection policy for upstream peers.
+
+```javascript
+import { ReconnectPolicy } from 'zeronode'
+
+ReconnectPolicy.ALWAYS      // 'always' - Always reconnect (graceful or crash)
+ReconnectPolicy.ON_FAILURE  // 'on_failure' - Only reconnect on unexpected failures
+ReconnectPolicy.DISABLED    // 'disabled' - No automatic reconnection
+```
+
+**Example:**
+```javascript
+const node = new Node({
+  id: 'my-node',
+  config: {
+    reconnect: ReconnectPolicy.ALWAYS  // Default behavior
+  }
+})
+```
 
 ### `ServerEvent`
 

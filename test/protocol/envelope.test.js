@@ -623,5 +623,353 @@ describe('Envelope', () => {
       expect(elapsed).to.be.lessThan(10)
     })
   })
+
+  describe('Metadata Feature', () => {
+    
+    describe('createBuffer() with metadata', () => {
+      
+      it('should create envelope without metadata (backward compatible)', () => {
+        const buffer = Envelope.createBuffer({
+          type: EnvelopType.REQUEST,
+          id: 12345n,
+          event: 'test',
+          owner: 'node-1',
+          recipient: 'node-2',
+          data: { hello: 'world' }
+          // No metadata
+        })
+        
+        expect(buffer).to.be.instanceOf(Buffer)
+        
+        const envelope = new Envelope(buffer)
+        expect(envelope.metadata).to.be.null
+      })
+      
+      it('should create envelope with metadata', () => {
+        const buffer = Envelope.createBuffer({
+          type: EnvelopType.REQUEST,
+          id: 12345n,
+          event: 'test',
+          owner: 'node-1',
+          recipient: 'node-2',
+          data: { hello: 'world' },
+          metadata: { traceId: 'abc-123' }
+        })
+        
+        expect(buffer).to.be.instanceOf(Buffer)
+        
+        const envelope = new Envelope(buffer)
+        expect(envelope.metadata).to.deep.equal({ traceId: 'abc-123' })
+      })
+      
+      it('should handle null metadata', () => {
+        const buffer = Envelope.createBuffer({
+          type: EnvelopType.REQUEST,
+          id: 12345n,
+          event: 'test',
+          owner: 'node-1',
+          recipient: 'node-2',
+          data: { test: true },
+          metadata: null
+        })
+        
+        const envelope = new Envelope(buffer)
+        expect(envelope.metadata).to.be.null
+      })
+      
+      it('should handle undefined metadata', () => {
+        const buffer = Envelope.createBuffer({
+          type: EnvelopType.REQUEST,
+          id: 12345n,
+          event: 'test',
+          owner: 'node-1',
+          recipient: 'node-2',
+          data: { test: true },
+          metadata: undefined
+        })
+        
+        const envelope = new Envelope(buffer)
+        expect(envelope.metadata).to.be.null
+      })
+      
+      it('should encode complex metadata', () => {
+        const complexMetadata = {
+          tracing: {
+            traceId: 'trace-abc-123',
+            spanId: 'span-xyz-456'
+          },
+          qos: {
+            priority: 'high',
+            maxRetries: 3
+          }
+        }
+        
+        const buffer = Envelope.createBuffer({
+          type: EnvelopType.REQUEST,
+          id: 12345n,
+          event: 'process',
+          owner: 'node-1',
+          recipient: 'node-2',
+          data: { jobId: 123 },
+          metadata: complexMetadata
+        })
+        
+        const envelope = new Envelope(buffer)
+        expect(envelope.metadata).to.deep.equal(complexMetadata)
+      })
+      
+      it('should throw error if metadata too large', () => {
+        const largeMetadata = { data: Buffer.alloc(70000).toString('hex') }
+        
+        expect(() => {
+          Envelope.createBuffer({
+            type: EnvelopType.REQUEST,
+            id: 12345n,
+            event: 'test',
+            owner: 'node-1',
+            recipient: 'node-2',
+            data: { test: true },
+            metadata: largeMetadata
+          })
+        }).to.throw('Metadata too large')
+      })
+    })
+    
+    describe('metadata getter', () => {
+      
+      it('should decode metadata lazily', () => {
+        const buffer = Envelope.createBuffer({
+          type: EnvelopType.REQUEST,
+          id: 12345n,
+          event: 'test',
+          owner: 'node-1',
+          recipient: 'node-2',
+          data: { test: true },
+          metadata: { traceId: 'abc-123' }
+        })
+        
+        const envelope = new Envelope(buffer)
+        
+        // First access decodes
+        const meta1 = envelope.metadata
+        expect(meta1).to.deep.equal({ traceId: 'abc-123' })
+        
+        // Second access uses cache
+        const meta2 = envelope.metadata
+        expect(meta2).to.equal(meta1)
+      })
+      
+      it('should preserve metadata type information', () => {
+        const metadata = {
+          string: 'hello',
+          number: 42,
+          boolean: true,
+          array: [1, 2, 3],
+          object: { nested: true },
+          nullValue: null
+        }
+        
+        const buffer = Envelope.createBuffer({
+          type: EnvelopType.REQUEST,
+          id: 12345n,
+          event: 'test',
+          owner: 'node-1',
+          recipient: 'node-2',
+          data: {},
+          metadata
+        })
+        
+        const envelope = new Envelope(buffer)
+        expect(envelope.metadata).to.deep.equal(metadata)
+      })
+    })
+    
+    describe('backward compatibility', () => {
+      
+      it('should read old envelope without metadata field', () => {
+        // Create envelope manually without metadata (simulate old format)
+        const type = EnvelopType.REQUEST
+        const id = 12345n
+        const owner = 'node-1'
+        const recipient = 'node-2'
+        const event = 'test'
+        const data = { hello: 'world' }
+        
+        const ownerBytes = Buffer.byteLength(owner)
+        const recipientBytes = Buffer.byteLength(recipient)
+        const eventBytes = Buffer.byteLength(event)
+        const dataBuffer = Buffer.from(JSON.stringify(data))
+        const dataLength = dataBuffer.length
+        
+        // Total size WITHOUT metadata fields
+        const totalSize = 1 + 4 + 8 + 
+          (1 + ownerBytes) + 
+          (1 + recipientBytes) + 
+          (1 + eventBytes) + 
+          2 + dataLength
+        
+        const buffer = Buffer.allocUnsafe(totalSize)
+        let offset = 0
+        
+        // Write envelope manually (old format)
+        buffer[offset++] = type
+        buffer.writeUInt32BE(Math.floor(Date.now() / 1000), offset)
+        offset += 4
+        
+        const high = Number((id >> 32n) & 0xFFFFFFFFn)
+        const low = Number(id & 0xFFFFFFFFn)
+        buffer.writeUInt32BE(high, offset)
+        buffer.writeUInt32BE(low, offset + 4)
+        offset += 8
+        
+        buffer[offset++] = ownerBytes
+        buffer.write(owner, offset, ownerBytes, 'utf8')
+        offset += ownerBytes
+        
+        buffer[offset++] = recipientBytes
+        buffer.write(recipient, offset, recipientBytes, 'utf8')
+        offset += recipientBytes
+        
+        buffer[offset++] = eventBytes
+        buffer.write(event, offset, eventBytes, 'utf8')
+        offset += eventBytes
+        
+        buffer.writeUInt16BE(dataLength, offset)
+        offset += 2
+        dataBuffer.copy(buffer, offset)
+        
+        // NO metadata field!
+        
+        // Should parse gracefully
+        const envelope = new Envelope(buffer)
+        expect(envelope.type).to.equal(type)
+        expect(envelope.owner).to.equal(owner)
+        expect(envelope.metadata).to.be.null
+      })
+    })
+    
+    describe('data and metadata coexistence', () => {
+      
+      it('should handle both data and metadata', () => {
+        const buffer = Envelope.createBuffer({
+          type: EnvelopType.REQUEST,
+          id: 12345n,
+          event: 'process',
+          owner: 'node-1',
+          recipient: 'node-2',
+          data: { jobId: 123, payload: 'user data' },
+          metadata: { traceId: 'abc-123', priority: 'high' }
+        })
+        
+        const envelope = new Envelope(buffer)
+        expect(envelope.data).to.deep.equal({ jobId: 123, payload: 'user data' })
+        expect(envelope.metadata).to.deep.equal({ traceId: 'abc-123', priority: 'high' })
+      })
+      
+      it('should keep data and metadata separate', () => {
+        const buffer = Envelope.createBuffer({
+          type: EnvelopType.REQUEST,
+          id: 12345n,
+          event: 'test',
+          owner: 'node-1',
+          recipient: 'node-2',
+          data: { user: 'data' },
+          metadata: { system: 'metadata' }
+        })
+        
+        const envelope = new Envelope(buffer)
+        
+        // Data should not contain metadata
+        expect(envelope.data).to.not.have.property('system')
+        
+        // Metadata should not contain data
+        expect(envelope.metadata).to.not.have.property('user')
+      })
+      
+      it('should handle no data with metadata', () => {
+        const timestamp = Date.now()
+        const buffer = Envelope.createBuffer({
+          type: EnvelopType.REQUEST,
+          id: 12345n,
+          event: 'ping',
+          owner: 'node-1',
+          recipient: 'node-2',
+          data: null,
+          metadata: { timestamp }
+        })
+        
+        const envelope = new Envelope(buffer)
+        expect(envelope.data).to.be.null
+        expect(envelope.metadata).to.deep.equal({ timestamp })
+      })
+    })
+    
+    describe('different envelope types with metadata', () => {
+      
+      it('should work with REQUEST envelopes', () => {
+        const buffer = Envelope.createBuffer({
+          type: EnvelopType.REQUEST,
+          id: 12345n,
+          event: 'test',
+          owner: 'node-1',
+          recipient: 'node-2',
+          data: {},
+          metadata: { type: 'request' }
+        })
+        
+        const envelope = new Envelope(buffer)
+        expect(envelope.type).to.equal(EnvelopType.REQUEST)
+        expect(envelope.metadata).to.deep.equal({ type: 'request' })
+      })
+      
+      it('should work with RESPONSE envelopes', () => {
+        const buffer = Envelope.createBuffer({
+          type: EnvelopType.RESPONSE,
+          id: 12345n,
+          event: '',
+          owner: 'node-2',
+          recipient: 'node-1',
+          data: { result: 'ok' },
+          metadata: { processingTime: 42 }
+        })
+        
+        const envelope = new Envelope(buffer)
+        expect(envelope.type).to.equal(EnvelopType.RESPONSE)
+        expect(envelope.metadata).to.deep.equal({ processingTime: 42 })
+      })
+      
+      it('should work with TICK envelopes', () => {
+        const buffer = Envelope.createBuffer({
+          type: EnvelopType.TICK,
+          id: 12345n,
+          event: 'heartbeat',
+          owner: 'node-1',
+          recipient: '',
+          data: {},
+          metadata: { broadcast: true }
+        })
+        
+        const envelope = new Envelope(buffer)
+        expect(envelope.type).to.equal(EnvelopType.TICK)
+        expect(envelope.metadata).to.deep.equal({ broadcast: true })
+      })
+      
+      it('should work with ERROR envelopes', () => {
+        const buffer = Envelope.createBuffer({
+          type: EnvelopType.ERROR,
+          id: 12345n,
+          event: '',
+          owner: 'node-2',
+          recipient: 'node-1',
+          data: { message: 'Error occurred' },
+          metadata: { errorCode: 'INTERNAL_ERROR' }
+        })
+        
+        const envelope = new Envelope(buffer)
+        expect(envelope.type).to.equal(EnvelopType.ERROR)
+        expect(envelope.metadata).to.deep.equal({ errorCode: 'INTERNAL_ERROR' })
+      })
+    })
+  })
 })
 

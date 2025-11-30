@@ -180,6 +180,58 @@ CLIENT_GHOST_TIMEOUT >= PING_INTERVAL * 3
 
 ### Protocol Configuration
 
+#### reconnect (Auto-Reconnection Policy)
+
+**Type:** `string` (use `ReconnectPolicy` enum)  
+**Default:** `ReconnectPolicy.ALWAYS` (`'always'`)  
+**Options:** 
+- `ReconnectPolicy.ALWAYS` (`'always'`) - Always reconnect to upstream peers
+- `ReconnectPolicy.ON_FAILURE` (`'on_failure'`) - Only reconnect on unexpected failures
+- `ReconnectPolicy.DISABLED` (`'disabled'`) - No automatic reconnection
+
+Controls automatic reconnection behavior when upstream peers (servers) disconnect.
+
+```javascript
+import { Node, ReconnectPolicy } from 'zeronode'
+
+// Always reconnect (default)
+const node1 = new Node({
+  config: {
+    reconnect: ReconnectPolicy.ALWAYS
+  }
+})
+
+// Only reconnect on failures (not graceful stops)
+const node2 = new Node({
+  config: {
+    reconnect: ReconnectPolicy.ON_FAILURE
+  }
+})
+
+// Disable auto-reconnect
+const node3 = new Node({
+  config: {
+    reconnect: ReconnectPolicy.DISABLED
+  }
+})
+```
+
+**Reconnection Behavior:**
+
+| Policy | Graceful Stop (Ctrl+C) | Unexpected Crash (kill -9) | Network Failure |
+|--------|------------------------|----------------------------|-----------------|
+| `ALWAYS` | ✅ Reconnects | ✅ Reconnects | ✅ Reconnects |
+| `ON_FAILURE` | ❌ No reconnect | ✅ Reconnects | ✅ Reconnects |
+| `DISABLED` | ❌ No reconnect | ❌ No reconnect | ❌ No reconnect |
+
+**Use Cases:**
+- `ALWAYS`: Production services that should always stay connected to routers/servers (recommended)
+- `ON_FAILURE`: Respect graceful shutdowns for maintenance windows
+- `DISABLED`: Manual connection management or testing scenarios
+
+**Exponential Backoff:**  
+Reconnection attempts use exponential backoff: 1s, 2s, 4s, 8s, 16s, capped at 30s.
+
 #### PROTOCOL_REQUEST_TIMEOUT
 
 **Type:** `number` (milliseconds)  

@@ -624,6 +624,199 @@ await router.request({
 
 ---
 
+## Router-Based Discovery (Service Mesh)
+
+When nodes cannot find matching peers locally, they can automatically route through a **Router** node for service discovery.
+
+### How It Works
+
+```
+Client Node                Router               Service Node
+    │                        │                       │
+    │ 1. requestAny(filter) │                       │
+    ├──────────────────────►│                       │
+    │   (no local match)     │                       │
+    │                        │ 2. requestAny(filter) │
+    │                        ├──────────────────────►│
+    │                        │                       │
+    │                        │ 3. response           │
+    │                        │◄──────────────────────┤
+    │ 4. response            │                       │
+    │◄───────────────────────┤                       │
+```
+
+**Process:**
+1. Client calls `requestAny({ filter })` but no local peers match
+2. Client automatically forwards to connected router via system proxy message
+3. Router performs its own `requestAny({ filter })` across its connections
+4. Router returns result back to client
+
+### Creating a Router
+
+```javascript
+import { Router } from 'zeronode'
+
+const router = new Router({
+  id: 'main-router',
+  bind: 'tcp://0.0.0.0:8080'
+})
+
+console.log('Router started on tcp://0.0.0.0:8080')
+```
+
+### Service Registration
+
+Services connect to router as upstream servers:
+
+```javascript
+import { Node } from 'zeronode'
+
+// Auth service
+const authService = new Node({
+  id: 'auth-service',
+  options: { role: 'auth', version: '2.0' },
+  bind: 'tcp://0.0.0.0:3001'
+})
+
+await authService.connect({ address: 'tcp://127.0.0.1:8080' })
+
+authService.onRequest('auth:login', async ({ data }) => {
+  // Authentication logic
+  return { token: 'abc123', userId: data.username }
+})
+
+// Payment service
+const paymentService = new Node({
+  id: 'payment-service',
+  options: { role: 'payment', version: '1.5' }
+})
+
+await paymentService.connect({ address: 'tcp://127.0.0.1:8080' })
+
+paymentService.onRequest('payment:charge', async ({ data }) => {
+  // Payment logic
+  return { success: true, transactionId: '12345' }
+})
+```
+
+### Client Usage
+
+Clients connect to router and request services without knowing their location:
+
+```javascript
+import { Node } from 'zeronode'
+
+const client = new Node({ id: 'api-client' })
+await client.connect({ address: 'tcp://127.0.0.1:8080' })
+
+// Request auth service (router automatically forwards)
+const authResult = await client.requestAny({
+  event: 'auth:login',
+  data: { username: 'john', password: 'secret' },
+  filter: { role: 'auth' }
+})
+console.log(authResult)  // { token: 'abc123', userId: 'john' }
+
+// Request payment service
+const paymentResult = await client.requestAny({
+  event: 'payment:charge',
+  data: { amount: 100, card: '****1234' },
+  filter: { role: 'payment' }
+})
+console.log(paymentResult)  // { success: true, transactionId: '12345' }
+```
+
+### Router Statistics
+
+Monitor router performance:
+
+```javascript
+const stats = router.getRoutingStats()
+console.log(stats)
+// {
+//   proxyRequests: { total: 1500, successful: 1480, failed: 20 },
+//   proxyTicks: { total: 3200 },
+//   uptime: 7200.5,
+//   averageResponseTime: 18.3
+// }
+
+// Reset statistics
+router.resetRoutingStats()
+```
+
+### Fallback Behavior
+
+When `requestAny` / `tickAny` cannot find a match:
+
+1. **Try Local Match**: Search downstream + upstream peers
+2. **Try Router**: If no match and router connected, forward to router
+3. **Error**: If router also has no match, return `NO_NODES_MATCH_FILTER`
+
+```javascript
+try {
+  const result = await node.requestAny({
+    event: 'rare:service',
+    filter: { role: 'rare' }
+  })
+} catch (err) {
+  if (err.code === 'NO_NODES_MATCH_FILTER') {
+    console.error('Service not available (checked locally and via router)')
+  }
+}
+```
+
+### Multi-Router Setup
+
+For high availability, nodes can connect to multiple routers:
+
+```javascript
+const client = new Node({ id: 'client' })
+
+// Connect to multiple routers
+await client.connect({ address: 'tcp://router-1:8080' })
+await client.connect({ address: 'tcp://router-2:8080' })
+await client.connect({ address: 'tcp://router-3:8080' })
+
+// Client will try local first, then round-robin through routers
+const result = await client.requestAny({
+  event: 'service:request',
+  filter: { role: 'worker' }
+})
+```
+
+### CLI Usage
+
+**Start Router:**
+```bash
+npx zeronode --router --bind tcp://0.0.0.0:8087
+```
+
+**Register Services:**
+```bash
+# Auth service
+npx zeronode --node --name auth --connect tcp://127.0.0.1:8087
+
+# Payment service
+npx zeronode --node --name payment --connect tcp://127.0.0.1:8087
+```
+
+**Connect Client:**
+```bash
+npx zeronode --node --name client --connect tcp://127.0.0.1:8087 --interactive
+```
+
+See [CLI Documentation](./CLI.md) for more details.
+
+### Advantages
+
+✅ **Service Discovery**: Clients don't need to know service locations  
+✅ **Dynamic Scaling**: Add/remove services without client changes  
+✅ **Load Balancing**: Router automatically distributes requests  
+✅ **Centralized Monitoring**: Track all inter-service communication  
+✅ **Flexible Topology**: Mix direct connections with router-based discovery  
+
+---
+
 ## Error Handling
 
 ### No Route Found

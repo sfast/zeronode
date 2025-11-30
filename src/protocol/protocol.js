@@ -120,7 +120,7 @@ export default class Protocol extends EventEmitter {
    * @returns {Promise<*>} Response data
    * @throws {ProtocolError} If validation fails or transport is offline
    */
-  request({ to, event, data, timeout } = {}) {
+  request({ to, event, data, metadata, timeout } = {}) {
     let { socket, requestTracker, idGenerator, config } = _private.get(this)
     
     // Validate event name (no system events from public API)
@@ -161,6 +161,7 @@ export default class Protocol extends EventEmitter {
         id,
         event,
         data,
+        metadata,
         owner: this.getId(),
         recipient: to
       }, config.BUFFER_STRATEGY)
@@ -183,7 +184,7 @@ export default class Protocol extends EventEmitter {
    * @param {*} [params.data] - Event data
    * @throws {ProtocolError} If event is a system event or transport is offline
    */
-  tick({ to, event, data } = {}) {
+  tick({ to, event, data, metadata } = {}) {
     // ❌ BLOCK system events from public API
     if (event.startsWith('_system:')) {
       throw new ProtocolError({
@@ -223,10 +224,11 @@ export default class Protocol extends EventEmitter {
    * @param {string} [params.to] - Recipient ID
    * @param {string} params.event - System event name (must start with '_system:')
    * @param {*} [params.data] - Event data
+   * @param {Object} [params.metadata] - Metadata
    * @throws {ProtocolError} If transport is offline
    * @throws {Error} If event is not a system event
    */
-  _sendSystemTick({ to, event, data } = {}) {
+  _sendSystemTick({ to, event, data, metadata } = {}) {
     // ✅ Assert this is actually a system event (internal validation)
     if (!event.startsWith('_system:')) {
       throw new Error(
@@ -245,14 +247,73 @@ export default class Protocol extends EventEmitter {
     }
     
     // Send via internal implementation (bypass validation)
-    this._doTick({ to, event, data })
+    this._doTick({ to, event, data, metadata })
+  }
+  
+  /**
+   * Send system request - INTERNAL USE ONLY
+   * Used by Router for proxy requests and other internal RPC
+   * 
+   * @protected
+   * @param {Object} params
+   * @param {string} [params.to] - Recipient ID
+   * @param {string} params.event - System event name (must start with '_system:')
+   * @param {*} [params.data] - Event data
+   * @param {Object} [params.metadata] - Metadata
+   * @param {number} [params.timeout] - Request timeout
+   * @returns {Promise<*>} Response data
+   * @throws {ProtocolError} If transport is offline
+   * @throws {Error} If event is not a system event
+   */
+  _sendSystemRequest({ to, event, data, metadata, timeout } = {}) {
+    // ✅ Assert this is actually a system event (internal validation)
+    if (!event.startsWith('_system:')) {
+      return Promise.reject(new Error(
+        `_sendSystemRequest() requires system event (starting with '_system:'), got: ${event}`
+      ))
+    }
+    
+    let { socket, requestTracker, idGenerator, config, closed } = _private.get(this)
+    
+    // Check if transport is online
+    if (!socket.isOnline() || closed) {
+      return Promise.reject(new ProtocolError({
+        code: ProtocolErrorCode.NOT_READY,
+        message: `Cannot send system request: Protocol '${this.getId()}' is not ready`,
+        protocolId: this.getId()
+      }))
+    }
+    
+    // Use config default if no timeout specified
+    timeout = timeout || config.PROTOCOL_REQUEST_TIMEOUT
+    
+    // Generate unique envelope ID
+    const id = idGenerator.next()
+    
+    return new Promise((resolve, reject) => {
+      // Track request
+      requestTracker.track(id, { resolve, reject, timeout })
+      
+      // Create and send envelope
+      const buffer = Envelope.createBuffer({
+        type: EnvelopType.REQUEST,
+        id,
+        event,
+        data,
+        metadata,
+        owner: this.getId(),
+        recipient: to
+      }, config.BUFFER_STRATEGY)
+      
+      socket.sendBuffer(buffer, to)
+    })
   }
   
   /**
    * Actually send a tick (internal implementation)
    * @private
    */
-  _doTick({ to, event, data } = {}) {
+  _doTick({ to, event, data, metadata } = {}) {
     let { socket, idGenerator, config } = _private.get(this)
     
     const id = idGenerator.next()
@@ -261,6 +322,7 @@ export default class Protocol extends EventEmitter {
       id,
       event,
       data,
+      metadata,
       owner: this.getId()
     }, config.BUFFER_STRATEGY)
     

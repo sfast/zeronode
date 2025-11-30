@@ -5,8 +5,9 @@
 
 // Core classes
 import Node from './node.js'
-import { NodeEvent } from './node.js'
+import { NodeEvent, ReconnectPolicy } from './node.js'
 import { NodeError, NodeErrorCode, assertValidAddress } from './node-errors.js'
+import Router from './router.js'
 
 // Protocol layer
 import Server from './protocol/server.js'
@@ -32,6 +33,7 @@ const { optionsPredicateBuilder } = utils
 export {
   // Core
   Node,
+  Router,
   Server,
   Client,
   
@@ -42,6 +44,9 @@ export {
   ProtocolEvent,       // Protocol transport state events
   ProtocolSystemEvent, // Internal protocol messages
   TransportEvent,      // Transport layer events
+  
+  // Reconnect policy
+  ReconnectPolicy,     // Auto-reconnect configuration
   
   // Errors (by layer)
   NodeError,

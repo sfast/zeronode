@@ -324,6 +324,137 @@ const response = await node.requestAny({
 })
 ```
 
+#### Router-Based Discovery (Service Mesh)
+
+**Automatic service discovery through routers** - nodes find each other without direct connections!
+
+```
+   Payment Service        Router           Auth Service
+        |                   |                    |
+        | No direct connection between them      |
+        |                   |                    |
+        |   requestAny()    |                    |
+        | filter: auth      |                    |
+        +------------------>|                    |
+        |                   |                    |
+        |                   | Discovers Auth     |
+        |                   | Forwards request   |
+        |                   +------------------->|
+        |                   |                    |
+        |                   |    Response        |
+        |                   |<-------------------+
+        |                   |                    |
+        |   Response        |                    |
+        |<------------------+                    |
+        |                   |                    |
+```
+
+**Basic Router Setup:**
+
+```javascript
+import { Router } from 'zeronode'
+
+// 1. Create a Router (special Node with router: true)
+const router = new Router({
+  id: 'router-1',
+  bind: 'tcp://127.0.0.1:3000'
+})
+await router.bind()
+
+// 2. Services connect to router (not to each other!)
+const authService = new Node({
+  id: 'auth-service',
+  options: { service: 'auth', version: '1.0' }
+})
+await authService.bind('tcp://127.0.0.1:3001')
+await authService.connect({ address: router.getAddress() })
+
+const paymentService = new Node({
+  id: 'payment-service', 
+  options: { service: 'payment' }
+})
+await paymentService.bind('tcp://127.0.0.1:3002')
+await paymentService.connect({ address: router.getAddress() })
+
+// 3. Services discover each other automatically via router!
+const result = await paymentService.requestAny({
+  filter: { service: 'auth' },
+  event: 'verify',
+  data: { token: 'abc-123' }
+})
+// ✅ Router automatically finds auth service and forwards request!
+```
+
+**Or use the CLI:**
+
+```bash
+# Start a router from command line
+npx zeronode --router --bind tcp://0.0.0.0:8087
+
+# With statistics
+npx zeronode --router --bind tcp://0.0.0.0:8087 --stats 5000
+```
+
+See [docs/CLI.md](docs/CLI.md) for complete CLI reference.
+
+**How Router Discovery Works:**
+
+1. **Local First** - Node checks direct connections
+2. **Router Fallback** - If not found locally, forwards to router(s)
+3. **Router Discovery** - Router finds service in its network
+4. **Response Routing** - Response flows back automatically
+
+**Router Features:**
+
+```javascript
+// Monitor routing activity
+const stats = router.getRoutingStats()
+console.log(stats)
+// {
+//   proxyRequests: 150,
+//   proxyTicks: 30,
+//   successfulRoutes: 178,
+//   failedRoutes: 2,
+//   uptime: 3600,
+//   requestsPerSecond: 0.05
+// }
+
+// Reset statistics
+router.resetRoutingStats()
+```
+
+**Multi-Hop Routing (Router Cascading):**
+
+Routers can forward to other routers for distributed service discovery!
+
+```
+Client → Router1 → Router2 → Service
+         (no match)  (found!)
+```
+
+```javascript
+// Create multiple routers
+const router1 = new Router({ bind: 'tcp://127.0.0.1:3000' })
+const router2 = new Router({ bind: 'tcp://127.0.0.1:3001' })
+
+// Chain routers together
+await router1.connect({ address: router2.getAddress() })
+
+// Client → Router1 → Router2 → Service (automatic!)
+```
+
+**Use Cases:**
+
+- ✅ **Microservices** - Dynamic service discovery without hardcoded IPs
+- ✅ **Multi-Region** - Routers in different regions find services across network
+- ✅ **Load Balancing** - Multiple service instances discovered automatically
+- ✅ **Failover** - Services can restart/relocate, router finds them
+- ✅ **Zero Config** - No service registries, no DNS, just connect to router
+
+**Router Example:** See `examples/router-example.js` for complete working code.
+
+**Performance:** Router adds ~0.5ms overhead (1.0ms vs 0.5ms direct). See [docs/BENCHMARKS.md](docs/BENCHMARKS.md) for details.
+
 #### Pattern Matching
 
 Zeronode supports pattern-based handlers using strings or RegExp. With RegExp you can register

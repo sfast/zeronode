@@ -52,6 +52,15 @@ export const NodeEvent = {
   ERROR: 'node:error'              // Node-level error (normalized payload)
 }
 
+// ============================================================================
+// RECONNECT POLICY
+// ============================================================================
+export const ReconnectPolicy = {
+  ALWAYS: 'always',         // Always reconnect upstream peers (graceful or crash)
+  ON_FAILURE: 'on_failure', // Only reconnect on unexpected failures (crashes, network issues)
+  DISABLED: 'disabled'      // No automatic reconnection
+}
+
 const _private = new WeakMap()
 
 const defaultLogger = winston.createLogger({
@@ -104,10 +113,21 @@ export default class Node extends EventEmitter {
       handlerRegistry: {
         request: new PatternEmitter(),
         tick: new PatternEmitter()
-      }
+      },
+      
+      // Auto-reconnect state
+      // reconnect: ReconnectPolicy.ALWAYS | ReconnectPolicy.ON_FAILURE | ReconnectPolicy.DISABLED
+      reconnect: config.reconnect !== undefined ? config.reconnect : ReconnectPolicy.ALWAYS,
+      connectionTargets: new Map(), // address → { peerId, attempts, timer, timeout }
+      peerIdToAddress: new Map()    // peerId → address
     }
     
     _private.set(this, _scope)
+    
+    // Setup auto-reconnect listener if enabled
+    if (_scope.reconnect !== ReconnectPolicy.DISABLED) {
+      this._setupAutoReconnect()
+    }
     
     // Default error handler for NO_NODES_MATCH_FILTER
     // Users can override by adding their own 'error' listener
@@ -159,6 +179,55 @@ export default class Node extends EventEmitter {
   getOptions () {
     const { options } = _private.get(this)
     return options
+  }
+  
+  /**
+   * Get connected peers with optional direction filter
+   * @param {Object} [options]
+   * @param {'upstream'|'downstream'} [options.direction]
+   * @returns {Array<{id: string, options: Object, direction: string|null}>}
+   */
+  getPeers ({ direction } = {}) {
+    const { joinedPeers, peerOptions, peerDirection } = _private.get(this)
+    const peers = []
+    
+    for (const peerId of joinedPeers) {
+      const info = {
+        id: peerId,
+        options: peerOptions.get(peerId) || {},
+        direction: peerDirection.get(peerId) || null
+      }
+      
+      if (direction && info.direction !== direction) continue
+      peers.push(info)
+    }
+    
+    return peers
+  }
+  
+  /**
+   * Get IDs of downstream peers (connected clients)
+   * @returns {string[]}
+   */
+  getNodesDownstream () {
+    return this.getPeers({ direction: 'downstream' }).map(peer => peer.id)
+  }
+  
+  /**
+   * Get IDs of upstream peers (connected servers/routers)
+   * @returns {string[]}
+   */
+  getNodesUpstream () {
+    return this.getPeers({ direction: 'upstream' }).map(peer => peer.id)
+  }
+  
+  /**
+   * Get logger instance
+   * @returns {Object} Winston logger instance
+   */
+  getLogger () {
+    const { logger } = _private.get(this)
+    return logger
   }
   
   // ============================================================================
@@ -330,7 +399,7 @@ export default class Node extends EventEmitter {
     assertValidAddress(address)
     
     const _scope = _private.get(this)
-    const { id, options, config, clients, clientsAddressIndex, logger } = _scope
+    const { id, options, config, clients, clientsAddressIndex, logger, connectionTargets, peerIdToAddress } = _scope
     
     const addressHash = md5(address)
     
@@ -386,6 +455,18 @@ export default class Node extends EventEmitter {
     // Store client by remote node's ID
     clients.set(remoteNodeId, client)
     clientsAddressIndex.set(addressHash, remoteNodeId)
+    
+    // Track connection for auto-reconnect
+    if (_scope.reconnect !== ReconnectPolicy.DISABLED) {
+      if (!connectionTargets.has(address)) {
+        connectionTargets.set(address, { peerId: remoteNodeId, attempts: 0, timer: null })
+      } else {
+        const target = connectionTargets.get(address)
+        target.peerId = remoteNodeId
+        target.attempts = 0 // Reset attempts on successful connect
+      }
+      peerIdToAddress.set(remoteNodeId, address)
+    }
     
     // Note: PEER_JOINED event will be emitted when ClientEvent.SERVER_JOINED fires (handshake complete)
     
@@ -505,6 +586,118 @@ export default class Node extends EventEmitter {
       // NOTE: Don't auto-cleanup here - client might be needed for reconnection
       // Only cleanup on explicit disconnect() call
     })
+  }
+  
+  // ============================================================================
+  // AUTO-RECONNECT LOGIC
+  // ============================================================================
+  
+  /**
+   * Setup auto-reconnect listener for upstream peers
+   * @private
+   */
+  _setupAutoReconnect () {
+    const _scope = _private.get(this)
+    const { logger, connectionTargets, peerIdToAddress } = _scope
+    
+    this.on(NodeEvent.PEER_LEFT, ({ peerId, direction, reason }) => {
+      // Only handle upstream peers (our outgoing connections)
+      if (direction !== 'upstream') {
+        return
+      }
+      
+      // Check if we have a tracked address for this peer
+      const address = peerIdToAddress.get(peerId)
+      if (!address) {
+        return
+      }
+      
+      // Determine if we should reconnect based on reason
+      const shouldReconnect = this._shouldReconnect(reason, direction)
+      
+      if (!shouldReconnect) {
+        logger.info(`[Node] Peer '${peerId}' left (${reason}), skipping reconnect`)
+        return
+      }
+      
+      logger.warn(`[Node] Peer '${peerId}' left unexpectedly (${reason}), scheduling reconnect to ${address}`)
+      
+      // Schedule reconnect with backoff
+      this._scheduleReconnect(address)
+    })
+  }
+  
+  /**
+   * Determine if we should auto-reconnect based on disconnect reason
+   * @private
+   */
+  _shouldReconnect (reason, direction) {
+    const _scope = _private.get(this)
+    const { reconnect } = _scope
+    
+    // Only reconnect upstream peers
+    if (direction !== 'upstream') {
+      return false
+    }
+    
+    // Check reconnect policy
+    if (reconnect === ReconnectPolicy.ALWAYS) {
+      // Always reconnect upstream peers, regardless of reason
+      return true
+    }
+    
+    if (reconnect === ReconnectPolicy.ON_FAILURE) {
+      // Don't reconnect for graceful shutdowns
+      if (reason === 'server_left' || reason === 'closed') {
+        return false
+      }
+      
+      // Reconnect for unexpected failures
+      return true
+    }
+    
+    // reconnect === ReconnectPolicy.DISABLED or unknown value
+    return false
+  }
+  
+  /**
+   * Schedule a reconnect attempt with exponential backoff
+   * @private
+   */
+  _scheduleReconnect (address) {
+    const _scope = _private.get(this)
+    const { logger, connectionTargets } = _scope
+    
+    const target = connectionTargets.get(address)
+    if (!target) {
+      logger.warn(`[Node] No connection target found for ${address}`)
+      return
+    }
+    
+    // Clear existing timer if any
+    if (target.timer) {
+      clearTimeout(target.timer)
+    }
+    
+    // Calculate backoff: 1s, 2s, 4s, 8s, 16s, 30s (cap)
+    const baseDelay = 1000
+    const maxDelay = 30000
+    const delay = Math.min(baseDelay * Math.pow(2, target.attempts), maxDelay)
+    
+    target.attempts++
+    
+    logger.info(`[Node] Reconnecting to ${address} in ${delay}ms (attempt ${target.attempts})`)
+    
+    target.timer = setTimeout(async () => {
+      try {
+        await this.connect({ address })
+        logger.info(`[Node] Successfully reconnected to ${address}`)
+      } catch (err) {
+        logger.error(`[Node] Reconnect failed to ${address}:`, err.message)
+        // Schedule another attempt
+        this._scheduleReconnect(address)
+      }
+    }, delay)
   }
   
   // ============================================================================
@@ -751,7 +944,7 @@ export default class Node extends EventEmitter {
   /**
    * Send request to specific node
    */
-  async request ({ to, event, data, timeout } = {}) {
+  async request ({ to, event, data, metadata, timeout } = {}) {
     const route = this._findRoute(to)
     
     if (!route) {
@@ -765,17 +958,17 @@ export default class Node extends EventEmitter {
     
     if (route.type === 'server') {
       // Route through our server to connected client
-      return route.target.request({ to: route.targetId, event, data, timeout })
+      return route.target.request({ to: route.targetId, event, data, metadata, timeout })
     } else {
       // Route through client to remote server
-      return route.target.request({ event, data, timeout })
+      return route.target.request({ event, data, metadata, timeout })
     }
   }
   
   /**
    * Send tick to specific node
    */
-  tick ({ to, event, data } = {}) {
+  tick ({ to, event, data, metadata } = {}) {
     const route = this._findRoute(to)
     
     if (!route) {
@@ -788,9 +981,9 @@ export default class Node extends EventEmitter {
     }
     
     if (route.type === 'server') {
-      return route.target.tick({ to: route.targetId, event, data })
+      return route.target.tick({ to: route.targetId, event, data, metadata })
     } else {
-      return route.target.tick({ event, data })
+      return route.target.tick({ event, data, metadata })
     }
   }
   
@@ -801,6 +994,10 @@ export default class Node extends EventEmitter {
     // Extract options and predicate from filter if wrapped
     const filterOptions = filter?.options || (filter?.predicate ? undefined : filter)
     const filterPredicate = filter?.predicate
+    
+    // ============================================================================
+    // 1. TRY LOCAL DISCOVERY FIRST
+    // ============================================================================
     const filteredNodes = this._getFilteredNodes({ 
       options: filterOptions, 
       predicate: filterPredicate, 
@@ -808,18 +1005,87 @@ export default class Node extends EventEmitter {
       up 
     })
     
-    if (filteredNodes.length === 0) {
+    if (filteredNodes.length > 0) {
+      const targetNode = this._selectNode(filteredNodes, event)
+      return this.request({ to: targetNode, event, data, timeout })
+    }
+    
+    // ============================================================================
+    // 2. ROUTER FALLBACK (if no local match)
+    // ============================================================================
+    
+    // Predicate functions cannot be serialized over network
+    if (filterPredicate) {
       const error = new NodeError({
-        code: NodeErrorCode.NO_NODES_MATCH_FILTER,
-        message: 'No nodes match filter criteria',
-        context: { filter, down, up, event }
+        code: NodeErrorCode.PREDICATE_NOT_ROUTABLE,
+        message: 'Predicate filters cannot be forwarded to router. Use object-based filters for router fallback.',
+        context: { event, down, up }
       })
-
       return Promise.reject(error)
     }
     
-    const targetNode = this._selectNode(filteredNodes, event)
-    return this.request({ to: targetNode, event, data, timeout })
+    // Find routers (always search both directions for maximum discovery)
+    const routers = this._getFilteredNodes({
+      options: { router: true },
+      down: true,
+      up: true
+    })
+    
+    if (routers.length > 0) {
+      const routerNode = this._selectNode(routers, event)
+      const _scope = _private.get(this)
+      
+      _scope.logger.debug(`[Router Fallback] Forwarding requestAny to router: ${routerNode}`)
+      
+      // Send proxy request to router via system event (use internal method)
+      const route = this._findRoute(routerNode)
+      if (!route) {
+        const error = new NodeError({
+          code: NodeErrorCode.NODE_NOT_FOUND,
+          message: `Router node not found: ${routerNode}`,
+          context: { routerNode }
+        })
+        return Promise.reject(error)
+      }
+      
+      // Use the ACTUAL event and data, put routing info in metadata
+      const requestParams = {
+        event: '_system:proxy_request',
+        data,  // Original user data (unchanged!)
+        metadata: {
+          routing: {
+            event,           // The real event to route
+            filter: filterOptions,
+            timeout,
+            down,
+            up,
+            requestor: this.getId()
+          }
+        },
+        timeout
+      }
+      
+      // NOTE: Server vs Client API difference
+      // - Server (ROUTER socket): Needs 'to' parameter (which client?)
+      // - Client (DEALER socket): No 'to' needed (only one server)
+      // This is a semantic difference, not a ZeroMQ leak
+      if (route.type === 'server') {
+        requestParams.to = route.targetId
+      }
+      
+      return route.target._sendSystemRequest(requestParams)
+    }
+    
+    // ============================================================================
+    // 3. NO MATCH (neither local nor router)
+    // ============================================================================
+    const error = new NodeError({
+      code: NodeErrorCode.NO_NODES_MATCH_FILTER,
+      message: 'No nodes match filter and no routers available',
+      context: { filter, down, up, event }
+    })
+
+    return Promise.reject(error)
   }
   
   /**
@@ -843,6 +1109,10 @@ export default class Node extends EventEmitter {
     // Extract options and predicate from filter if wrapped
     const filterOptions = filter?.options || (filter?.predicate ? undefined : filter)
     const filterPredicate = filter?.predicate
+    
+    // ============================================================================
+    // 1. TRY LOCAL DISCOVERY FIRST
+    // ============================================================================
     const filteredNodes = this._getFilteredNodes({ 
       options: filterOptions, 
       predicate: filterPredicate, 
@@ -850,18 +1120,88 @@ export default class Node extends EventEmitter {
       up 
     })
     
-    if (filteredNodes.length === 0) {
+    if (filteredNodes.length > 0) {
+      const targetNode = this._selectNode(filteredNodes, event)
+      return this.tick({ to: targetNode, event, data })
+    }
+    
+    // ============================================================================
+    // 2. ROUTER FALLBACK (if no local match)
+    // ============================================================================
+    
+    // Predicate functions cannot be serialized
+    // For ticks, reject with error (backward compatibility)
+    if (filterPredicate) {
       const error = new NodeError({
-        code: NodeErrorCode.NO_NODES_MATCH_FILTER,
-        message: 'No nodes match filter criteria',
-        context: { filter, down, up, event }
+        code: NodeErrorCode.PREDICATE_NOT_ROUTABLE,
+        message: 'Predicate filters cannot be forwarded to router. Use object-based filters for router fallback.',
+        context: { event, down, up }
       })
-
       return Promise.reject(error)
     }
     
-    const targetNode = this._selectNode(filteredNodes, event)
-    return this.tick({ to: targetNode, event, data })
+    // Find routers
+    const routers = this._getFilteredNodes({
+      options: { router: true },
+      down: true,
+      up: true
+    })
+    
+    if (routers.length > 0) {
+      const routerNode = this._selectNode(routers, event)
+      const _scope = _private.get(this)
+      
+      _scope.logger.debug(`[Router Fallback] Forwarding tickAny to router: ${routerNode}`)
+      
+      // Send proxy tick to router via system event (use internal method)
+      const route = this._findRoute(routerNode)
+      if (!route) {
+        const error = new NodeError({
+          code: NodeErrorCode.NODE_NOT_FOUND,
+          message: `Router node not found: ${routerNode}`,
+          context: { routerNode }
+        })
+        return Promise.reject(error)
+      }
+      
+      // Use the ACTUAL event and data, put routing info in metadata
+      const tickParams = {
+        event: '_system:proxy_tick',
+        data,  // Original user data (unchanged!)
+        metadata: {
+          routing: {
+            event,           // The real event to route
+            filter: filterOptions,
+            down,
+            up,
+            requestor: this.getId()
+          }
+        }
+      }
+      
+      // NOTE: Server vs Client API difference
+      // - Server (ROUTER socket): Needs 'to' parameter (which client?)
+      // - Client (DEALER socket): No 'to' needed (only one server)
+      if (route.type === 'server') {
+        tickParams.to = route.targetId
+      }
+      
+      route.target._sendSystemTick(tickParams)
+      // Return resolved promise for consistency (tick is fire-and-forget)
+      return Promise.resolve()
+    }
+    
+    // ============================================================================
+    // 3. NO MATCH (neither local nor router)
+    // ============================================================================
+    // Reject to maintain backward compatibility with tests
+    const error = new NodeError({
+      code: NodeErrorCode.NO_NODES_MATCH_FILTER,
+      message: 'No nodes match filter criteria and no routers available',
+      context: { filter, down, up, event }
+    })
+
+    return Promise.reject(error)
   }
   
   /**
@@ -1000,8 +1340,20 @@ export default class Node extends EventEmitter {
    * All handlers will be removed.
    */
   async close () {
-    const { server, clients, logger } = _private.get(this)
+    const _scope = _private.get(this)
+    const { server, clients, logger, connectionTargets } = _scope
     const promises = []
+    
+    // Clear all reconnect timers
+    if (connectionTargets) {
+      for (const [address, target] of connectionTargets.entries()) {
+        if (target.timer) {
+          clearTimeout(target.timer)
+          target.timer = null
+        }
+      }
+      connectionTargets.clear()
+    }
     
     // Close server
     if (server && server.isOnline()) {
@@ -1014,6 +1366,9 @@ export default class Node extends EventEmitter {
     })
     
     await Promise.all(promises)
+    
+    // Emit stopped event
+    this.emit(NodeEvent.STOPPED)
     
     logger.info('[Node] Closed')
   }
