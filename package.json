@@ -1,10 +1,20 @@
 {
   "name": "zeronode",
-  "version": "2.0.8",
+  "version": "2.0.9",
   "description": "Minimal building block for NodeJS microservices",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./index.d.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "bin": {
     "zeronode": "./bin/zeronode.js"
   },
