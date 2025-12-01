@@ -141,7 +141,7 @@ export class Router extends Node {
         )
       }
       
-      reply(null, error)
+      reply.error(error)
     }
   }
   
