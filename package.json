@@ -1,6 +1,6 @@
 {
   "name": "zeronode",
-  "version": "2.0.7",
+  "version": "2.0.8",
   "description": "Minimal building block for NodeJS microservices",
   "type": "module",
   "main": "./dist/index.js",
@@ -8,6 +8,17 @@
   "bin": {
     "zeronode": "./bin/zeronode.js"
   },
+  "files": [
+    "dist/",
+    "src/",
+    "bin/",
+    "index.d.ts",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "preinstall.sh",
+    ".snyk"
+  ],
   "directories": {
     "example": "examples"
   },
