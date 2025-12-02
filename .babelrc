@@ -1,12 +1,18 @@
 {
-  "presets": ["@babel/preset-env"],
-  "plugins" : [
-    ["@babel/transform-runtime",
-      {
-        "helpers": false,
-        "regenerator": true
+  "presets": [
+    ["@babel/preset-env", {
+      "modules": false,
+      "targets": {
+        "node": "18"
       }
-    ]
+    }]
+  ],
+  "plugins": [
+    ["@babel/transform-runtime", {
+      "helpers": false,
+      "regenerator": true,
+      "useESModules": true
+    }]
   ],
   "sourceMaps": "inline",
   "retainLines": true

@@ -10,18 +10,25 @@
  * 
  * All envelopes follow this structure:
  * 
- * ┌─────────────┬──────────┬─────────────────────────────────────┐
- * │   Field     │   Size   │          Description                │
- * ├─────────────┼──────────┼─────────────────────────────────────┤
- * │ type        │ 1 byte   │ Envelope type (REQUEST/RESPONSE/etc)│
- * │ timestamp   │ 4 bytes  │ Unix timestamp (seconds, uint32)    │
- * │ id          │ 8 bytes  │ Unique ID (owner hash + ts + counter)│
- * │ owner       │ 1+N bytes│ Length (1 byte) + UTF-8 string      │
- * │ recipient   │ 1+N bytes│ Length (1 byte) + UTF-8 string      │
- * │ event       │ 1+N bytes│ Length (1 byte) + UTF-8 string      │
- * │ dataLength  │ 2 bytes  │ Data length (uint16, max 65535)     │
- * │ data        │ N bytes  │ MessagePack encoded data (or Buffer)│
- * └─────────────┴──────────┴─────────────────────────────────────┘
+ * ┌──────────────┬──────────┬─────────────────────────────────────┐
+ * │   Field      │   Size   │          Description                │
+ * ├──────────────┼──────────┼─────────────────────────────────────┤
+ * │ type         │ 1 byte   │ Envelope type (REQUEST/RESPONSE/etc)│
+ * │ timestamp    │ 4 bytes  │ Unix timestamp (seconds, uint32)    │
+ * │ id           │ 8 bytes  │ Unique ID (owner hash + ts + counter)│
+ * │ owner        │ 1+N bytes│ Length (1 byte) + UTF-8 string      │
+ * │ recipient    │ 1+N bytes│ Length (1 byte) + UTF-8 string      │
+ * │ event        │ 1+N bytes│ Length (1 byte) + UTF-8 string      │
+ * │ dataLength   │ 2 bytes  │ Data length (uint16, max 65535)     │
+ * │ data         │ N bytes  │ MessagePack encoded user data       │
+ * │ metaLength   │ 2 bytes  │ Metadata length (uint16, max 65535) │
+ * │ metadata     │ N bytes  │ MessagePack encoded metadata        │
+ * └──────────────┴──────────┴─────────────────────────────────────┘
+ * 
+ * NOTES:
+ * - metadata field is OPTIONAL (metaLength = 0 for no metadata)
+ * - Old envelopes without metadata are backward compatible
+ * - User data stays in 'data', system info goes in 'metadata'
  * 
  * ============================================================================
  * OFFSET CALCULATION
@@ -69,7 +76,15 @@
  * 
  * // Data (N bytes, length specified above)
  * const dataOffset = offset
- * const dataView = buffer.subarray(dataOffset, dataOffset + dataLength)
+ * offset += dataLength
+ * 
+ * // Metadata length (2 bytes - uint16)
+ * const metadataLength = buffer.readUInt16BE(offset)
+ * offset += 2
+ * 
+ * // Metadata (N bytes, length specified above)
+ * const metadataOffset = offset
+ * const metadataView = buffer.subarray(metadataOffset, metadataOffset + metadataLength)
  * 
  * ============================================================================
  */
@@ -299,8 +314,9 @@ export class Envelope {
     // Offsets calculated on first field access (lazy)
     this._offsets = null
     
-    // Only cache decoded data (expensive MessagePack decode)
+    // Only cache decoded data/metadata (expensive MessagePack decode)
     this._decodedData = undefined
+    this._decodedMetadata = undefined
   }
   
   /**
@@ -356,7 +372,7 @@ export class Envelope {
    *   - 'power-of-2': Power-of-2 bucket sizes (64, 128, 256, ...) - CPU cache-friendly
    * @returns {Buffer} Binary envelope buffer
    */
-  static createBuffer ({ type, id, event, owner, recipient, data }, bufferStrategy = null) {
+  static createBuffer ({ type, id, event, owner, recipient, data, metadata }, bufferStrategy = null) {
     // ============================================================================
     // VALIDATION - Ensure all required fields are valid
     // ============================================================================
@@ -430,6 +446,24 @@ export class Envelope {
     }
     
     // ============================================================================
+    // METADATA ENCODING - MessagePack or Buffer pass-through
+    // ============================================================================
+    
+    let metadataBuffer = null
+    let metadataLength = 0
+    
+    if (metadata !== undefined && metadata !== null) {
+      // Encode metadata same as data
+      metadataBuffer = encodeDataToBuffer(metadata)
+      metadataLength = metadataBuffer.length
+      
+      // Validate metadata length fits in 2 bytes (max 65535 = 64KB)
+      if (metadataLength > Envelope.MAX_DATA_LENGTH) {
+        throw new Error(`Metadata too large: ${metadataLength} bytes (max ${Envelope.MAX_DATA_LENGTH})`)
+      }
+    }
+    
+    // ============================================================================
     // BUFFER ALLOCATION - Power-of-2 bucket sizes for pooling
     // ============================================================================
     
@@ -441,7 +475,9 @@ export class Envelope {
       (1 + recipientBytes) +            // recipient (length + bytes)
       (1 + eventBytes) +                // event (length + bytes)
       2 +                               // data length (2 bytes)
-      dataLength                        // data (0 to 65535 bytes)
+      dataLength +                      // data (0 to 65535 bytes)
+      2 +                               // metadata length (2 bytes)
+      metadataLength                    // metadata (0 to 65535 bytes)
     
     // ============================================================================
     // BUFFER ALLOCATION - Strategy-based allocation
@@ -510,6 +546,16 @@ export class Envelope {
     if (dataBuffer) {
       dataBuffer.copy(buffer, offset)
       offset += dataLength
+    }
+    
+    // Write metadata length (2 bytes - uint16)
+    buffer.writeUInt16BE(metadataLength, offset)
+    offset += 2
+    
+    // Copy metadata buffer if present
+    if (metadataBuffer) {
+      metadataBuffer.copy(buffer, offset)
+      offset += metadataLength
     }
     
     // Return only the slice we actually used (totalSize bytes)
@@ -584,6 +630,22 @@ export class Envelope {
     // Data (N bytes, length specified above)
     checkBounds(offset, dataLength, 'data')
     const dataOffset = offset
+    offset += dataLength
+    
+    // Metadata length (2 bytes - uint16) - OPTIONAL for backward compatibility
+    let metadataLength = 0
+    let metadataOffset = 0
+    
+    if (offset + 2 <= bufferLength) {
+      // Metadata field exists
+      metadataLength = buffer.readUInt16BE(offset)
+      offset += 2
+      
+      if (metadataLength > 0) {
+        checkBounds(offset, metadataLength, 'metadata')
+        metadataOffset = offset
+      }
+    }
     
     this._offsets = {
       type: typeOffset,
@@ -596,7 +658,9 @@ export class Envelope {
       event: eventOffset,
       eventBytes: eventLength,
       data: dataOffset,
-      dataBytes: dataLength
+      dataBytes: dataLength,
+      metadata: metadataOffset,
+      metadataBytes: metadataLength
     }
     
     return this._offsets
@@ -700,6 +764,33 @@ export class Envelope {
     
     this._decodedData = decodeBufferToData(dataView)
     return this._decodedData
+  }
+  
+  /**
+   * Get metadata (lazy parsed)
+   * Returns decoded metadata object or null if no metadata present
+   */
+  get metadata () {
+    // Return cached if already decoded
+    if (this._decodedMetadata !== undefined) {
+      return this._decodedMetadata
+    }
+    
+    const offsets = this._calculateOffsets()
+    
+    if (offsets.metadataBytes === 0) {
+      this._decodedMetadata = null
+      return null
+    }
+    
+    // Deserialize metadata from buffer
+    const metadataView = this._buffer.subarray(
+      offsets.metadata,
+      offsets.metadata + offsets.metadataBytes
+    )
+    
+    this._decodedMetadata = decodeBufferToData(metadataView)
+    return this._decodedMetadata
   }
   
   /**

@@ -82,7 +82,17 @@ export const TransportEvent = {
    * Payload: TransportError instance (see src/transport/errors.js)
    * Use for observability; protocol may still continue operating depending on error.
    */
-  ERROR: 'transport:error'
+  ERROR: 'transport:error',
+  
+  /**
+   * RECONNECT_RETRY - Transport is retrying connection (optional, for observability)
+   * 
+   * Only emitted by transports that auto-reconnect (e.g., ZeroMQ dealer)
+   * Payload: { fd, endpoint } or similar transport-specific details
+   * 
+   * Not required for core protocol functionality, but useful for logging/debugging
+   */
+  RECONNECT_RETRY: 'transport:reconnect_retry'
 }
 
 /**

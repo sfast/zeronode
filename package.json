@@ -1,9 +1,34 @@
 {
   "name": "zeronode",
-  "version": "2.0.6",
+  "version": "2.0.10",
   "description": "Minimal building block for NodeJS microservices",
+  "type": "module",
   "main": "./dist/index.js",
   "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./index.d.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "bin": {
+    "zeronode": "./bin/zeronode.js"
+  },
+  "files": [
+    "dist/",
+    "src/",
+    "bin/",
+    "index.d.ts",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "preinstall.sh",
+    ".snyk"
+  ],
   "directories": {
     "example": "examples"
   },
@@ -42,7 +67,8 @@
     "benchmark:zeromq": "babel-node benchmark/zeromq-baseline.js",
     "benchmark:local": "node benchmark/local-baseline.js",
     "benchmark:node": "babel-node benchmark/node-throughput.js",
-    "benchmark:node-local": "node benchmark/node-throughput-local.js"
+    "benchmark:node-local": "node benchmark/node-throughput-local.js",
+    "benchmark:router": "node benchmark/router-overhead.js"
   },
   "repository": {
     "type": "git",
