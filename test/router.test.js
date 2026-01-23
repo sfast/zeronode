@@ -20,6 +20,7 @@
 
 import { expect } from 'chai'
 import { Node, Router } from '../src/index.js'
+import { getUniquePort, wait } from './test-utils.js'
 
 describe('Router - Comprehensive Tests', () => {
   let router, nodeA, nodeB, nodeC
@@ -29,6 +30,8 @@ describe('Router - Comprehensive Tests', () => {
     if (nodeB) await nodeB.close()
     if (nodeC) await nodeC.close()
     if (router) await router.close()
+    // Give ZeroMQ time to fully release ports
+    await wait(100)
     nodeA = nodeB = nodeC = router = null
   })
   
@@ -243,19 +246,21 @@ describe('Router - Comprehensive Tests', () => {
     })
     
     it('should calculate requests per second', async () => {
+      const [routerPort, nodeAPort, nodeBPort] = [getUniquePort(), getUniquePort(), getUniquePort()]
+      
       router = new Router({
         id: 'router',
-        bind: 'tcp://127.0.0.1:7118'
+        bind: `tcp://127.0.0.1:${routerPort}`
       })
       
       nodeA = new Node({
         id: 'node-a',
-        bind: 'tcp://127.0.0.1:7119'
+        bind: `tcp://127.0.0.1:${nodeAPort}`
       })
       
       nodeB = new Node({
         id: 'node-b',
-        bind: 'tcp://127.0.0.1:7120',
+        bind: `tcp://127.0.0.1:${nodeBPort}`,
         options: { service: 'test' }
       })
       

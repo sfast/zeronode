@@ -215,6 +215,27 @@ export default class Client extends Protocol {
       
       this.emit(ClientEvent.SERVER_LEFT, { serverId: serverId || 'unknown' })
     })
+    
+    // ============================================================================
+    // RESURRECTION - Server requests fresh handshake after timeout
+    // ============================================================================
+    this.onTick(ProtocolSystemEvent.REQUEST_HANDSHAKE, (envelope) => {
+      let _scope = _private.get(this)
+      const { options } = _scope
+      
+      const config = this.getConfig()
+      const logger = config.logger
+      
+      if (logger) {
+        logger.info('[Client] Server requested fresh handshake (resurrection), resending with options')
+      }
+      
+      // Resend handshake with full options
+      this._sendSystemTick({
+        event: ProtocolSystemEvent.HANDSHAKE_INIT_FROM_CLIENT,
+        data: options || {}
+      })
+    })
   }
   
   // ============================================================================
