@@ -407,7 +407,7 @@ describe('Envelope', () => {
       // Create a buffer too small to even parse basic fields
       const tinyBuffer = Buffer.alloc(5)
       
-      // Constructor will throw for buffer < 18 bytes, so we catch that
+      // Constructor will throw for buffer < 20 bytes (updated from 18), so we catch that
       expect(() => {
         new Envelope(tinyBuffer)
       }).to.throw('Envelope buffer too small')
@@ -719,7 +719,8 @@ describe('Envelope', () => {
       })
       
       it('should throw error if metadata too large', () => {
-        const largeMetadata = { data: Buffer.alloc(70000).toString('hex') }
+        // Create metadata larger than 64MB to trigger the error
+        const largeMetadata = { data: 'x'.repeat(67108865) } // Slightly over 64MB
         
         expect(() => {
           Envelope.createBuffer({
@@ -801,12 +802,12 @@ describe('Envelope', () => {
         const dataBuffer = Buffer.from(JSON.stringify(data))
         const dataLength = dataBuffer.length
         
-        // Total size WITHOUT metadata fields
+        // Total size WITHOUT metadata fields (updated for 4-byte data length)
         const totalSize = 1 + 4 + 8 + 
           (1 + ownerBytes) + 
           (1 + recipientBytes) + 
           (1 + eventBytes) + 
-          2 + dataLength
+          4 + dataLength  // Changed from 2 to 4 bytes for uint32
         
         const buffer = Buffer.allocUnsafe(totalSize)
         let offset = 0
@@ -834,8 +835,8 @@ describe('Envelope', () => {
         buffer.write(event, offset, eventBytes, 'utf8')
         offset += eventBytes
         
-        buffer.writeUInt16BE(dataLength, offset)
-        offset += 2
+        buffer.writeUInt32BE(dataLength, offset)  // Changed from writeUInt16BE to writeUInt32BE
+        offset += 4  // Changed from 2 to 4
         dataBuffer.copy(buffer, offset)
         
         // NO metadata field!

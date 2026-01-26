@@ -19,9 +19,9 @@
  * │ owner        │ 1+N bytes│ Length (1 byte) + UTF-8 string      │
  * │ recipient    │ 1+N bytes│ Length (1 byte) + UTF-8 string      │
  * │ event        │ 1+N bytes│ Length (1 byte) + UTF-8 string      │
- * │ dataLength   │ 2 bytes  │ Data length (uint16, max 65535)     │
+ * │ dataLength   │ 4 bytes  │ Data length (uint32, max 64MB)      │
  * │ data         │ N bytes  │ MessagePack encoded user data       │
- * │ metaLength   │ 2 bytes  │ Metadata length (uint16, max 65535) │
+ * │ metaLength   │ 4 bytes  │ Metadata length (uint32, max 64MB)  │
  * │ metadata     │ N bytes  │ MessagePack encoded metadata        │
  * └──────────────┴──────────┴─────────────────────────────────────┘
  * 
@@ -70,17 +70,17 @@
  * const event = buffer.toString('utf8', offset, offset + eventLength)
  * offset += eventLength
  * 
- * // Data length (2 bytes - uint16)
- * const dataLength = buffer.readUInt16BE(offset)
- * offset += 2
+ * // Data length (4 bytes - uint32)
+ * const dataLength = buffer.readUInt32BE(offset)
+ * offset += 4
  * 
  * // Data (N bytes, length specified above)
  * const dataOffset = offset
  * offset += dataLength
  * 
- * // Metadata length (2 bytes - uint16)
- * const metadataLength = buffer.readUInt16BE(offset)
- * offset += 2
+ * // Metadata length (4 bytes - uint32)
+ * const metadataLength = buffer.readUInt32BE(offset)
+ * offset += 4
  * 
  * // Metadata (N bytes, length specified above)
  * const metadataOffset = offset
@@ -295,8 +295,8 @@ export class Envelope {
   // Envelope size constants
   static MIN_BUFFER_BUCKET = 64
   static MAX_STRING_LENGTH = 255
-  static MAX_DATA_LENGTH = 65535
-  static MIN_ENVELOPE_SIZE = 18  // type(1) + ts(4) + id(8) + owner_len(1) + recipient_len(1) + tag_len(1) + data_len(2)
+  static MAX_DATA_LENGTH = 67108864  // 64MB (changed from 65535 to support larger payloads, uint32 allows up to 4GB)
+  static MIN_ENVELOPE_SIZE = 20  // type(1) + ts(4) + id(8) + owner_len(1) + recipient_len(1) + tag_len(1) + data_len(4)
   
   constructor (buffer) {
     // Validate buffer
@@ -439,7 +439,7 @@ export class Envelope {
       dataBuffer = encodeDataToBuffer(data)
       dataLength = dataBuffer.length
       
-      // Validate data length fits in 2 bytes (max 65535 = 64KB)
+      // Validate data length fits in 4 bytes (max 64MB)
       if (dataLength > Envelope.MAX_DATA_LENGTH) {
         throw new Error(`Data too large: ${dataLength} bytes (max ${Envelope.MAX_DATA_LENGTH})`)
       }
@@ -457,7 +457,7 @@ export class Envelope {
       metadataBuffer = encodeDataToBuffer(metadata)
       metadataLength = metadataBuffer.length
       
-      // Validate metadata length fits in 2 bytes (max 65535 = 64KB)
+      // Validate metadata length fits in 4 bytes (max 64MB)
       if (metadataLength > Envelope.MAX_DATA_LENGTH) {
         throw new Error(`Metadata too large: ${metadataLength} bytes (max ${Envelope.MAX_DATA_LENGTH})`)
       }
@@ -474,10 +474,10 @@ export class Envelope {
       (1 + ownerBytes) +                // owner (length + bytes)
       (1 + recipientBytes) +            // recipient (length + bytes)
       (1 + eventBytes) +                // event (length + bytes)
-      2 +                               // data length (2 bytes)
-      dataLength +                      // data (0 to 65535 bytes)
-      2 +                               // metadata length (2 bytes)
-      metadataLength                    // metadata (0 to 65535 bytes)
+      4 +                               // data length (4 bytes - uint32)
+      dataLength +                      // data (0 to 1MB bytes)
+      4 +                               // metadata length (4 bytes - uint32)
+      metadataLength                    // metadata (0 to 1MB bytes)
     
     // ============================================================================
     // BUFFER ALLOCATION - Strategy-based allocation
@@ -538,9 +538,9 @@ export class Envelope {
       offset += eventBytes
     }
     
-    // Write data length (2 bytes - uint16)
-    buffer.writeUInt16BE(dataLength, offset)
-    offset += 2
+    // Write data length (4 bytes - uint32)
+    buffer.writeUInt32BE(dataLength, offset)
+    offset += 4
     
     // Copy data buffer if present (zero-copy when possible)
     if (dataBuffer) {
@@ -548,9 +548,9 @@ export class Envelope {
       offset += dataLength
     }
     
-    // Write metadata length (2 bytes - uint16)
-    buffer.writeUInt16BE(metadataLength, offset)
-    offset += 2
+    // Write metadata length (4 bytes - uint32)
+    buffer.writeUInt32BE(metadataLength, offset)
+    offset += 4
     
     // Copy metadata buffer if present
     if (metadataBuffer) {
@@ -622,24 +622,24 @@ export class Envelope {
     const eventOffset = offset
     offset += eventLength
     
-    // Data length (2 bytes - uint16)
-    checkBounds(offset, 2, 'data length')
-    const dataLength = buffer.readUInt16BE(offset)
-    offset += 2
+    // Data length (4 bytes - uint32)
+    checkBounds(offset, 4, 'data length')
+    const dataLength = buffer.readUInt32BE(offset)
+    offset += 4
     
     // Data (N bytes, length specified above)
     checkBounds(offset, dataLength, 'data')
     const dataOffset = offset
     offset += dataLength
     
-    // Metadata length (2 bytes - uint16) - OPTIONAL for backward compatibility
+    // Metadata length (4 bytes - uint32) - OPTIONAL for backward compatibility
     let metadataLength = 0
     let metadataOffset = 0
     
-    if (offset + 2 <= bufferLength) {
+    if (offset + 4 <= bufferLength) {
       // Metadata field exists
-      metadataLength = buffer.readUInt16BE(offset)
-      offset += 2
+      metadataLength = buffer.readUInt32BE(offset)
+      offset += 4
       
       if (metadataLength > 0) {
         checkBounds(offset, metadataLength, 'metadata')

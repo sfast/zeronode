@@ -1,6 +1,6 @@
 {
   "name": "zeronode",
-  "version": "2.0.11",
+  "version": "2.0.12",
   "description": "Minimal building block for NodeJS microservices",
   "type": "module",
   "main": "./src/index.js",
