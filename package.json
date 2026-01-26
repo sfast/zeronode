@@ -3,11 +3,11 @@
   "version": "2.0.11",
   "description": "Minimal building block for NodeJS microservices",
   "type": "module",
-  "main": "./dist/index.js",
+  "main": "./src/index.js",
   "types": "./index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
+      "import": "./src/index.js",
       "types": "./index.d.ts"
     },
     "./package.json": "./package.json"
@@ -19,7 +19,6 @@
     "zeronode": "./bin/zeronode.js"
   },
   "files": [
-    "dist/",
     "src/",
     "bin/",
     "index.d.ts",
@@ -55,18 +54,14 @@
     "test:no-coverage": "mocha --exit --timeout 10000",
     "test:coverage:html": "npx c8 --reporter=html --reporter=text mocha --exit --timeout 10000",
     "snyktest": "snyk test",
-    "standard": "standard './src/**/*.js' --parser @babel/eslint-parser --verbose | snazzy",
-    "format": "standard './src/**/*.js' --parser @babel/eslint-parser  --fix --verbose | snazzy",
-    "rimraf": "rimraf",
-    "clear": "rimraf ./dist",
-    "compile": "./node_modules/.bin/babel -d dist/ src/",
-    "build": "npm run clear && npm run compile",
+    "standard": "standard './src/**/*.js' --verbose | snazzy",
+    "format": "standard './src/**/*.js' --fix --verbose | snazzy",
     "preinstall": "bash preinstall.sh",
     "snyk-protect": "snyk-protect",
-    "prepare": "npm run build && npm run snyk-protect",
-    "benchmark:zeromq": "babel-node benchmark/zeromq-baseline.js",
+    "prepare": "npm run snyk-protect",
+    "benchmark:zeromq": "node benchmark/zeromq-baseline.js",
     "benchmark:local": "node benchmark/local-baseline.js",
-    "benchmark:node": "babel-node benchmark/node-throughput.js",
+    "benchmark:node": "node benchmark/node-throughput.js",
     "benchmark:node-local": "node benchmark/node-throughput-local.js",
     "benchmark:router": "node benchmark/router-overhead.js"
   },
@@ -81,7 +76,6 @@
   },
   "homepage": "https://github.com/sfast/zeronode#readme",
   "dependencies": {
-    "@babel/runtime": "^7.28.4",
     "@sfast/pattern-emitter-ts": "^0.3.0",
     "animal-id": "0.0.1",
     "bluebird": "^3.7.2",
@@ -95,13 +89,6 @@
     "zeromq": "^6.5.0"
   },
   "devDependencies": {
-    "@babel/cli": "^7.25.9",
-    "@babel/core": "^7.26.0",
-    "@babel/eslint-parser": "^7.25.9",
-    "@babel/node": "^7.26.0",
-    "@babel/plugin-transform-runtime": "^7.25.9",
-    "@babel/preset-env": "^7.26.0",
-    "@babel/register": "^7.25.9",
     "@snyk/protect": "^1.1300.2",
     "c8": "^10.1.3",
     "chai": "^4.5.0",
@@ -110,11 +97,10 @@
     "eslint-plugin-node": "^11.1.0",
     "eslint-plugin-promise": "^7.2.1",
     "js-yaml": "^4.1.0",
-    "mocha": "^10.8.2",
-    "rimraf": "^6.0.1",
+    "mocha": "^11.7.5",
     "seneca": "^3.32.0",
     "snazzy": "^9.0.0",
-    "snyk": "^1.1293.0",
+    "snyk": "^1.1302.1",
     "standard": "^17.1.2"
   },
   "snyk": true,
@@ -128,7 +114,6 @@
     "exclude": [
       "**/*.test.js",
       "test/**",
-      "dist/**",
       "coverage/**",
       "benchmark/**",
       "examples/**",

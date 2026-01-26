@@ -7,7 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [2.0.0] - 2024
+## [2.0.11] - 2026-01-25
+
+### Fixed
+- **Ping Resurrection**: Implemented REQUEST_HANDSHAKE mechanism to fully recover client state after network timeouts
+  - Server now requests fresh handshake when detecting client resurrection via ping
+  - Client resends complete handshake with full options on REQUEST_HANDSHAKE
+  - Added `pendingHandshakes` tracking to prevent duplicate handshake requests
+  - Fixes issue where timed-out clients would lose their options/metadata after reconnection
+  - Properly synchronizes Server and Node layers after timeout recovery
+- **Test Suite**: Fixed 5 pre-existing failing tests
+  - Resolved "Address already in use" errors with dynamic port allocation using `getUniquePort()`
+  - Fixed timing-related assertion failures with event-based waiting (`waitForNotReady()`)
+  - All 811 tests now passing with 95%+ coverage
+
+### Added
+- `ProtocolSystemEvent.REQUEST_HANDSHAKE` internal event for server-initiated client handshake
+- Comprehensive test suite for ping resurrection scenarios (`test/protocol/server-ping-resurrection.test.js`)
+  - Tests client resurrection after timeout
+  - Verifies REQUEST_HANDSHAKE is sent exactly once
+  - Validates full options recovery including custom client metadata
+  - Confirms proper state synchronization between Server and Node layers
+
+---
+
+## [2.0.0] - 2025
 
 ### 🎉 Major Release - Transport Abstraction & Architecture Redesign
 
