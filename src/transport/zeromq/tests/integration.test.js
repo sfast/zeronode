@@ -21,7 +21,7 @@
 import { expect } from 'chai'
 import { Dealer as DealerSocket, Router as RouterSocket, TIMEOUT_INFINITY } from '../index.js'
 import { TransportEvent } from '../../events.js'
-import { wait, waitForReady, TestTimeouts } from './helpers.js'
+import { wait, waitForReady, waitForNotReady, getAvailablePort, TestTimeouts } from './helpers.js'
 
 // Alias for backward compatibility
 const Timeouts = { INFINITY: TIMEOUT_INFINITY }
@@ -34,9 +34,12 @@ describe('Dealer ↔ Router Integration', () => {
   
   describe('Basic Communication', () => {
     let router, dealer
-    const routerAddress = 'tcp://127.0.0.1:6001'
+    let routerAddress
 
     beforeEach(async () => {
+      const port = getAvailablePort()
+      routerAddress = `tcp://127.0.0.1:${port}`
+      
       router = new RouterSocket({ id: 'router-basic' })
       dealer = new DealerSocket({ 
         id: 'dealer-basic',
@@ -49,6 +52,8 @@ describe('Dealer ↔ Router Integration', () => {
     afterEach(async () => {
       await dealer.close()
       await router.close()
+      // Give ZeroMQ time to fully release ports
+      await wait(100)
     })
 
     it('should establish connection', async () => {
@@ -217,7 +222,8 @@ describe('Dealer ↔ Router Integration', () => {
     it('should auto-reconnect when router restarts (ZMQ_RECONNECT_IVL)', async function() {
       this.timeout(5000)
       
-      const routerAddress = 'tcp://127.0.0.1:6003'
+      const port = getAvailablePort()
+      const routerAddress = `tcp://127.0.0.1:${port}`
       
       // Start router
       let router = new RouterSocket({ id: 'router-v1' })
@@ -243,8 +249,9 @@ describe('Dealer ↔ Router Integration', () => {
       
       // Kill router
       await router.close()
-      await wait(200)
       
+      // Wait for dealer to detect disconnect (ZeroMQ needs time)
+      await waitForNotReady(dealer, 1000)
       expect(dealer.isOnline()).to.be.false
       expect(events).to.include('NOT_READY')
       
@@ -258,6 +265,8 @@ describe('Dealer ↔ Router Integration', () => {
       
       await dealer.close()
       await router.close()
+      // Give ZeroMQ time to fully release ports
+      await wait(100)
     })
 
     it('should handle multiple consecutive reconnection cycles', async function() {
@@ -581,7 +590,8 @@ describe('Dealer ↔ Router Integration', () => {
     it('should allow message sending only when online', async function() {
       this.timeout(5000)
       
-      const routerAddress = 'tcp://127.0.0.1:6009'
+      const port = getAvailablePort()
+      const routerAddress = `tcp://127.0.0.1:${port}`
       let router = new RouterSocket({ id: 'router-send' })
       await router.bind(routerAddress)
       
@@ -603,7 +613,9 @@ describe('Dealer ↔ Router Integration', () => {
       
       // Kill router
       await router.close()
-      await wait(200)
+      
+      // Wait for dealer to detect disconnect
+      await waitForNotReady(dealer, 1000)
       
       // Cannot send when offline
       expect(() => {
@@ -613,7 +625,7 @@ describe('Dealer ↔ Router Integration', () => {
       // Restart router
       router = new RouterSocket({ id: 'router-send-2' })
       await router.bind(routerAddress)
-      await wait(400)
+      await waitForReady(dealer, 1000)
       
       // Can send again when reconnected
       expect(() => {
@@ -622,6 +634,8 @@ describe('Dealer ↔ Router Integration', () => {
       
       await dealer.close()
       await router.close()
+      // Give ZeroMQ time to fully release ports
+      await wait(100)
     })
   })
 
@@ -691,8 +705,9 @@ describe('Dealer ↔ Router Integration', () => {
     })
 
     it('should handle router closing with connected dealers', async () => {
+      const port = getAvailablePort()
       const router = new RouterSocket({ id: 'router-close' })
-      await router.bind('tcp://127.0.0.1:6011')
+      await router.bind(`tcp://127.0.0.1:${port}`)
       
       const dealer = new DealerSocket({ 
         id: 'dealer-close',
@@ -702,7 +717,7 @@ describe('Dealer ↔ Router Integration', () => {
         }
       })
       
-      await dealer.connect('tcp://127.0.0.1:6011')
+      await dealer.connect(`tcp://127.0.0.1:${port}`)
       await waitForReady(dealer)
       
       let disconnected = false
@@ -712,12 +727,16 @@ describe('Dealer ↔ Router Integration', () => {
       
       // Close router abruptly
       await router.close()
-      await wait(200)
+      
+      // Wait for dealer to detect disconnect (ZeroMQ needs time)
+      await waitForNotReady(dealer, 1000)
       
       expect(disconnected).to.be.true
       expect(dealer.isOnline()).to.be.false
       
       await dealer.close()
+      // Give ZeroMQ time to fully release ports
+      await wait(100)
     })
   })
 

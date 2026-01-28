@@ -47,6 +47,7 @@ export default class Server extends Protocol {
     let _scope = {
       bindAddress: null,
       clientLastSeen: new Map(),    // clientId → timestamp (for health checks)
+      pendingHandshakes: new Set(), // clientIds awaiting resurrection handshake
       healthCheckInterval: null,
       options  // ✅ Store node options for handshake responses
     }
@@ -99,13 +100,24 @@ export default class Server extends Protocol {
     // HANDSHAKE - Client discovery via messages
     // ============================================================================
     this.onTick(ProtocolSystemEvent.HANDSHAKE_INIT_FROM_CLIENT, (envelope) => {
-      let { clientLastSeen } = _private.get(this)
+      let { clientLastSeen, pendingHandshakes } = _private.get(this)
       
       const clientId = envelope.owner
-      const clientOptions = envelope.data  // ✅ Get from envelope, don't store
+      const clientOptions = envelope.data
       
       // Mark as seen (this IS the "joined" state)
       clientLastSeen.set(clientId, Date.now())
+      
+      // 🔥 Clear pending handshake flag (resurrection completed)
+      if (pendingHandshakes.has(clientId)) {
+        pendingHandshakes.delete(clientId)
+        
+        const config = this.getConfig()
+        const logger = config.logger
+        if (logger) {
+          logger.info(`[Server] Client '${clientId}' resurrection handshake completed`)
+        }
+      }
       
       // ✅ Emit CLIENT_JOINED with options (pass through to Node)
       this.emit(ServerEvent.CLIENT_JOINED, { 
@@ -127,12 +139,42 @@ export default class Server extends Protocol {
     // HEARTBEAT - Client ping
     // ============================================================================
     this.onTick(ProtocolSystemEvent.CLIENT_PING, (envelope) => {
-      let { clientLastSeen } = _private.get(this)
+      let { clientLastSeen, pendingHandshakes } = _private.get(this)
       
       const clientId = envelope.owner
       
+      // 🔥 FIX: Detect resurrection (client was timed out but is now pinging again)
+      const wasTimedOut = !clientLastSeen.has(clientId)
+      
       // Update last seen timestamp
       clientLastSeen.set(clientId, Date.now())
+      
+      // 🔥 FIX: If client was previously timed out, request fresh handshake
+      if (wasTimedOut) {
+        const config = this.getConfig()
+        const logger = config.logger
+        
+        // Check if we already requested handshake for this client
+        if (!pendingHandshakes.has(clientId)) {
+          // Mark as pending to avoid multiple requests
+          pendingHandshakes.add(clientId)
+          
+          if (logger) {
+            logger.warn(`[Server] Client '${clientId}' resurrected after timeout, requesting fresh handshake`)
+          }
+          
+          // Request client to resend handshake with full options
+          this._sendSystemTick({
+            to: clientId,
+            event: ProtocolSystemEvent.REQUEST_HANDSHAKE,
+            data: null
+          })
+        } else {
+          if (logger) {
+            logger.debug(`[Server] Client '${clientId}' resurrection handshake already requested, waiting...`)
+          }
+        }
+      }
     })
     
     // ============================================================================

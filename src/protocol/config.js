@@ -50,6 +50,7 @@ export const ProtocolSystemEvent = {
   // Handshake (explicit names)
   HANDSHAKE_INIT_FROM_CLIENT: '_system:handshake_init_from_client',  // Client → Server
   HANDSHAKE_ACK_FROM_SERVER: '_system:handshake_ack_from_server',    // Server → Client
+  REQUEST_HANDSHAKE: '_system:request_handshake',        // Server → Client: Request fresh handshake (resurrection)
   CLIENT_PING: '_system:client_ping',            // Client → Server: Heartbeat
   CLIENT_STOP: '_system:client_stop',            // Client → Server: Graceful disconnect
   SERVER_STOP: '_system:server_stop'             // Server → Client: Server shutting down
