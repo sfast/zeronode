@@ -134,11 +134,12 @@ describe('Node - Orchestration Layer', () => {
       })
       
       // Bind server
-      await node.bind('tcp://127.0.0.1:7001')
+      // Port 0: never a fixed port another app (e.g. a router default) may use
+      await node.bind('tcp://127.0.0.1:0')
       
       // Simulate request (would need another node to test fully)
       // For now, just verify server was created
-      expect(node.getAddress()).to.equal('tcp://127.0.0.1:7001')
+      expect(node.getAddress()).to.match(/^tcp:\/\/127\.0\.0\.1:\d+$/)
       
       await node.unbind()
     })
