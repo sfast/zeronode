@@ -1209,7 +1209,7 @@ export default class Node extends EventEmitter {
         // removed, so this terminates.
         if (err?.code === ProtocolErrorCode.PEER_UNREACHABLE && err.context?.delivered === false &&
             !this._isJoinedPeer(targetNode)) {
-          return this.requestAny({ event, data, timeout, filter, down, up })
+          return this.requestAny({ event, data, timeout, filter, down, up, _routing })
         }
         throw err
       })
@@ -1306,6 +1306,9 @@ export default class Node extends EventEmitter {
       try {
         return await route.target._sendSystemRequest(requestParams)
       } catch (err) {
+        // The router is gone and the request never reached it: try the next
+        if (err?.context?.delivered === false) continue
+        
         // A real answer (handler error, timeout, ...) ends the search
         if (!isRoutingMiss(err)) throw err
         
