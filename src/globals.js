@@ -17,7 +17,14 @@ export default {
   // Router proxying: max nodes on a proxy path (caller + routers) before a
   // router refuses to forward again (bounds router↔router loops)
   PROXY_MAX_HOPS: 8,
-  // Router proxying: each hop answers this much before the previous hop's
-  // timer fires, so the caller sees the real error instead of REQUEST_TIMEOUT
-  PROXY_HOP_MARGIN_MS: 50
+  // Router proxying: each hop answers up to this much (at most a quarter of its
+  // budget) before the previous hop's timer fires, so the caller sees the real
+  // error instead of REQUEST_TIMEOUT. The budget is relative (immune to clock
+  // skew) and starts on receipt, so the margin also covers per-hop transit
+  // and event-loop delay
+  PROXY_HOP_MARGIN_MS: 50,
+  // Router proxying: a hop with less budget than this does not forward
+  PROXY_MIN_BUDGET_MS: 5,
+  // Router proxying: max routers reported as explored for one request
+  PROXY_MAX_VISITED: 64
 }

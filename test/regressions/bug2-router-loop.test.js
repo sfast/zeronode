@@ -83,6 +83,79 @@ describe('Regression bug 2: router proxy loop is bounded', function () {
     }
   })
 
+  it('finds the service behind a hub whose other neighbour is a dead end (20/20)', async () => {
+    const hub = await makeRouter('hub')
+    const deadEnd = await makeRouter('dead')
+    const target = await makeRouter('target')
+    await deadEnd.connect({ address: hub.getAddress() })
+    await target.connect({ address: hub.getAddress() })
+
+    const service = track(new Node({ id: `bug2-svc-${uid()}`, options: { service: 'svc' } }))
+    service.onRequest('hello', () => 'hi')
+    await service.connect({ address: target.getAddress() })
+
+    const client = track(new Node({ id: `bug2-cli-${uid()}` }))
+    await client.connect({ address: hub.getAddress() })
+
+    for (let i = 0; i < 20; i++) {
+      expect(await client.requestAny({ event: 'hello', filter: { service: 'svc' }, timeout: 2000 })).to.equal('hi')
+    }
+  })
+
+  it('an unroutable request in a router cycle (r1 → r2 → r3 → r1) visits each router once', async () => {
+    const r1 = await makeRouter('r1')
+    const r2 = await makeRouter('r2')
+    const r3 = await makeRouter('r3')
+    await r1.connect({ address: r2.getAddress() })
+    await r2.connect({ address: r3.getAddress() })
+    await r3.connect({ address: r1.getAddress() })
+
+    const client = track(new Node({ id: `bug2-cli-${uid()}` }))
+    await client.connect({ address: r1.getAddress() })
+
+    const err = await client.requestAny({ event: 'nope', filter: { service: 'missing' }, timeout: 1000 }).then(() => null, (e) => e)
+
+    expect(err?.code).to.equal(NodeErrorCode.NO_NODES_MATCH_FILTER)
+    expect(proxyTotals(r1, r2, r3).requests).to.be.at.most(3)
+  })
+
+  it('a short timeout still works across three routers', async () => {
+    const r1 = await makeRouter('r1')
+    const r2 = await makeRouter('r2')
+    const r3 = await makeRouter('r3')
+    await r1.connect({ address: r2.getAddress() })
+    await r2.connect({ address: r3.getAddress() })
+
+    const service = track(new Node({ id: `bug2-svc-${uid()}`, options: { service: 'fast' } }))
+    service.onRequest('hello', () => 'quick')
+    await service.connect({ address: r3.getAddress() })
+
+    const client = track(new Node({ id: `bug2-cli-${uid()}` }))
+    await client.connect({ address: r1.getAddress() })
+
+    expect(await client.requestAny({ event: 'hello', filter: { service: 'fast' }, timeout: 120 })).to.equal('quick')
+  })
+
+  it('a slow service: the caller gets the inner hop error before its own timer', async () => {
+    const r1 = await makeRouter('r1')
+    const r2 = await makeRouter('r2')
+    await r1.connect({ address: r2.getAddress() })
+
+    const service = track(new Node({ id: `bug2-svc-${uid()}`, options: { service: 'slow' } }))
+    service.onRequest('hello', () => wait(3000).then(() => 'too late'))
+    await service.connect({ address: r2.getAddress() })
+
+    const client = track(new Node({ id: `bug2-cli-${uid()}` }))
+    await client.connect({ address: r1.getAddress() })
+
+    const started = Date.now()
+    const err = await client.requestAny({ event: 'hello', filter: { service: 'slow' }, timeout: 600 }).then(() => null, (e) => e)
+    const elapsed = Date.now() - started
+
+    expect(err?.code).to.equal('REQUEST_TIMEOUT')
+    expect(elapsed, 'answered by a router, not by the caller timer').to.be.below(590)
+  })
+
   it('tickAny between two connected routers is not forwarded back and forth', async () => {
     const r1 = await makeRouter('r1')
     const r2 = await makeRouter('r2')
@@ -141,13 +214,22 @@ describe('Regression bug 2: router validates incoming routing metadata', functio
     router._handleProxyRequest({ owner: 'peer', data: null, metadata: { routing } }, reply)
   })
 
-  it('treats an oversized or malformed path as absent', async () => {
-    const { error } = await proxy({
-      event: 'x',
-      filter: { service: 'missing' },
-      path: new Array(1000).fill('r'),
-      budget: 'not-a-number'
-    })
+  it('fails closed on an oversized or malformed path', async () => {
+    for (const path of [new Array(1000).fill('r'), 'r1', [1, 2]]) {
+      const { error } = await proxy({ event: 'x', filter: { service: 'missing' }, path, budget: 1000 })
+      expect(error?.code, JSON.stringify(path).slice(0, 40)).to.equal(NodeErrorCode.PROXY_HOP_LIMIT)
+    }
+  })
+
+  it('accepts routing metadata from an old peer (no path, no budget)', async () => {
+    for (const routing of [{ event: 'x', filter: { service: 'missing' }, timeout: 1000 }, { event: 'x', filter: { service: 'missing' } }]) {
+      const { error } = await proxy(routing)
+      expect(error?.code).to.equal(NodeErrorCode.NO_NODES_MATCH_FILTER)
+    }
+  })
+
+  it('clamps an absurd budget instead of passing it to setTimeout', async () => {
+    const { error } = await proxy({ event: 'x', filter: { service: 'missing' }, path: [], budget: 1e12, timeout: 1000 })
     expect(error?.code).to.equal(NodeErrorCode.NO_NODES_MATCH_FILTER)
   })
 

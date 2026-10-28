@@ -1230,33 +1230,48 @@ export default class Node extends EventEmitter {
       return Promise.reject(hop.error)
     }
     
-    // Find routers (always search both directions for maximum discovery),
-    // never the node that sent us this proxy or a router already on the path
-    const routers = this._getFilteredNodes({
-      options: { router: true },
-      down: true,
-      up: true
-    }).filter(nodeId => !hop.exclude.has(nodeId))
+    return this._forwardRequestToRouters({ event, data, timeout, filterOptions, filter, down, up, hop })
+  }
+  
+  /**
+   * Router fallback of requestAny: a depth-first search over routers.
+   * Routers are tried one at a time; a router that answers with a routing miss
+   * (no match / hop limit) reports the routers it explored, which are then
+   * skipped too, so every router is tried at most once per request and a
+   * dead-end neighbour no longer hides one that can route.
+   * @private
+   */
+  async _forwardRequestToRouters ({ event, data, timeout, filterOptions, filter, down, up, hop }) {
+    const _scope = _private.get(this)
+    const startedAt = Date.now()
+    let lastMiss = null
+    let hopTimeout = timeout
     
-    if (routers.length > 0) {
-      const routerNode = this._selectNode(routers, event)
-      const _scope = _private.get(this)
+    for (;;) {
+      // Find routers (always search both directions for maximum discovery),
+      // never the sender of this proxy, nor a router already on the path or tried
+      const routers = this._getFilteredNodes({
+        options: { router: true },
+        down: true,
+        up: true
+      }).filter(nodeId => !hop.exclude.has(nodeId))
       
-      _scope.logger.debug(`[Router Fallback] Forwarding requestAny to router: ${routerNode}`)
+      if (routers.length === 0) break
+      
+      const routerNode = this._selectNode(routers, event)
+      hop.exclude.add(routerNode)
       
       // Send proxy request to router via system event (use internal method)
       const route = this._findRoute(routerNode)
-      if (!route) {
-        const error = new NodeError({
-          code: NodeErrorCode.NODE_NOT_FOUND,
-          message: `Router node not found: ${routerNode}`,
-          context: { routerNode }
-        })
-        return Promise.reject(error)
-      }
+      if (!route) continue
       
-      // Effective timeout of this hop; sent as the next hop's time budget
-      const hopTimeout = timeout || route.target.getConfig().PROTOCOL_REQUEST_TIMEOUT
+      // Effective timeout of this hop (fixed on the first try); each try gets
+      // what is left of it, sent as the next hop's time budget
+      hopTimeout = hopTimeout || route.target.getConfig().PROTOCOL_REQUEST_TIMEOUT
+      const remaining = hopTimeout - (Date.now() - startedAt)
+      if (remaining < Globals.PROXY_MIN_BUDGET_MS) break
+      
+      _scope.logger.debug(`[Router Fallback] Forwarding requestAny to router: ${routerNode}`)
       
       // Use the ACTUAL event and data, put routing info in metadata
       const requestParams = {
@@ -1266,15 +1281,16 @@ export default class Node extends EventEmitter {
           routing: {
             event,           // The real event to route
             filter: filterOptions,
-            timeout: hopTimeout,
+            timeout: remaining,
             down,
             up,
             requestor: hop.requestor,
-            path: hop.path,         // Nodes already on the proxy path (incl. this one)
-            budget: hopTimeout      // ms the next hop has before this hop gives up
+            path: hop.path,                     // Nodes on the proxy path (incl. this one)
+            visited: Array.from(hop.visited()), // Routers already explored for this request
+            budget: remaining                   // ms the next hop has before this hop gives up
           }
         },
-        timeout: hopTimeout
+        timeout: remaining
       }
       
       // NOTE: Server vs Client API difference
@@ -1285,19 +1301,34 @@ export default class Node extends EventEmitter {
         requestParams.to = route.targetId
       }
       
-      return route.target._sendSystemRequest(requestParams)
+      try {
+        return await route.target._sendSystemRequest(requestParams)
+      } catch (err) {
+        // A real answer (handler error, timeout, ...) ends the search
+        if (!isRoutingMiss(err)) throw err
+        
+        // The router could not route it: skip everything it explored, try the next
+        for (const nodeId of sanitizeVisited(err.routing?.visited) || []) {
+          hop.exclude.add(nodeId)
+        }
+        lastMiss = err
+      }
     }
     
     // ============================================================================
     // 3. NO MATCH (neither local nor router)
     // ============================================================================
     const error = new NodeError({
-      code: NodeErrorCode.NO_NODES_MATCH_FILTER,
-      message: 'No nodes match filter and no routers available',
+      code: lastMiss?.code === NodeErrorCode.PROXY_HOP_LIMIT ? NodeErrorCode.PROXY_HOP_LIMIT : NodeErrorCode.NO_NODES_MATCH_FILTER,
+      message: lastMiss?.code === NodeErrorCode.PROXY_HOP_LIMIT
+        ? lastMiss.message
+        : 'No nodes match filter and no routers available',
       context: { filter, down, up, event }
     })
-
-    return Promise.reject(error)
+    // Tell the previous hop which routers this search covered
+    error.routing = { visited: Array.from(hop.visited()) }
+    
+    throw error
   }
   
   /**
@@ -1310,19 +1341,32 @@ export default class Node extends EventEmitter {
   _prepareProxyHop (routing, event) {
     const incomingPath = routing?.path || []
     const path = [...incomingPath, this.getId()]
-    const exclude = new Set(incomingPath)
+    // Routers explored for this request (DFS), plus the path and the sender
+    const exclude = new Set([...(routing?.visited || []), ...incomingPath, this.getId()])
     if (routing?.from) {
       exclude.add(routing.from)
     }
     
-    const hop = { path, exclude, requestor: routing?.requestor || this.getId() }
+    const hop = {
+      path,
+      exclude,
+      requestor: routing?.requestor || this.getId(),
+      // Routers explored so far, reported forward and back (capped)
+      visited: () => Array.from(exclude).slice(-Globals.PROXY_MAX_VISITED)
+    }
     
-    if (path.length > Globals.PROXY_MAX_HOPS) {
+    if (routing?.error) {
+      hop.error = routing.error
+    } else if (path.length > Globals.PROXY_MAX_HOPS) {
       hop.error = new NodeError({
         code: NodeErrorCode.PROXY_HOP_LIMIT,
         message: `Proxy hop limit (${Globals.PROXY_MAX_HOPS}) reached; no local node matches the filter`,
         context: { event, path: incomingPath }
       })
+    }
+    
+    if (hop.error) {
+      hop.error.routing = { visited: hop.visited() }
     }
     
     return hop
@@ -1668,6 +1712,23 @@ function withTimeout (promise, ms, address) {
       (err) => { clearTimeout(timer); reject(err) }
     )
   })
+}
+
+/**
+ * A proxy reply that means "could not route", so another router may be tried
+ * @private
+ */
+function isRoutingMiss (err) {
+  return err?.code === NodeErrorCode.NO_NODES_MATCH_FILTER || err?.code === NodeErrorCode.PROXY_HOP_LIMIT
+}
+
+/**
+ * Validate a visited-router list reported by a peer (untrusted)
+ * @private
+ */
+function sanitizeVisited (visited) {
+  if (!Array.isArray(visited) || visited.length > Globals.PROXY_MAX_VISITED) return null
+  return visited.every(id => typeof id === 'string') ? visited : null
 }
 
 /**

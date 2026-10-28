@@ -263,7 +263,9 @@ export class HandlerExecutor {
       ? {
           message: error.message || 'Handler error',
           code: error.code || 'HANDLER_ERROR',
-          stack: this.ctx.config.DEBUG ? error.stack : undefined
+          stack: this.ctx.config.DEBUG ? error.stack : undefined,
+          // Router proxy replies: routers explored for this request (additive)
+          routing: error.routing?.visited ? { visited: error.routing.visited } : undefined
         }
       : { message: String(error), code: 'HANDLER_ERROR' }
     

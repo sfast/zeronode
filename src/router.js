@@ -112,18 +112,16 @@ export class Router extends Node {
     
     try {
       // Answer before the previous hop gives up, so it sees our real error
-      // instead of its own REQUEST_TIMEOUT. Old peers send no budget: fall back
-      // to their timeout (or our default).
-      const budget = hop.budget ?? (Number.isFinite(routing.timeout) && routing.timeout > 0
-        ? routing.timeout
-        : Globals.PROTOCOL_REQUEST_TIMEOUT)
-      const margin = Globals.PROXY_HOP_MARGIN_MS
+      // instead of its own REQUEST_TIMEOUT. The margin scales with the budget
+      // so short timeouts still work across several routers.
+      const margin = Math.min(Globals.PROXY_HOP_MARGIN_MS, Math.floor(hop.budget / 4))
+      const innerTimeout = hop.budget - margin
       
-      if (hop.budget !== undefined && budget <= margin) {
+      if (!hop.error && innerTimeout < Globals.PROXY_MIN_BUDGET_MS) {
         throw new NodeError({
           code: NodeErrorCode.PROXY_DEADLINE_EXCEEDED,
-          message: `Proxy request for '${event}' arrived with ${budget}ms left; not forwarding`,
-          context: { event, budget }
+          message: `Proxy request for '${event}' arrived with ${hop.budget}ms left; not forwarding`,
+          context: { event, budget: hop.budget }
         })
       }
       
@@ -134,7 +132,7 @@ export class Router extends Node {
         filter,
         down: down !== undefined ? down : true,
         up: up !== undefined ? up : true,
-        timeout: Math.max(budget - margin, margin),
+        timeout: innerTimeout,
         _routing: hop
       })
       
@@ -325,18 +323,40 @@ export class Router extends Node {
  * @returns {{ path: string[], from: string, requestor?: string, budget?: number }}
  */
 function sanitizeProxyRouting (routing, sender) {
-  const { path, budget, requestor } = routing
+  const { path, visited, budget, timeout, requestor } = routing
   
-  const validPath = Array.isArray(path) &&
-    path.length <= Globals.PROXY_MAX_HOPS &&
-    path.every(id => typeof id === 'string')
+  // A compliant peer sends either nothing (old version) or a well-formed list.
+  // Anything else fails closed: treated as the hop limit being reached.
+  const validIds = (list, max) => Array.isArray(list) && list.length <= max && list.every(id => typeof id === 'string')
+  const badPath = path !== undefined && !validIds(path, Globals.PROXY_MAX_HOPS)
+  const badVisited = visited !== undefined && !validIds(visited, Globals.PROXY_MAX_VISITED)
   
-  return {
-    path: validPath ? path : [],
+  // Budget: the sender's remaining time. Old peers send only `timeout`.
+  // Never more than the caller's timeout, and within setTimeout's range.
+  const fallback = Number.isFinite(timeout) && timeout > 0 ? timeout : Globals.PROTOCOL_REQUEST_TIMEOUT
+  const raw = Number.isFinite(budget) ? budget : fallback
+  const clamped = Math.max(0, Math.min(raw, fallback, MAX_TIMER_MS))
+  
+  const hop = {
+    path: badPath ? [] : (path || []),
+    visited: badVisited ? [] : (visited || []),
     from: typeof sender === 'string' ? sender : undefined,
     requestor: typeof requestor === 'string' ? requestor : undefined,
-    budget: Number.isFinite(budget) ? budget : undefined
+    budget: clamped
   }
+  
+  if (badPath || badVisited) {
+    hop.error = new NodeError({
+      code: NodeErrorCode.PROXY_HOP_LIMIT,
+      message: 'Malformed proxy routing metadata; not forwarding',
+      context: { from: hop.from }
+    })
+  }
+  
+  return hop
 }
+
+// Largest delay setTimeout accepts (larger values fire after 1ms)
+const MAX_TIMER_MS = 2147483647
 
 export default Router
