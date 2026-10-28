@@ -9,7 +9,10 @@
 
 import { expect } from 'chai'
 import * as zmq from 'zeromq'
-import Node, { NodeEvent } from '../../src/index.js'
+import Node, { NodeEvent, TransportEvent, TransportErrorCode } from '../../src/index.js'
+import { ZeroMQTransport } from '../../src/transport/zeromq/zeromq-transport.js'
+import LocalServerSocket from '../../src/transport/local/server.js'
+import LocalClientSocket from '../../src/transport/local/client.js'
 import { MessageDispatcher } from '../../src/protocol/message-dispatcher.js'
 import { ProtocolContext } from '../../src/protocol/protocol-context.js'
 import { ProtocolEvent } from '../../src/protocol/lifecycle.js'
@@ -77,6 +80,38 @@ describe('Regression bug 1: tick handler errors must not kill the receive loop',
     expect(calls).to.deep.equal(['first', 'second'])
   })
 
+  it('reports a throwing client-side tick handler as NodeEvent.ERROR from the client', async () => {
+    const clientErrors = []
+    client.on(NodeEvent.ERROR, (payload) => clientErrors.push(payload))
+    client.onTick('down-boom', () => { throw new Error('client handler bug') })
+    client.onRequest('ping-client', () => 'pong-client')
+
+    server.tick({ to: client.getId(), event: 'down-boom' })
+    await wait(100)
+
+    expect(await server.request({ to: client.getId(), event: 'ping-client', timeout: 500 })).to.equal('pong-client')
+    const handlerError = clientErrors.find(p => p.error?.message?.includes('client handler bug'))
+    expect(handlerError, 'NodeEvent.ERROR with source client').to.exist
+    expect(handlerError.source).to.equal('client')
+  })
+
+  it('ignores a remote tick named "error" that has no handler', async () => {
+    client.tick({ to: server.getId(), event: 'error' })
+    await wait(100)
+
+    expect(await client.request({ to: server.getId(), event: 'ping', timeout: 500 })).to.equal('pong')
+  })
+
+  it('keeps receiving when a NodeEvent.ERROR listener itself throws', async () => {
+    server.on(NodeEvent.ERROR, () => { throw new Error('error listener bug') })
+    server.onTick('boom', () => { throw new Error('handler bug') })
+
+    client.tick({ to: server.getId(), event: 'boom' })
+    await wait(100)
+
+    expect(await client.request({ to: server.getId(), event: 'ping', timeout: 500 })).to.equal('pong')
+  })
+
   it('survives a malformed frame and keeps answering requests', async () => {
     const raw = new zmq.Dealer({ routingId: `bug1-raw-${Date.now()}` })
     try {
@@ -88,6 +123,67 @@ describe('Regression bug 1: tick handler errors must not kill the receive loop',
       expect(serverErrors.length, 'malformed frame reported').to.be.greaterThan(0)
     } finally {
       raw.close()
+    }
+  })
+})
+
+describe('Regression bug 1: transports keep receiving when a MESSAGE listener throws', () => {
+  it('ZeroMQ receive loop survives a throwing MESSAGE listener', async () => {
+    const router = ZeroMQTransport.createServerSocket({ id: `bug1-zrouter-${Date.now()}` })
+    const dealer = ZeroMQTransport.createClientSocket({ id: `bug1-zdealer-${Date.now()}` })
+    const received = []
+    const errors = []
+    let first = true
+    router.on(TransportEvent.MESSAGE, ({ buffer }) => {
+      received.push(buffer.toString())
+      if (first) { first = false; throw new Error('listener bug') }
+    })
+    router.on(TransportEvent.ERROR, (err) => errors.push(err))
+
+    try {
+      await router.bind('tcp://127.0.0.1:0')
+      await dealer.connect(router.getAddress())
+      await wait(100)
+
+      dealer.sendBuffer(Buffer.from('one'))
+      await wait(100)
+      dealer.sendBuffer(Buffer.from('two'))
+      await wait(100)
+
+      expect(received).to.deep.equal(['one', 'two'])
+      expect(errors.map(e => e.code)).to.deep.equal([TransportErrorCode.MESSAGE_HANDLER_FAILED])
+    } finally {
+      await dealer.close().catch(() => {})
+      await router.close().catch(() => {})
+    }
+  })
+
+  it('local transport reports a throwing MESSAGE listener instead of throwing', async () => {
+    const address = `local://bug1-local-${Date.now()}`
+    const server = new LocalServerSocket({ id: address })
+    const client = new LocalClientSocket({ id: `local://bug1-local-cli-${Date.now()}` })
+    const received = []
+    const errors = []
+    let first = true
+    server.on(TransportEvent.MESSAGE, ({ buffer }) => {
+      received.push(buffer.toString())
+      if (first) { first = false; throw new Error('listener bug') }
+    })
+    server.on(TransportEvent.ERROR, (err) => errors.push(err))
+
+    try {
+      await server.bind(address)
+      await client.connect(address)
+
+      client.sendBuffer(Buffer.from('one'))
+      client.sendBuffer(Buffer.from('two'))
+      await wait(50)
+
+      expect(received).to.deep.equal(['one', 'two'])
+      expect(errors.map(e => e.code)).to.deep.equal([TransportErrorCode.MESSAGE_HANDLER_FAILED])
+    } finally {
+      await client.close().catch(() => {})
+      await server.close().catch(() => {})
     }
   })
 })
@@ -115,6 +211,14 @@ describe('Regression bug 1: MessageDispatcher isolates failures', () => {
     expect(() => dispatcher.dispatch(makeTick('boom'))).not.to.throw()
     expect(protocolErrors).to.have.length(1)
     expect(protocolErrors[0].message).to.include('listener bug')
+  })
+
+  it('ignores an unknown envelope type without throwing', () => {
+    const buffer = makeTick('t')
+    buffer[0] = 99
+
+    expect(() => dispatcher.dispatch(buffer)).not.to.throw()
+    expect(protocolErrors).to.have.length(0)
   })
 
   it('does not throw on a buffer shorter than an envelope header, and reports it', () => {

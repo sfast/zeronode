@@ -32,41 +32,42 @@ export class MessageDispatcher {
   dispatch(buffer, sender) {
     // Never let a malformed buffer or a handler failure escape: the caller is the
     // transport's receive loop, and an exception there stops all further receives.
+    let envelope
+    let type
     try {
-      this._dispatch(buffer, sender)
+      // Create envelope (lazy parsing - only reads type initially)
+      envelope = new Envelope(buffer)
+      type = envelope.type
     } catch (err) {
-      this._reportError(ProtocolErrorCode.INVALID_ENVELOPE, `Failed to dispatch incoming message: ${err.message}`, err)
+      this._reportError(ProtocolErrorCode.INVALID_ENVELOPE, `Malformed incoming message: ${err?.message ?? err}`, err)
+      return
     }
-  }
-
-  /**
-   * @private
-   */
-  _dispatch(buffer, sender) {
-    // Create envelope (lazy parsing - only reads type initially)
-    const envelope = new Envelope(buffer)
-
-    switch (envelope.type) {
-      case EnvelopType.REQUEST:
-        this._handleRequest(envelope)
-        break
-      
-      case EnvelopType.TICK:
-        this._handleTick(envelope)
-        break
-      
-      case EnvelopType.RESPONSE:
-        this._handleResponse(envelope, false)
-        break
-      
-      case EnvelopType.ERROR:
-        this._handleResponse(envelope, true)
-        break
-      
-      default:
-        this.ctx.debug && this.ctx.logger?.warn(
-          `[MessageDispatcher] Unknown envelope type: ${envelope.type}`
-        )
+    
+    try {
+      switch (type) {
+        case EnvelopType.REQUEST:
+          this._handleRequest(envelope)
+          break
+        
+        case EnvelopType.TICK:
+          this._handleTick(envelope)
+          break
+        
+        case EnvelopType.RESPONSE:
+          this._handleResponse(envelope, false)
+          break
+        
+        case EnvelopType.ERROR:
+          this._handleResponse(envelope, true)
+          break
+        
+        default:
+          this.ctx.debug && this.ctx.logger?.warn(
+            `[MessageDispatcher] Unknown envelope type: ${type}`
+          )
+      }
+    } catch (err) {
+      this._reportError(ProtocolErrorCode.HANDLER_ERROR, `Failed to dispatch incoming message: ${err?.message ?? err}`, err)
     }
   }
   
@@ -102,6 +103,9 @@ export class MessageDispatcher {
     // Fire and forget - call each handler in isolation so one failing handler
     // neither skips the others nor escapes into the receive loop.
     // Handler signature: (envelope)
+    // Note: getMatchingListeners returns original functions, so a string
+    // listener registered with tickEmitter.once() would not be removed here.
+    // onTick() only uses .on(), so no such listener exists.
     const handlers = this.tickEmitter.getMatchingListeners(envelope.event)
 
     for (const handler of handlers) {

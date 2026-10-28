@@ -97,6 +97,9 @@ export interface TickOptions {
   
   /** Message payload */
   data?: any;
+  
+  /** Metadata (delivered to the handler as envelope.metadata) */
+  metadata?: Record<string, any>;
 }
 
 /**
