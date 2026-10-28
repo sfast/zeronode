@@ -499,6 +499,12 @@ export default class Node extends EventEmitter {
     
     const addressHash = md5(address)
     
+    // Forget the reconnect target BEFORE disconnecting: the client emits
+    // NOT_READY/CLOSED while going down, and the reconnect listener must not
+    // find the address and bring the connection back. Done even when not
+    // connected, so a reconnect currently in flight is abandoned too.
+    this._forgetConnectionTarget(address)
+    
     if (!clientsAddressIndex.has(addressHash)) {
       logger.warn(`[Node] Not connected to ${address}`)
       return true
@@ -507,11 +513,19 @@ export default class Node extends EventEmitter {
     const nodeId = clientsAddressIndex.get(addressHash)
     const client = clients.get(nodeId)
     
-    // Disconnect client (will emit ClientEvent.NOT_READY or ClientEvent.CLOSED)
+    // Disconnect client (will emit ClientEvent.NOT_READY → PEER_LEFT)
     await client.disconnect()
     
     // Remove all event listeners AFTER disconnect completes
     client.removeAllListeners()
+    
+    // Release the socket too: disconnect() alone left the DEALER open.
+    // Listeners are gone, so this emits no second PEER_LEFT.
+    try {
+      await client.close()
+    } catch (err) {
+      logger.warn(`[Node] Failed to close client for ${address}: ${err.message}`)
+    }
     
     // Clean up
     this._removeClientHandlers(client)
@@ -671,6 +685,31 @@ export default class Node extends EventEmitter {
   }
   
   /**
+   * Stop auto-reconnecting to an address: clear its timer, mark the target
+   * cancelled (abandons a reconnect already in flight) and drop the mappings
+   * @private
+   */
+  _forgetConnectionTarget (address) {
+    const { connectionTargets, peerIdToAddress } = _private.get(this)
+    
+    const target = connectionTargets.get(address)
+    if (target) {
+      if (target.timer) {
+        clearTimeout(target.timer)
+        target.timer = null
+      }
+      target.cancelled = true
+      connectionTargets.delete(address)
+    }
+    
+    for (const [peerId, peerAddress] of peerIdToAddress.entries()) {
+      if (peerAddress === address) {
+        peerIdToAddress.delete(peerId)
+      }
+    }
+  }
+  
+  /**
    * Schedule a reconnect attempt with exponential backoff
    * @private
    */
@@ -699,10 +738,22 @@ export default class Node extends EventEmitter {
     logger.info(`[Node] Reconnecting to ${address} in ${delay}ms (attempt ${target.attempts})`)
     
     target.timer = setTimeout(async () => {
+      target.timer = null
+      if (target.cancelled) return
+      
       try {
         await this.connect({ address })
+        
+        // disconnect()/close() ran while this attempt was in flight: undo it
+        if (target.cancelled) {
+          logger.info(`[Node] Reconnect to ${address} completed after disconnect, dropping it`)
+          await this.disconnect(address)
+          return
+        }
+        
         logger.info(`[Node] Successfully reconnected to ${address}`)
       } catch (err) {
+        if (target.cancelled) return
         logger.error(`[Node] Reconnect failed to ${address}:`, err.message)
         // Schedule another attempt
         this._scheduleReconnect(address)
@@ -1351,22 +1402,24 @@ export default class Node extends EventEmitter {
    */
   async close () {
     const _scope = _private.get(this)
-    const { server, clients, logger, connectionTargets } = _scope
+    const { server, clients, clientsAddressIndex, logger, connectionTargets, peerIdToAddress } = _scope
     const promises = []
     
-    // Clear all reconnect timers
+    // Cancel all reconnects (timers and attempts in flight)
     if (connectionTargets) {
-      for (const [address, target] of connectionTargets.entries()) {
+      for (const target of connectionTargets.values()) {
         if (target.timer) {
           clearTimeout(target.timer)
           target.timer = null
         }
+        target.cancelled = true
       }
       connectionTargets.clear()
     }
+    peerIdToAddress?.clear()
     
-    // Close server
-    if (server && server.isOnline()) {
+    // Close server (also when not online: the socket still has to be released)
+    if (server) {
       promises.push(server.close())
     }
     
@@ -1376,6 +1429,9 @@ export default class Node extends EventEmitter {
     })
     
     await Promise.all(promises)
+    
+    clients.clear()
+    clientsAddressIndex.clear()
     
     // Emit stopped event
     this.emit(NodeEvent.STOPPED)
