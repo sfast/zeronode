@@ -62,6 +62,8 @@ export const ReconnectPolicy = {
 }
 
 const _private = new WeakMap()
+// client → [[event, listener]] attached by the Node (see _attachClientEvents)
+const clientNodeListeners = new WeakMap()
 
 const defaultLogger = winston.createLogger({
   transports: [
@@ -119,7 +121,8 @@ export default class Node extends EventEmitter {
       // reconnect: ReconnectPolicy.ALWAYS | ReconnectPolicy.ON_FAILURE | ReconnectPolicy.DISABLED
       reconnect: config.reconnect !== undefined ? config.reconnect : ReconnectPolicy.ALWAYS,
       connectionTargets: new Map(), // address → { peerId, attempts, timer, timeout }
-      peerIdToAddress: new Map()    // peerId → address
+      peerIdToAddress: new Map(),   // peerId → address
+      pendingConnects: new Map()    // address → { client, cancelled, promise } (handshake in progress)
     }
     
     _private.set(this, _scope)
@@ -408,6 +411,33 @@ export default class Node extends EventEmitter {
   async connect ({ address, timeout, reconnectionTimeout } = {}) {
     assertValidAddress(address)
     
+    const { pendingConnects } = _private.get(this)
+    
+    // A connect to this address is already waiting for its handshake: share it
+    // (two clients for one address would leak the second)
+    const pending = pendingConnects.get(address)
+    if (pending) {
+      return pending.promise
+    }
+    
+    const attempt = { client: null, cancelled: false, promise: null }
+    attempt.promise = this._connect({ address, timeout, reconnectionTimeout }, attempt)
+    pendingConnects.set(address, attempt)
+    
+    try {
+      return await attempt.promise
+    } finally {
+      if (pendingConnects.get(address) === attempt) {
+        pendingConnects.delete(address)
+      }
+    }
+  }
+  
+  /**
+   * connect() body; `attempt` lets disconnect()/close() cancel it mid-handshake
+   * @private
+   */
+  async _connect ({ address, timeout, reconnectionTimeout }, attempt) {
     const _scope = _private.get(this)
     const { id, options, config, clients, clientsAddressIndex, logger, connectionTargets, peerIdToAddress } = _scope
     
@@ -451,6 +481,7 @@ export default class Node extends EventEmitter {
     
     // Attach client event handlers
     this._attachClientEvents(client)
+    attempt.client = client
     
     // Connect (Client.connect() waits for handshake to complete).
     // On failure the client must not outlive this call: its DEALER would keep
@@ -458,14 +489,14 @@ export default class Node extends EventEmitter {
     try {
       await client.connect(address, timeout)
     } catch (err) {
-      client.removeAllListeners()
-      this._removeClientHandlers(client)
-      try {
-        await client.close()
-      } catch (closeErr) {
-        logger.warn(`[Node] Failed to close client after failed connect to ${address}: ${closeErr.message}`)
-      }
-      throw err
+      await this._discardClient(client, address)
+      throw attempt.cancelled ? connectCancelledError(address) : err
+    }
+    
+    // disconnect()/close() ran while the handshake was completing
+    if (attempt.cancelled) {
+      await this._discardClient(client, address)
+      throw connectCancelledError(address)
     }
     
     // Get server ID (now available after handshake)
@@ -518,6 +549,9 @@ export default class Node extends EventEmitter {
     // connected, so a reconnect currently in flight is abandoned too.
     this._forgetConnectionTarget(address)
     
+    // A connect() to this address still waiting for its handshake: cancel it
+    await this._cancelPendingConnect(address)
+    
     if (!clientsAddressIndex.has(addressHash)) {
       logger.warn(`[Node] Not connected to ${address}`)
       return true
@@ -529,19 +563,11 @@ export default class Node extends EventEmitter {
     // Disconnect client (will emit ClientEvent.NOT_READY → PEER_LEFT)
     await client.disconnect()
     
-    // Remove all event listeners AFTER disconnect completes
-    client.removeAllListeners()
-    
-    // Release the socket too: disconnect() alone left the DEALER open.
-    // Listeners are gone, so this emits no second PEER_LEFT.
-    try {
-      await client.close()
-    } catch (err) {
-      logger.warn(`[Node] Failed to close client for ${address}: ${err.message}`)
-    }
+    // Then detach the Node and release the socket too (disconnect() alone left
+    // the DEALER open). Node listeners go first, so no second PEER_LEFT.
+    await this._discardClient(client, address)
     
     // Clean up
-    this._removeClientHandlers(client)
     clients.delete(nodeId)
     clientsAddressIndex.delete(addressHash)
     
@@ -558,8 +584,17 @@ export default class Node extends EventEmitter {
     const _scope = _private.get(this)
     const { logger } = _scope
     
+    // Remember what the Node attaches, so it can detach exactly these later
+    // without touching the Client's own internal listeners
+    const attached = []
+    clientNodeListeners.set(client, attached)
+    const listen = (event, listener) => {
+      client.on(event, listener)
+      attached.push([event, listener])
+    }
+    
     // Also listen to structured client error event
-    client.on(ClientEvent.ERROR, (err) => {
+    listen(ClientEvent.ERROR, (err) => {
       logger.error('[Node] Client error:', err)
       const serverId = client.getServerId()
       this.emit(NodeEvent.ERROR, {
@@ -570,7 +605,7 @@ export default class Node extends EventEmitter {
     })
     
     // Transform: Client.SERVER_JOINED → Node.PEER_JOINED (handshake complete, peer identified)
-    client.on(ClientEvent.SERVER_JOINED, ({ serverId, serverOptions }) => {
+    listen(ClientEvent.SERVER_JOINED, ({ serverId, serverOptions }) => {
       // ✅ Track JOINED state in Node (single operation)
       this._addJoinedPeer(serverId, serverOptions, 'upstream')
       
@@ -582,7 +617,7 @@ export default class Node extends EventEmitter {
     })
     
     // Transform: Client.NOT_READY → Node.PEER_LEFT (transport lost readiness)
-    client.on(ClientEvent.NOT_READY, ({ serverId, reason }) => {
+    listen(ClientEvent.NOT_READY, ({ serverId, reason }) => {
       // ✅ Track LEFT state in Node (single operation)
       this._removeJoinedPeer(serverId)
       
@@ -595,7 +630,7 @@ export default class Node extends EventEmitter {
     })
     
     // Transform: Client.CLOSED → Node.PEER_LEFT (transport permanently closed)
-    client.on(ClientEvent.CLOSED, ({ serverId }) => {
+    listen(ClientEvent.CLOSED, ({ serverId }) => {
       // ✅ Track LEFT state in Node (single operation)
       this._removeJoinedPeer(serverId)
       
@@ -610,7 +645,7 @@ export default class Node extends EventEmitter {
     })
     
     // Transform: Client.SERVER_LEFT → Node.PEER_LEFT (server shutdown/stopped)
-    client.on(ClientEvent.SERVER_LEFT, ({ serverId }) => {
+    listen(ClientEvent.SERVER_LEFT, ({ serverId }) => {
       // ✅ Track LEFT state in Node (single operation)
       this._removeJoinedPeer(serverId)
       
@@ -623,6 +658,35 @@ export default class Node extends EventEmitter {
       // NOTE: Don't auto-cleanup here - client might be needed for reconnection
       // Only cleanup on explicit disconnect() call
     })
+  }
+  
+  /**
+   * Detach the listeners added by _attachClientEvents (Client internals stay)
+   * @private
+   */
+  _detachClientEvents (client) {
+    const attached = clientNodeListeners.get(client)
+    if (!attached) return
+    for (const [event, listener] of attached) {
+      client.off(event, listener)
+    }
+    clientNodeListeners.delete(client)
+  }
+  
+  /**
+   * Detach a client from this Node and release its socket.
+   * Emits nothing: Node listeners are removed before the client closes.
+   * @private
+   */
+  async _discardClient (client, address) {
+    const { logger } = _private.get(this)
+    this._detachClientEvents(client)
+    this._removeClientHandlers(client)
+    try {
+      await client.close()
+    } catch (err) {
+      logger.warn(`[Node] Failed to close client for ${address}: ${err.message}`)
+    }
   }
   
   // ============================================================================
@@ -723,6 +787,27 @@ export default class Node extends EventEmitter {
   }
   
   /**
+   * Cancel a connect() that is still waiting for its handshake: closing its
+   * client makes Client.connect() reject at once, and connect() then rejects
+   * with CONNECT_CANCELLED without registering anything
+   * @private
+   */
+  async _cancelPendingConnect (address) {
+    const { pendingConnects } = _private.get(this)
+    const attempt = pendingConnects.get(address)
+    if (!attempt) return
+    
+    attempt.cancelled = true
+    pendingConnects.delete(address)
+    
+    if (attempt.client) {
+      await this._discardClient(attempt.client, address)
+    }
+    // Let the connect() promise settle before returning
+    await attempt.promise.catch(() => {})
+  }
+  
+  /**
    * Schedule a reconnect attempt with exponential backoff
    * @private
    */
@@ -755,15 +840,9 @@ export default class Node extends EventEmitter {
       if (target.cancelled) return
       
       try {
+        // A disconnect()/close() during this attempt cancels the pending
+        // connect itself (CONNECT_CANCELLED), so nothing is registered
         await this.connect({ address })
-        
-        // disconnect()/close() ran while this attempt was in flight: undo it
-        if (target.cancelled) {
-          logger.info(`[Node] Reconnect to ${address} completed after disconnect, dropping it`)
-          await this.disconnect(address)
-          return
-        }
-        
         logger.info(`[Node] Successfully reconnected to ${address}`)
       } catch (err) {
         if (target.cancelled) return
@@ -1431,6 +1510,10 @@ export default class Node extends EventEmitter {
     }
     peerIdToAddress?.clear()
     
+    // Cancel connects still waiting for their handshake
+    const { pendingConnects } = _scope
+    await Promise.all(Array.from(pendingConnects.keys()).map(address => this._cancelPendingConnect(address)))
+    
     // Close server (also when not online: the socket still has to be released)
     if (server) {
       promises.push(server.close())
@@ -1443,6 +1526,10 @@ export default class Node extends EventEmitter {
     
     await Promise.all(promises)
     
+    clients.forEach(client => {
+      this._detachClientEvents(client)
+      this._removeClientHandlers(client)
+    })
     clients.clear()
     clientsAddressIndex.clear()
     
@@ -1456,6 +1543,17 @@ export default class Node extends EventEmitter {
 // ============================================================================
 // PRIVATE HELPERS
 // ============================================================================
+
+/**
+ * @private
+ */
+function connectCancelledError (address) {
+  return new NodeError({
+    code: NodeErrorCode.CONNECT_CANCELLED,
+    message: `Connect to ${address} cancelled by disconnect() or close()`,
+    context: { address }
+  })
+}
 
 /**
  * Generate random node ID

@@ -196,12 +196,17 @@ export class MessageDispatcher {
   
   /**
    * Unregister request handler
+   * If no handler provided, removes all handlers for pattern
    * 
    * @param {string|RegExp} pattern - Event pattern
-   * @param {Function} handler - Handler to remove
+   * @param {Function} [handler] - Handler to remove (optional)
    */
   offRequest(pattern, handler) {
-    this.requestEmitter.off(pattern, handler)
+    if (handler) {
+      this.requestEmitter.off(pattern, handler)
+    } else {
+      this.requestEmitter.removeAllListeners(pattern)
+    }
     
     this.ctx.debug && this.ctx.logger?.debug(
       `[MessageDispatcher] Unregistered request handler for pattern: ${pattern}`

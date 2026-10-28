@@ -263,18 +263,31 @@ export default class Client extends Protocol {
         const config = this.getConfig()
         const handshakeMs = (timeout ?? config.CLIENT_HANDSHAKE_TIMEOUT ?? Globals.CLIENT_HANDSHAKE_TIMEOUT ?? 10000)
         
+        const cleanup = () => {
+          clearTimeout(handshakeTimeout)
+          this.off(ClientEvent.SERVER_JOINED, onJoined)
+          this.off(ClientEvent.CLOSED, onClosed)
+        }
+        
         // ✅ Wait for SERVER_JOINED (handshake complete) not READY (transport ready)
         const onJoined = ({ serverId }) => {
-          clearTimeout(handshakeTimeout)
+          cleanup()
           resolve(serverId)
         }
         
+        // Closed (e.g. by Node.disconnect()/close()) before the handshake completed
+        const onClosed = () => {
+          cleanup()
+          reject(new Error(`Connection to ${serverAddress} closed before the handshake completed`))
+        }
+        
         const handshakeTimeout = setTimeout(() => {
-          this.off(ClientEvent.SERVER_JOINED, onJoined)
+          cleanup()
           reject(new Error(`Handshake timeout: server at ${serverAddress} did not respond`))
         }, handshakeMs)
         
         this.once(ClientEvent.SERVER_JOINED, onJoined)
+        this.once(ClientEvent.CLOSED, onClosed)
       })
     } catch (err) {
       throw err

@@ -9,7 +9,7 @@
 
 import { expect } from 'chai'
 import * as zmq from 'zeromq'
-import Node, { NodeErrorCode } from '../../src/index.js'
+import Node, { NodeEvent, NodeErrorCode } from '../../src/index.js'
 import Client from '../../src/protocol/client.js'
 import { ClientEvent } from '../../src/protocol/client.js'
 
@@ -64,6 +64,54 @@ describe('Regression bug 5: failed connect() does not leak a client', function (
       requestError = err
     }
     expect(requestError?.code).to.equal(NodeErrorCode.NO_NODES_MATCH_FILTER)
+  })
+
+  for (const how of ['disconnect', 'close']) {
+    it(`${how}() cancels a connect() still waiting for its handshake`, async () => {
+      const address = await reserveFreeAddress()
+      client = new Node({ id: `bug5-cli-${Date.now()}` })
+      const joined = []
+      client.on(NodeEvent.PEER_JOINED, (payload) => joined.push(payload))
+
+      const pending = client.connect({ address, timeout: 5000 })
+      const outcome = pending.then(() => 'resolved', (err) => err)
+      await wait(100)
+
+      const started = Date.now()
+      if (how === 'disconnect') {
+        await client.disconnect(address)
+      } else {
+        await client.close()
+      }
+      const err = await outcome
+      expect(err?.code, 'connect() rejects as cancelled').to.equal(NodeErrorCode.CONNECT_CANCELLED)
+      expect(Date.now() - started, 'without waiting for the handshake timeout').to.be.below(1000)
+
+      server = new Node({ id: `bug5-srv-${Date.now()}` })
+      await server.bind(address)
+      await wait(800)
+
+      expect(joined).to.deep.equal([])
+      expect(client.getNodesUpstream()).to.deep.equal([])
+      expect(server.getNodesDownstream()).to.deep.equal([])
+    })
+  }
+
+  it('concurrent connect() calls to one address share a single client', async () => {
+    server = new Node({ id: `bug5-srv-${Date.now()}` })
+    await server.bind('tcp://127.0.0.1:0')
+    client = new Node({ id: `bug5-cli-${Date.now()}` })
+
+    const [a, b] = await Promise.all([
+      client.connect({ address: server.getAddress() }),
+      client.connect({ address: server.getAddress() })
+    ])
+    expect(a.id).to.equal(server.getId())
+    expect(b.id).to.equal(server.getId())
+
+    await client.disconnect(server.getAddress())
+    await wait(300)
+    expect(server.getNodesDownstream(), 'no second, leaked client stays joined').to.deep.equal([])
   })
 
   it('Client.connect() removes its SERVER_JOINED listener on handshake timeout', async () => {

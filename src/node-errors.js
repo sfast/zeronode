@@ -12,7 +12,8 @@ export const NodeErrorCode = {
   NODE_NOT_FOUND: 'NODE_NOT_FOUND',                   // Target node not found in routing table
   NO_NODES_MATCH_FILTER: 'NO_NODES_MATCH_FILTER',     // Filter matched zero nodes
   INVALID_ADDRESS: 'INVALID_ADDRESS',                 // Invalid or missing address
-  PREDICATE_NOT_ROUTABLE: 'PREDICATE_NOT_ROUTABLE'    // Predicate filters cannot be forwarded to router
+  PREDICATE_NOT_ROUTABLE: 'PREDICATE_NOT_ROUTABLE',   // Predicate filters cannot be forwarded to router
+  CONNECT_CANCELLED: 'CONNECT_CANCELLED'              // connect() was cancelled by disconnect()/close() mid-handshake
 }
 
 /**

@@ -322,7 +322,10 @@ export enum NodeErrorCode {
   NO_NODES_MATCH_FILTER = 'NO_NODES_MATCH_FILTER',
   
   /** Invalid address */
-  INVALID_ADDRESS = 'INVALID_ADDRESS'
+  INVALID_ADDRESS = 'INVALID_ADDRESS',
+  
+  /** connect() was cancelled by disconnect()/close() before the handshake completed */
+  CONNECT_CANCELLED = 'CONNECT_CANCELLED'
 }
 
 /**

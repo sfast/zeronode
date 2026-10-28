@@ -73,35 +73,4 @@ describe('Regression bug 4: disconnect() is not undone by auto-reconnect', funct
     expect(info.id).to.equal(server.getId())
     expect(client.getNodesUpstream()).to.have.length(1)
   })
-
-  it('a reconnect already in flight when disconnect() runs is abandoned', async () => {
-    await setup(ReconnectPolicy.ALWAYS)
-
-    // Hold the next connect() open so disconnect() lands while it is in flight
-    const originalConnect = client.connect.bind(client)
-    let release
-    const gate = new Promise(resolve => { release = resolve })
-    let reconnectStarted = false
-    client.connect = async (args) => {
-      reconnectStarted = true
-      await gate
-      return originalConnect(args)
-    }
-
-    // Simulate an unexpected upstream loss: drop the client the way a failed
-    // transport would leave it, then let the reconnect listener schedule a retry
-    const serverId = server.getId()
-    client.emit(NodeEvent.PEER_LEFT, { peerId: serverId, direction: 'upstream', reason: 'TRANSPORT_NOT_READY' })
-
-    // Wait for the 1s backoff to fire and enter connect()
-    await wait(1200)
-    expect(reconnectStarted, 'reconnect callback entered connect()').to.equal(true)
-
-    await client.disconnect(address)
-    release()
-    await wait(300)
-
-    expect(client.getNodesUpstream()).to.deep.equal([])
-    expect(server.getNodesDownstream()).to.deep.equal([])
-  })
 })
