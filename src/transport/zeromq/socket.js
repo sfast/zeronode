@@ -162,8 +162,14 @@ class Socket extends EventEmitter {
           continue
         }
         
-        // Pure transport: forward ALL messages to protocol layer
-        this.emit(TransportEvent.MESSAGE, { buffer, sender })
+        // Pure transport: forward ALL messages to protocol layer.
+        // Listeners run synchronously: a throw here must not end the loop,
+        // otherwise the socket never receives again.
+        try {
+          this.emit(TransportEvent.MESSAGE, { buffer, sender })
+        } catch (err) {
+          this._emitMessageHandlerError(err)
+        }
       }
     } catch (err) {
       // Socket closed or error occurred
@@ -182,6 +188,25 @@ class Socket extends EventEmitter {
       })
       
       this.emit(TransportEvent.ERROR, transportError)
+    }
+  }
+
+  /**
+   * Report a MESSAGE listener failure without leaving the receive loop
+   * @private
+   */
+  _emitMessageHandlerError (err) {
+    const transportError = new TransportError({
+      code: TransportErrorCode.MESSAGE_HANDLER_FAILED,
+      message: `Message handler failed on transport '${this.getId()}': ${err?.message ?? err}`,
+      transportId: this.getId(),
+      cause: err instanceof Error ? err : undefined
+    })
+
+    try {
+      this.emit(TransportEvent.ERROR, transportError)
+    } catch (emitErr) {
+      this.logger?.error(`[Socket] Error listener failed: ${emitErr.message}`)
     }
   }
 

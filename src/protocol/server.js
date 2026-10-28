@@ -28,7 +28,8 @@ export const ServerEvent = {
   NOT_READY: 'server:not_ready',       // Server transport not ready
   CLOSED: 'server:closed',             // Server closed
   CLIENT_JOINED: 'server:client_joined',   // Client connected & authenticated
-  CLIENT_LEFT: 'server:client_left'        // Client left (graceful, timeout, or failed)
+  CLIENT_LEFT: 'server:client_left',       // Client left (graceful, timeout, or failed)
+  ERROR: 'server:error'                    // Server-level error (transport/protocol failure)
 }
 
 let _private = new WeakMap()
@@ -88,6 +89,11 @@ export default class Server extends Protocol {
     this.on(ProtocolEvent.TRANSPORT_CLOSED, () => {
       this._stopHealthChecks()
       this.emit(ServerEvent.CLOSED)
+    })
+
+    // Protocol/transport error (e.g. a failing tick handler) - surface it
+    this.on(ProtocolEvent.ERROR, (err) => {
+      this.emit(ServerEvent.ERROR, err)
     })
   }
   

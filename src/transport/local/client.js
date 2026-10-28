@@ -233,10 +233,33 @@ export default class LocalClientSocket extends EventEmitter {
     if (this._closed) return
 
     // Emit MESSAGE event (Protocol listens to this)
-    this.emit(TransportEvent.MESSAGE, {
+    this._emitMessage({
       buffer,
       sender: this._connectedServer ? this._connectedServer.getId() : null
     })
+  }
+
+  /**
+   * Deliver to MESSAGE listeners; a throwing listener is reported as a transport
+   * error instead of escaping as an uncaught exception
+   * @private
+   */
+  _emitMessage(payload) {
+    try {
+      this.emit(TransportEvent.MESSAGE, payload)
+    } catch (err) {
+      const transportError = new TransportError({
+        code: TransportErrorCode.MESSAGE_HANDLER_FAILED,
+        message: `Message handler failed on transport '${this._id}': ${err?.message ?? err}`,
+        transportId: this._id,
+        cause: err instanceof Error ? err : undefined
+      })
+      try {
+        this.emit(TransportEvent.ERROR, transportError)
+      } catch (emitErr) {
+        this.logger.error(`[LocalClientSocket] Error listener failed: ${emitErr.message}`)
+      }
+    }
   }
 
   // ========================================================================

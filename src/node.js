@@ -352,6 +352,16 @@ export default class Node extends EventEmitter {
       })
     })
     
+    // Structured server error (protocol/transport failure, e.g. a failing tick handler)
+    server.on(ServerEvent.ERROR, (err) => {
+      logger.error('[Node] Server error:', err)
+      this.emit(NodeEvent.ERROR, {
+        source: 'server',
+        address: this.getAddress?.(),
+        error: err
+      })
+    })
+    
     // Transform: Server.CLIENT_JOINED → Node.PEER_JOINED
     server.on(ServerEvent.CLIENT_JOINED, ({ clientId, clientOptions }) => {
       // ✅ Track JOINED state in Node (single operation)

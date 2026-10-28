@@ -27,6 +27,7 @@ export const TransportErrorCode = {
   // Send/Receive errors
   SEND_FAILED: 'TRANSPORT_SEND_FAILED',                   // Failed to send message (offline, HWM, error)
   RECEIVE_FAILED: 'TRANSPORT_RECEIVE_FAILED',             // Failed to receive message (socket error, iterator error)
+  MESSAGE_HANDLER_FAILED: 'TRANSPORT_MESSAGE_HANDLER_FAILED', // A MESSAGE listener threw; the receive loop continues
   
   // Address errors
   INVALID_ADDRESS: 'TRANSPORT_INVALID_ADDRESS',           // Invalid address format

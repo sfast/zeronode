@@ -278,7 +278,10 @@ export enum ServerEvent {
   CLIENT_JOINED = 'server:client_joined',
   
   /** Client left */
-  CLIENT_LEFT = 'server:client_left'
+  CLIENT_LEFT = 'server:client_left',
+  
+  /** Server error (protocol/transport failure, e.g. a failing tick handler) */
+  ERROR = 'server:error'
 }
 
 /**
@@ -411,6 +414,7 @@ export enum TransportErrorCode {
   
   /** Receive failed */
   RECEIVE_FAILED = 'TRANSPORT_RECEIVE_FAILED',
+  MESSAGE_HANDLER_FAILED = 'TRANSPORT_MESSAGE_HANDLER_FAILED',
   
   /** Invalid address */
   INVALID_ADDRESS = 'TRANSPORT_INVALID_ADDRESS',
