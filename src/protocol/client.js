@@ -19,6 +19,7 @@
 import { randomUUID } from 'crypto'
 import Globals from '../globals.js'
 import Protocol, { ProtocolEvent, ProtocolSystemEvent } from './protocol.js'
+import { resolvePingInterval } from './config.js'
 import { ProtocolErrorCode } from './protocol-errors.js'
 import { Transport } from '../transport/transport.js'
 
@@ -383,7 +384,7 @@ export default class Client extends Protocol {
     }
     
     const config = this.getConfig()
-    const pingInterval = (config.PING_INTERVAL ?? config.pingInterval) || Globals.CLIENT_PING_INTERVAL || 10000
+    const pingInterval = resolvePingInterval(config)
     
     _scope.pingInterval = setInterval(() => {
       // Only ping if client is fully online (transport ready + handshake complete)

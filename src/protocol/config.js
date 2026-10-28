@@ -62,6 +62,18 @@ export const ProtocolSystemEvent = {
 // ============================================================================
 
 /**
+ * Client ping interval from config, resolved the same way on both sides:
+ * the client pings at this interval, and a server that is not given
+ * CLIENT_GHOST_TIMEOUT assumes its clients ping at its own configured interval
+ * 
+ * @param {Object} config
+ * @returns {number} ms
+ */
+export function resolvePingInterval(config = {}) {
+  return (config.PING_INTERVAL ?? config.pingInterval) || Globals.CLIENT_PING_INTERVAL || 10000
+}
+
+/**
  * Merge user configuration with protocol defaults
  * Pure function - no side effects
  * 

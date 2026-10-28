@@ -165,7 +165,8 @@ export class RequestTracker {
         message,
         protocolId: this.ctx.protocolId,
         envelopeId: id,
-        context: { peerId }
+        // The request may have reached the peer: never resend it blindly
+        context: { peerId, delivered: 'unknown' }
       })
       count++
       
@@ -208,7 +209,8 @@ export class RequestTracker {
         code,
         message: reason,
         protocolId: this.ctx.protocolId,
-        envelopeId: id
+        envelopeId: id,
+        context: { delivered: 'unknown' }
       }))
     })
     

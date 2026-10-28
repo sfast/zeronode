@@ -18,6 +18,7 @@
 
 import Globals from '../globals.js'
 import Protocol, { ProtocolEvent, ProtocolSystemEvent } from './protocol.js'
+import { resolvePingInterval } from './config.js'
 import { ProtocolErrorCode } from './protocol-errors.js'
 import { Transport } from '../transport/transport.js'
 
@@ -366,8 +367,7 @@ export default class Server extends Protocol {
     const checkInterval = (config.CLIENT_HEALTH_CHECK_INTERVAL ?? config.clientHealthCheckInterval) || Globals.CLIENT_HEALTH_CHECK_INTERVAL || 30000
     // Unless configured, a client is a ghost after 3 missed pings (with the
     // default 10s ping: Globals.CLIENT_GHOST_TIMEOUT, 30s)
-    const pingInterval = (config.PING_INTERVAL ?? config.pingInterval ?? config.CLIENT_PING_INTERVAL) || Globals.CLIENT_PING_INTERVAL
-    const ghostThreshold = (config.CLIENT_GHOST_TIMEOUT ?? config.clientGhostTimeout) || 3 * pingInterval
+    const ghostThreshold = (config.CLIENT_GHOST_TIMEOUT ?? config.clientGhostTimeout) || 3 * resolvePingInterval(config)
     
     _scope.healthCheckInterval = setInterval(() => {
       this._checkClientHealth(ghostThreshold)
