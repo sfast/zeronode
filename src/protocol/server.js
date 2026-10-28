@@ -48,6 +48,7 @@ export default class Server extends Protocol {
     let _scope = {
       bindAddress: null,
       clientLastSeen: new Map(),    // clientId → timestamp (for health checks)
+      clientInstances: new Map(),   // clientId → instance id from the handshake (restart detection)
       pendingHandshakes: new Set(), // clientIds awaiting resurrection handshake
       healthCheckInterval: null,
       options  // ✅ Store node options for handshake responses
@@ -106,13 +107,28 @@ export default class Server extends Protocol {
     // HANDSHAKE - Client discovery via messages
     // ============================================================================
     this.onTick(ProtocolSystemEvent.HANDSHAKE_INIT_FROM_CLIENT, (envelope) => {
-      let { clientLastSeen, pendingHandshakes } = _private.get(this)
+      let { clientLastSeen, clientInstances, pendingHandshakes } = _private.get(this)
       
       const clientId = envelope.owner
       const clientOptions = envelope.data
+      const instance = typeof envelope.metadata?.instance === 'string' ? envelope.metadata.instance : undefined
+      
+      // Same id, different instance: a restarted process (or a duplicate id)
+      // replaced the joined one. Close out the old session first so PEER_LEFT /
+      // PEER_JOINED stay consistent. A re-handshake from the same instance
+      // (e.g. after a transport blip) is not a replacement.
+      if (clientLastSeen.has(clientId) && clientInstances.get(clientId) !== instance) {
+        const logger = this.getConfig().logger || this.logger
+        logger?.warn?.(`[Server] Client '${clientId}' re-handshaked as a new instance (restart or duplicate id); replacing the old session`)
+        
+        clientLastSeen.delete(clientId)
+        clientInstances.delete(clientId)
+        this.emit(ServerEvent.CLIENT_LEFT, { clientId, reason: 'REPLACED' })
+      }
       
       // Mark as seen (this IS the "joined" state)
       clientLastSeen.set(clientId, Date.now())
+      clientInstances.set(clientId, instance)
       
       // 🔥 Clear pending handshake flag (resurrection completed)
       if (pendingHandshakes.has(clientId)) {
@@ -187,12 +203,13 @@ export default class Server extends Protocol {
     // CLIENT LIFECYCLE
     // ============================================================================
     this.onTick(ProtocolSystemEvent.CLIENT_STOP, (envelope) => {
-      let { clientLastSeen } = _private.get(this)
+      let { clientLastSeen, clientInstances } = _private.get(this)
       
       const clientId = envelope.owner
       
       // Remove client data (this IS the state change - client is now "left")
       clientLastSeen.delete(clientId)
+      clientInstances.delete(clientId)
       
       this.emit(ServerEvent.CLIENT_LEFT, { 
         clientId,
@@ -305,7 +322,8 @@ export default class Server extends Protocol {
    * @returns {boolean} - True if client was removed, false if not found
    */
   removeClient (clientId) {
-    let { clientLastSeen } = _private.get(this)
+    let { clientLastSeen, clientInstances } = _private.get(this)
+    clientInstances.delete(clientId)
     return clientLastSeen.delete(clientId)
   }
   
@@ -340,7 +358,7 @@ export default class Server extends Protocol {
   }
   
   _checkClientHealth (ghostThreshold) {
-    let { clientLastSeen } = _private.get(this)
+    let { clientLastSeen, clientInstances } = _private.get(this)
     const now = Date.now()
     
     clientLastSeen.forEach((lastSeen, clientId) => {
@@ -349,6 +367,7 @@ export default class Server extends Protocol {
       if (timeSinceLastSeen > ghostThreshold) {
         // Client timeout - remove and emit LEFT
         clientLastSeen.delete(clientId)
+        clientInstances.delete(clientId)
           
         // Emit CLIENT_LEFT - client is gone
           this.emit(ServerEvent.CLIENT_LEFT, { 

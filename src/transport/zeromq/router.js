@@ -56,11 +56,11 @@ export default class RouterSocket extends Socket {
       socket.mandatory = config.ZMQ_ROUTER_MANDATORY
     }
 
-    // Router handover: Take over identity from another router (advanced)
-    // Optional - only set if explicitly provided by user
-    if (config.ZMQ_ROUTER_HANDOVER !== undefined) {
-      socket.handover = config.ZMQ_ROUTER_HANDOVER
-    }
+    // Router handover: a new connection with an identity that is already
+    // connected takes it over. On by default: a restarted peer that reuses its
+    // id must win over the old (possibly dead) pipe; with handover off, libzmq
+    // drops the new pipe and the restarted peer can never join.
+    socket.handover = config.ZMQ_ROUTER_HANDOVER ?? true
   }
 
   getAddress () {

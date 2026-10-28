@@ -16,6 +16,7 @@
  * - Options are NOT stored (passed through to Node via events)
  */
 
+import { randomUUID } from 'crypto'
 import Globals from '../globals.js'
 import Protocol, { ProtocolEvent, ProtocolSystemEvent } from './protocol.js'
 import { Transport } from '../transport/transport.js'
@@ -98,7 +99,11 @@ export default class Client extends Protocol {
       serverId: null,          // Server's ID (set after handshake)
       pingInterval: null,
       options,  // ✅ Store node options for handshake
-      closing: false  // ✅ Track if WE (client) are intentionally closing
+      closing: false,  // ✅ Track if WE (client) are intentionally closing
+      // Identifies this Client instance in handshakes, so the server can tell a
+      // re-handshake (same instance, e.g. after a blip) from a restarted
+      // process reusing the same id (new instance)
+      instanceId: randomUUID()
     }
     
     _private.set(this, _scope)
@@ -233,7 +238,8 @@ export default class Client extends Protocol {
       // Resend handshake with full options
       this._sendSystemTick({
         event: ProtocolSystemEvent.HANDSHAKE_INIT_FROM_CLIENT,
-        data: options || {}
+        data: options || {},
+        metadata: { instance: _scope.instanceId }
       })
     })
   }
@@ -382,13 +388,14 @@ export default class Client extends Protocol {
       return
     }
     
-    const { options } = _private.get(this)
+    const { options, instanceId } = _private.get(this)
     
     // ✅ Use internal API to send system event (handshake)
     // Server will respond with _system:handshake_ack_from_server (welcome message)
     this._sendSystemTick({
       event: ProtocolSystemEvent.HANDSHAKE_INIT_FROM_CLIENT,  // '_system:handshake_init_from_client'
-      data: options || {}
+      data: options || {},
+      metadata: { instance: instanceId }
     })
   }
   

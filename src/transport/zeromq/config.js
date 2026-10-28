@@ -132,12 +132,13 @@ export const ZMQConfigDefaults = {
   // ZMQ_ROUTER_MANDATORY: false,  // Optional - undefined means ZeroMQ default
   
   /**
-   * ZMQ_ROUTER_HANDOVER: Take over identity from another router
-   * Useful for high-availability setups with multiple routers
-   * false = normal behavior (default)
-   * true = allow identity handover
+   * ZMQ_ROUTER_HANDOVER: A new connection whose identity is already connected
+   * takes the identity over (the most recent connection wins)
+   * true = handover (default, applied in RouterSocket: a restarted peer that
+   *        reuses its id replaces its old, possibly dead, pipe)
+   * false = libzmq default: the new connection is dropped while the old pipe exists
    */
-  // ZMQ_ROUTER_HANDOVER: false,  // Optional - undefined means ZeroMQ default
+  // ZMQ_ROUTER_HANDOVER: true,  // Optional - undefined means true (see RouterSocket)
 }
 
 /**
