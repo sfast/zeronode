@@ -33,8 +33,13 @@ named in brackets.
   nodes (`PROXY_HOP_LIMIT`, only when a router really went unexplored). Each
   hop answers inside its budget (margin `min(50ms, budget/4)`), so callers get
   the real error (`NO_NODES_MATCH_FILTER`, `PROXY_DEADLINE_EXCEEDED`) instead
-  of `REQUEST_TIMEOUT`. Malformed routing metadata fails closed; a tick miss is
-  accepted only from the router the tick was forwarded to, once.
+  of `REQUEST_TIMEOUT`. Only a miss a router produced itself (marked
+  `routing.miss`) lets the previous hop try another router; an error thrown by
+  a service handler, whatever its code, is relayed as the final answer, so a
+  handler never runs twice. A proxied tick has a total forward budget
+  (`Globals.PROXY_TICK_MAX_FORWARDS`, 256) shared by all branches. Malformed
+  routing metadata fails closed before anything is delivered locally; a tick
+  miss is accepted only from the router the tick was forwarded to, once.
 - **Crashed peers fail fast (#3)** [r4-crash-stale]: the ROUTER socket now
   defaults to `mandatory` with a send timeout of 0, so a send to a dead peer
   fails with `EHOSTUNREACH` at once: the request rejects with
@@ -76,6 +81,13 @@ named in brackets.
   `PEER_LEFT` (`REPLACED`) then `PEER_JOINED`; a re-handshake of the same
   instance (after a blip) does not.
 - `MessageDispatcher.offRequest(pattern)` without a handler no longer throws.
+- Reporting a failed tick handler never throws, whatever it threw or
+  rejected with (e.g. a `Symbol`); it used to become an unhandled rejection.
+- A `Client` reused after `disconnect()` keeps its reconnect grace period.
+- Re-sending options changed during a handshake no longer extends
+  `connect()`'s timeout or delays `disconnect()`/`close()`.
+- Server client-instance ids and forwarded-tick records are released on
+  unbind/close and on expiry.
 
 ### Added
 - `NodeEvent.PEER_UPDATED`, `ServerEvent.ERROR`,
@@ -130,7 +142,9 @@ named in brackets.
 - Options propagation does not reach peers on < 2.0.16. Loop protection needs
   every router on >= 2.0.16: an old router is recorded as visited by the new
   ones next to it, but between two or more old routers requests can still
-  loop until the caller's timeout and **ticks can loop indefinitely**.
+  loop until the caller's timeout and **ticks can loop indefinitely**. Misses
+  from old routers are not marked, so a request search does not continue past
+  them (it fails rather than risk running a handler twice).
 - In meshes of more than `Globals.PROXY_MAX_VISITED` (64) routers, the
   earliest explored routers may be explored again (bounded by the hop limit,
   and for requests by the budget).
