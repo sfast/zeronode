@@ -1594,6 +1594,8 @@ function withTimeout (promise, ms, address) {
     const timer = setTimeout(() => {
       reject(new Error(`Handshake timeout: server at ${address} did not respond`))
     }, ms)
+    // The shared attempt keeps the process alive on its own; this one must not
+    timer.unref?.()
     promise.then(
       (value) => { clearTimeout(timer); resolve(value) },
       (err) => { clearTimeout(timer); reject(err) }
