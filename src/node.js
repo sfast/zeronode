@@ -64,6 +64,8 @@ export const ReconnectPolicy = {
 const _private = new WeakMap()
 // client → [[event, listener]] attached by the Node (see _attachClientEvents)
 const clientNodeListeners = new WeakMap()
+// clients already discarded (detached + closed) by the Node
+const discardedClients = new WeakSet()
 
 const defaultLogger = winston.createLogger({
   transports: [
@@ -122,7 +124,8 @@ export default class Node extends EventEmitter {
       reconnect: config.reconnect !== undefined ? config.reconnect : ReconnectPolicy.ALWAYS,
       connectionTargets: new Map(), // address → { peerId, attempts, timer, timeout }
       peerIdToAddress: new Map(),   // peerId → address
-      pendingConnects: new Map()    // address → { client, cancelled, promise } (handshake in progress)
+      pendingConnects: new Map(),   // address → { client, cancelled, promise } (handshake in progress)
+      closed: false                 // set by close(); connect() rejects afterwards
     }
     
     _private.set(this, _scope)
@@ -411,13 +414,18 @@ export default class Node extends EventEmitter {
   async connect ({ address, timeout, reconnectionTimeout } = {}) {
     assertValidAddress(address)
     
-    const { pendingConnects } = _private.get(this)
+    const { pendingConnects, closed } = _private.get(this)
+    
+    if (closed) {
+      throw connectCancelledError(address, 'node is closed')
+    }
     
     // A connect to this address is already waiting for its handshake: share it
-    // (two clients for one address would leak the second)
+    // (two clients for one address would leak the second). The joining caller's
+    // timeout still applies to its own wait; it cannot extend the shared attempt.
     const pending = pendingConnects.get(address)
     if (pending) {
-      return pending.promise
+      return timeout === undefined ? pending.promise : withTimeout(pending.promise, timeout, address)
     }
     
     const attempt = { client: null, cancelled: false, promise: null }
@@ -494,7 +502,7 @@ export default class Node extends EventEmitter {
     }
     
     // disconnect()/close() ran while the handshake was completing
-    if (attempt.cancelled) {
+    if (attempt.cancelled || _scope.closed) {
       await this._discardClient(client, address)
       throw connectCancelledError(address)
     }
@@ -679,7 +687,26 @@ export default class Node extends EventEmitter {
    * @private
    */
   async _discardClient (client, address) {
-    const { logger } = _private.get(this)
+    if (discardedClients.has(client)) return
+    discardedClients.add(client)
+    
+    const { logger, joinedPeers, peerDirection, clients } = _private.get(this)
+    
+    // The handshake may already have completed (PEER_JOINED emitted) even if
+    // connect() has not resumed yet: close out that session before detaching,
+    // otherwise the peer stays joined with no client behind it
+    const serverId = client.getServerId()
+    const owner = serverId ? clients.get(serverId) : undefined
+    if (serverId && joinedPeers.has(serverId) && peerDirection.get(serverId) === 'upstream' &&
+        (owner === undefined || owner === client)) {
+      this._removeJoinedPeer(serverId)
+      this.emit(NodeEvent.PEER_LEFT, {
+        peerId: serverId,
+        direction: 'upstream',
+        reason: 'closed'
+      })
+    }
+    
     this._detachClientEvents(client)
     this._removeClientHandlers(client)
     try {
@@ -1497,6 +1524,9 @@ export default class Node extends EventEmitter {
     const { server, clients, clientsAddressIndex, logger, connectionTargets, peerIdToAddress } = _scope
     const promises = []
     
+    // connect() rejects from now on (also one already past its handshake)
+    _scope.closed = true
+    
     // Cancel all reconnects (timers and attempts in flight)
     if (connectionTargets) {
       for (const target of connectionTargets.values()) {
@@ -1547,11 +1577,27 @@ export default class Node extends EventEmitter {
 /**
  * @private
  */
-function connectCancelledError (address) {
+function connectCancelledError (address, why = 'cancelled by disconnect() or close()') {
   return new NodeError({
     code: NodeErrorCode.CONNECT_CANCELLED,
-    message: `Connect to ${address} cancelled by disconnect() or close()`,
+    message: `Connect to ${address}: ${why}`,
     context: { address }
+  })
+}
+
+/**
+ * Wait for `promise` at most `ms`, without affecting the promise itself
+ * @private
+ */
+function withTimeout (promise, ms, address) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`Handshake timeout: server at ${address} did not respond`))
+    }, ms)
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value) },
+      (err) => { clearTimeout(timer); reject(err) }
+    )
   })
 }
 

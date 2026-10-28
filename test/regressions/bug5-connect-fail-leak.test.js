@@ -97,6 +97,59 @@ describe('Regression bug 5: failed connect() does not leak a client', function (
     })
   }
 
+  for (const how of ['disconnect', 'close']) {
+    it(`${how}() right as the handshake completes leaves no ghost peer`, async () => {
+      server = new Node({ id: `bug5-srv-${Date.now()}` })
+      await server.bind('tcp://127.0.0.1:0')
+      const address = server.getAddress()
+      client = new Node({ id: `bug5-cli-${Date.now()}` })
+
+      const events = []
+      client.on(NodeEvent.PEER_LEFT, ({ peerId }) => events.push(`L:${peerId}`))
+      let cancelled
+      client.on(NodeEvent.PEER_JOINED, ({ peerId }) => {
+        events.push(`J:${peerId}`)
+        // Lands after SERVER_JOINED but before connect() resumes
+        cancelled = how === 'disconnect' ? client.disconnect(address) : client.close()
+      })
+
+      const err = await client.connect({ address }).then(() => null, (e) => e)
+      await cancelled
+      await wait(200)
+
+      expect(err?.code).to.equal(NodeErrorCode.CONNECT_CANCELLED)
+      expect(client.getNodesUpstream()).to.deep.equal([])
+      expect(events).to.deep.equal([`J:${server.getId()}`, `L:${server.getId()}`])
+    })
+  }
+
+  it('a caller joining a pending connect() keeps its own shorter timeout', async () => {
+    const address = await reserveFreeAddress()
+    client = new Node({ id: `bug5-cli-${Date.now()}` })
+
+    const first = client.connect({ address, timeout: 2000 }).then(() => null, (e) => e)
+    const started = Date.now()
+    const second = await client.connect({ address, timeout: 200 }).then(() => null, (e) => e)
+
+    expect(second, 'second caller rejects').to.be.an('error')
+    expect(Date.now() - started).to.be.below(1000)
+    await first
+  })
+
+  it('connect() after close() rejects and registers nothing', async () => {
+    server = new Node({ id: `bug5-srv-${Date.now()}` })
+    await server.bind('tcp://127.0.0.1:0')
+    client = new Node({ id: `bug5-cli-${Date.now()}` })
+    await client.close()
+
+    const err = await client.connect({ address: server.getAddress() }).then(() => null, (e) => e)
+    await wait(200)
+
+    expect(err?.code).to.equal(NodeErrorCode.CONNECT_CANCELLED)
+    expect(client.getNodesUpstream()).to.deep.equal([])
+    expect(server.getNodesDownstream()).to.deep.equal([])
+  })
+
   it('concurrent connect() calls to one address share a single client', async () => {
     server = new Node({ id: `bug5-srv-${Date.now()}` })
     await server.bind('tcp://127.0.0.1:0')
