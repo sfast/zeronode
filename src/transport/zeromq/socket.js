@@ -3,7 +3,7 @@
 
 import { EventEmitter } from 'events'
 import { TransportEvent } from '../events.js'
-import { TransportError, TransportErrorCode } from '../errors.js'
+import { TransportError, TransportErrorCode, describeError } from '../errors.js'
 import { mergeConfig } from './config.js'
 
 // ============================================================================
@@ -198,7 +198,7 @@ class Socket extends EventEmitter {
   _emitMessageHandlerError (err) {
     const transportError = new TransportError({
       code: TransportErrorCode.MESSAGE_HANDLER_FAILED,
-      message: `Message handler failed on transport '${this.getId()}': ${err?.message ?? err}`,
+      message: `Message handler failed on transport '${this.getId()}': ${describeError(err)}`,
       transportId: this.getId(),
       cause: err instanceof Error ? err : undefined
     })
@@ -206,7 +206,7 @@ class Socket extends EventEmitter {
     try {
       this.emit(TransportEvent.ERROR, transportError)
     } catch (emitErr) {
-      this.logger?.error(`[Socket] Error listener failed: ${emitErr.message}`)
+      this.logger?.error(`[Socket] Error listener failed: ${describeError(emitErr)}`)
     }
   }
 
@@ -261,7 +261,7 @@ class Socket extends EventEmitter {
     try {
       this.emit(TransportEvent.SEND_FAILED, { recipient, error })
     } catch (emitErr) {
-      this.logger?.error(`[Socket] SEND_FAILED listener failed: ${emitErr.message}`)
+      this.logger?.error(`[Socket] SEND_FAILED listener failed: ${describeError(emitErr)}`)
     }
   }
 

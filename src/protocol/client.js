@@ -295,6 +295,9 @@ export default class Client extends Protocol {
     let _scope = _private.get(this)
     _scope.serverAddress = serverAddress
     
+    // A new connection: a previous intentional disconnect() no longer applies
+    _scope.closing = false
+    
     // Reset server info (will be set after handshake)
     _scope.serverId = null
     
@@ -350,6 +353,7 @@ export default class Client extends Protocol {
     _scope.closing = true
     
     this._stopPing()
+    this._stopReconnectGrace()
     
     // Try to notify server
     try {

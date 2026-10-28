@@ -11,8 +11,12 @@
  */
 
 import { expect } from 'chai'
-import Node, { Router, NodeError, NodeErrorCode, Transport } from '../../src/index.js'
+import Node, {
+  Router, Server, Client, ServerEvent, NodeError, NodeErrorCode, ProtocolErrorCode, ProtocolSystemEvent, Transport
+} from '../../src/index.js'
 import { LocalTransport } from '../../src/transport/local/index.js'
+import { Envelope } from '../../src/protocol/envelope.js'
+import Globals from '../../src/globals.js'
 
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms))
 const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -155,4 +159,153 @@ describe('Release 2.0.16 review: proxied ticks and routing validation (local tra
       expect(counter.ticks).to.equal(0)
     })
   }
+})
+
+describe('Release 2.0.16 review (round 2): lifecycle and error reporting', function () {
+  this.timeout(15000)
+
+  let previousDefault
+  const closers = []
+
+  before(() => {
+    previousDefault = Transport.defaultTransport
+    Transport.register('local', LocalTransport)
+  })
+
+  beforeEach(() => {
+    Transport.setDefault('local')
+  })
+
+  after(() => {
+    Transport.setDefault(previousDefault)
+  })
+
+  afterEach(async () => {
+    for (const close of closers.splice(0).reverse()) await close().catch(() => {})
+  })
+
+  /** Capture a private Map by watching what gets stored in it */
+  const captureMap = (matches) => {
+    const set = Map.prototype.set
+    const captured = { map: null }
+    Map.prototype.set = function (key, value) {
+      if (!captured.map && matches(key, value)) captured.map = this
+      return set.call(this, key, value)
+    }
+    captured.restore = () => { Map.prototype.set = set }
+    return captured
+  }
+
+  it('a tick handler rejecting / throwing a non-Error value is reported, not left unhandled', async () => {
+    const server = new Server({ id: `rr2-s-${uid()}` })
+    const client = new Client({ id: `rr2-c-${uid()}` })
+    closers.push(() => server.close(), () => client.close())
+    const errors = []
+    server.on(ServerEvent.ERROR, (err) => errors.push(err))
+    const unprintable = { toString () { throw new Error('no') } }
+    server.onTick('bad-async', async () => { throw Symbol('failure') })
+    server.onTick('bad-sync', () => { throw Symbol('failure') })
+    server.onTick('bad-object', () => { throw unprintable })
+
+    await server.bind(`local://rr2-sym-${uid()}`)
+    await client.connect(server.getAddress())
+    for (const event of ['bad-async', 'bad-sync', 'bad-object']) client.tick({ event })
+    await wait(50)
+
+    // The unhandled-rejection trap fails this test if reporting itself threw
+    expect(errors).to.have.length(3)
+  })
+
+  it('a Client reused after disconnect() still fails pending requests after the reconnect grace', async () => {
+    const server = new Server({ id: `rr2-s-${uid()}` })
+    const client = new Client({ id: `rr2-c-${uid()}` })
+    closers.push(() => server.close(), () => client.close())
+    await server.bind(`local://rr2-grace-${uid()}`)
+    await client.connect(server.getAddress())
+    await client.disconnect()
+    await client.connect(server.getAddress())
+    server.onRequest('hang', () => new Promise(() => {}))
+
+    let outcome = 'pending'
+    const pending = client.request({ event: 'hang', timeout: 5000 }).then(() => { outcome = 'resolved' }, (e) => { outcome = e.code })
+    await new Promise(setImmediate)
+    await client._getSocket().disconnect()   // unexpected transport loss
+    await wait(Globals.RECONNECT_GRACE_MS + 200)
+
+    expect(outcome).to.equal(ProtocolErrorCode.PEER_UNREACHABLE)
+    await pending
+  })
+
+  it('re-sending options after the handshake does not hold connect() or its cancellation', async () => {
+    // A transport whose options-update sends never complete
+    Transport.register('local-slow-options', {
+      ...LocalTransport,
+      createClientSocket (opts) {
+        const socket = LocalTransport.createClientSocket(opts)
+        const send = socket.sendBuffer.bind(socket)
+        socket.sendBuffer = (buffer, to) =>
+          new Envelope(buffer).event === ProtocolSystemEvent.OPTIONS_UPDATE ? new Promise(() => {}) : send(buffer, to)
+        return socket
+      }
+    })
+    Transport.setDefault('local-slow-options')
+
+    const server = new Node({ id: `rr2-s-${uid()}` })
+    closers.push(() => server.close())
+    await server.bind(`local://rr2-opts-${uid()}`)
+
+    for (const cancel of [false, true]) {
+      const client = new Node({ id: `rr2-c-${uid()}` })
+      closers.push(() => client.close())
+      const started = Date.now()
+      const outcome = client.connect({ address: server.getAddress(), timeout: 500 }).then(() => 'resolved', (e) => e.code)
+      await client.setOptions({ v: 2 })   // before the handshake completes
+      await wait(75)
+      if (cancel) await client.close()
+      await outcome
+
+      expect(Date.now() - started, cancel ? 'cancellation' : 'connect').to.be.below(1000)
+    }
+  })
+
+  it('the server forgets client instances on unbind and close', async () => {
+    const captured = captureMap((key, value) => String(key).startsWith('rr2-inst-') && /^[0-9a-f]{8}-/.test(String(value)))
+    const server = new Server({ id: `rr2-s-${uid()}` })
+    closers.push(() => server.close())
+    try {
+      for (let i = 0; i < 3; i++) {
+        await server.bind(`local://rr2-inst-${uid()}`)
+        const client = new Client({ id: `rr2-inst-${i}-${uid()}` })
+        await client.connect(server.getAddress())
+        await client._getSocket().disconnect()   // lost without CLIENT_STOP
+        await server.unbind()
+        await client.close()
+        expect(captured.map?.size, `after unbind ${i}`).to.equal(0)
+      }
+    } finally {
+      captured.restore()
+    }
+  })
+
+  it('forwarded-tick records are dropped when expired and when the node closes', async () => {
+    const captured = captureMap((key, value) => value?.routerNode === 'rr2-router')
+    const node = new Node({ id: `rr2-n-${uid()}` })
+    const ttl = Globals.PROXY_TICK_RECORD_MS
+    try {
+      Globals.PROXY_TICK_RECORD_MS = 20
+      const id = node._rememberForwardedTick('rr2-router', { event: 'x', filter: {} })
+      await wait(40)
+      expect(node._takeForwardedTick(id, 'rr2-router')).to.equal(null)
+      expect(captured.map.size, 'expired record removed').to.equal(0)
+
+      Globals.PROXY_TICK_RECORD_MS = 10000
+      node._rememberForwardedTick('rr2-router', { event: 'x', filter: {} })
+      await node.close()
+      expect(captured.map.size, 'cleared on close').to.equal(0)
+    } finally {
+      Globals.PROXY_TICK_RECORD_MS = ttl
+      captured.restore()
+      await node.close().catch(() => {})
+    }
+  })
 })

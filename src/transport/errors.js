@@ -146,3 +146,19 @@ export default {
   TransportError,
   TransportErrorCode
 }
+
+/**
+ * Describe any thrown/rejected value for a log or error message without
+ * throwing (a handler may throw a Symbol, or an object whose toString throws)
+ * @param {*} value
+ * @returns {string}
+ */
+export function describeError (value) {
+  try {
+    if (value instanceof Error) return value.message
+    if (value && typeof value === 'object' && typeof value.message === 'string') return value.message
+    return String(value)
+  } catch (err) {
+    return '[unprintable value]'
+  }
+}

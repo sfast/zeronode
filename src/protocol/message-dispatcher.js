@@ -10,6 +10,7 @@ import { PatternEmitter } from '@sfast/pattern-emitter-ts'
 import { Envelope, EnvelopType } from './envelope.js'
 import { ProtocolError, ProtocolErrorCode } from './protocol-errors.js'
 import { ProtocolEvent } from './lifecycle.js'
+import { describeError } from '../transport/errors.js'
 
 export class MessageDispatcher {
   constructor(context, requestTracker, handlerExecutor) {
@@ -39,7 +40,7 @@ export class MessageDispatcher {
       envelope = new Envelope(buffer)
       type = envelope.type
     } catch (err) {
-      this._reportError(ProtocolErrorCode.INVALID_ENVELOPE, `Malformed incoming message: ${err?.message ?? err}`, err)
+      this._reportError(ProtocolErrorCode.INVALID_ENVELOPE, `Malformed incoming message: ${describeError(err)}`, err)
       return
     }
     
@@ -67,7 +68,7 @@ export class MessageDispatcher {
           )
       }
     } catch (err) {
-      this._reportError(ProtocolErrorCode.HANDLER_ERROR, `Failed to dispatch incoming message: ${err?.message ?? err}`, err)
+      this._reportError(ProtocolErrorCode.HANDLER_ERROR, `Failed to dispatch incoming message: ${describeError(err)}`, err)
     }
   }
   
@@ -112,10 +113,21 @@ export class MessageDispatcher {
       try {
         const result = handler.call(this.tickEmitter, envelope)
         if (result && typeof result.then === 'function') {
-          result.then(null, (err) => this._reportTickHandlerError(envelope, err))
+          // The report itself must never reject (it would be unhandled)
+          Promise.resolve(result).then(null, (err) => {
+            try {
+              this._reportTickHandlerError(envelope, err)
+            } catch (reportErr) {
+              this.ctx.logger?.error?.('[MessageDispatcher] Failed to report a tick handler error')
+            }
+          })
         }
       } catch (err) {
-        this._reportTickHandlerError(envelope, err)
+        try {
+          this._reportTickHandlerError(envelope, err)
+        } catch (reportErr) {
+          this.ctx.logger?.error?.('[MessageDispatcher] Failed to report a tick handler error')
+        }
       }
     }
   }
@@ -126,7 +138,7 @@ export class MessageDispatcher {
   _reportTickHandlerError(envelope, err) {
     this._reportError(
       ProtocolErrorCode.HANDLER_ERROR,
-      `Tick handler for '${envelope.event}' failed: ${err?.message ?? err}`,
+      `Tick handler for '${envelope.event}' failed: ${describeError(err)}`,
       err,
       { event: envelope.event, owner: envelope.owner },
       envelope.id
@@ -153,7 +165,7 @@ export class MessageDispatcher {
       this.ctx.protocol?.emit?.(ProtocolEvent.ERROR, error)
     } catch (emitErr) {
       // A throwing error listener must not break the receive path either
-      this.ctx.logger?.error(`[MessageDispatcher] Error listener failed: ${emitErr.message}`)
+      this.ctx.logger?.error(`[MessageDispatcher] Error listener failed: ${describeError(emitErr)}`)
     }
   }
   

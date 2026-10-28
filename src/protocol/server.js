@@ -307,6 +307,7 @@ export default class Server extends Protocol {
     // Clear state
     let _scope = _private.get(this)
     _scope.clientLastSeen.clear()
+    _scope.clientInstances.clear()
     
     // unbind from transport and detach listeners
     await super.unbind()

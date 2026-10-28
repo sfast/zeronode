@@ -539,15 +539,11 @@ export default class Node extends EventEmitter {
       throw connectCancelledError(address)
     }
     
-    // setOptions() ran during the handshake: the server may have the old ones
+    // setOptions() ran during the handshake: the server may have the old ones.
+    // Sent in the background: it must neither extend connect()'s timeout nor
+    // hold a disconnect()/close() (Client.setOptions never rejects).
     if (_scope.options !== options) {
-      await client.setOptions(_scope.options)
-      
-      // disconnect()/close() may have run during that send
-      if (attempt.cancelled || _scope.closed) {
-        await this._discardClient(client, address)
-        throw connectCancelledError(address)
-      }
+      client.setOptions(_scope.options).catch(() => {})
     }
     
     // Get server ID (now available after handshake)
@@ -1727,7 +1723,12 @@ export default class Node extends EventEmitter {
     if (typeof tickId !== 'string') return null
     
     const record = forwardedTicks.get(tickId)
-    if (!record || record.routerNode !== sender || record.expires <= Date.now()) return null
+    if (!record) return null
+    if (record.expires <= Date.now()) {
+      forwardedTicks.delete(tickId)
+      return null
+    }
+    if (record.routerNode !== sender) return null
     
     forwardedTicks.delete(tickId)
     return record
@@ -1892,6 +1893,9 @@ export default class Node extends EventEmitter {
     
     // connect() rejects from now on (also one already past its handshake)
     _scope.closed = true
+    
+    // Proxied ticks forwarded earlier can no longer be continued
+    _scope.forwardedTicks.clear()
     
     // Cancel all reconnects (timers and attempts in flight)
     if (connectionTargets) {

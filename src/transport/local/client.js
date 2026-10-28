@@ -24,7 +24,7 @@
 
 import { EventEmitter } from 'events'
 import { TransportEvent } from '../events.js'
-import { TransportError, TransportErrorCode } from '../errors.js'
+import { TransportError, TransportErrorCode, describeError } from '../errors.js'
 
 // Global registry to connect clients to servers
 const registry = new Map()  // address -> server socket
@@ -250,14 +250,14 @@ export default class LocalClientSocket extends EventEmitter {
     } catch (err) {
       const transportError = new TransportError({
         code: TransportErrorCode.MESSAGE_HANDLER_FAILED,
-        message: `Message handler failed on transport '${this._id}': ${err?.message ?? err}`,
+        message: `Message handler failed on transport '${this._id}': ${describeError(err)}`,
         transportId: this._id,
         cause: err instanceof Error ? err : undefined
       })
       try {
         this.emit(TransportEvent.ERROR, transportError)
       } catch (emitErr) {
-        this.logger.error(`[LocalClientSocket] Error listener failed: ${emitErr.message}`)
+        this.logger.error(`[LocalClientSocket] Error listener failed: ${describeError(emitErr)}`)
       }
     }
   }
