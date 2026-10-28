@@ -452,8 +452,21 @@ export default class Node extends EventEmitter {
     // Attach client event handlers
     this._attachClientEvents(client)
     
-    // Connect (Client.connect() waits for handshake to complete)
-    await client.connect(address, timeout)
+    // Connect (Client.connect() waits for handshake to complete).
+    // On failure the client must not outlive this call: its DEALER would keep
+    // reconnecting and later join as a ghost upstream peer that is not in `clients`.
+    try {
+      await client.connect(address, timeout)
+    } catch (err) {
+      client.removeAllListeners()
+      this._removeClientHandlers(client)
+      try {
+        await client.close()
+      } catch (closeErr) {
+        logger.warn(`[Node] Failed to close client after failed connect to ${address}: ${closeErr.message}`)
+      }
+      throw err
+    }
     
     // Get server ID (now available after handshake)
     const serverId = client.getServerId()
