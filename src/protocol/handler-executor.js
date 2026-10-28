@@ -7,6 +7,7 @@
  */
 
 import { Envelope, EnvelopType } from './envelope.js'
+import { kProxyReplyRouting } from '../node-errors.js'
 
 export class HandlerExecutor {
   constructor(context) {
@@ -264,10 +265,9 @@ export class HandlerExecutor {
           message: error.message || 'Handler error',
           code: error.code || 'HANDLER_ERROR',
           stack: this.ctx.config.DEBUG ? error.stack : undefined,
-          // Router proxy replies: routers explored / left unexplored (additive)
-          routing: error.routing?.visited
-            ? { visited: error.routing.visited, unexplored: error.routing.unexplored || [] }
-            : undefined
+          // Router proxy miss replies only (explored / unexplored routers).
+          // Set by Router through a symbol, never taken from a handler's error.
+          routing: error[kProxyReplyRouting]
         }
       : { message: String(error), code: 'HANDLER_ERROR' }
     

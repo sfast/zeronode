@@ -19,6 +19,21 @@ export const NodeErrorCode = {
 }
 
 /**
+ * Marks a routing miss this node produced itself while searching routers for
+ * a proxied message (nothing was delivered). Never set from a peer's reply.
+ * @private
+ */
+export const kProxyMiss = Symbol.for('zeronode.proxyMiss')
+
+/**
+ * The routing data a Router attaches to its own miss replies. Only this key
+ * is serialized into an error reply's `routing` field, so an error thrown by
+ * a request handler can never be taken for a routing miss.
+ * @private
+ */
+export const kProxyReplyRouting = Symbol.for('zeronode.proxyReplyRouting')
+
+/**
  * NodeError - Node orchestration error class
  * 
  * Represents errors that occur at the node orchestration layer.

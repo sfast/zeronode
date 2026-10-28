@@ -38,7 +38,7 @@ import { EventEmitter } from 'events'
 import { randomUUID } from 'crypto'
 import { PatternEmitter } from '@sfast/pattern-emitter-ts'
 
-import { NodeError, NodeErrorCode, assertValidAddress } from './node-errors.js'
+import { NodeError, NodeErrorCode, assertValidAddress, kProxyMiss } from './node-errors.js'
 import NodeUtils from './utils.js'
 import Globals from './globals.js'
 import Server, { ServerEvent } from './protocol/server.js'
@@ -1390,6 +1390,8 @@ export default class Node extends EventEmitter {
       // Routers hop-limited branches could not try (reported by misses)
       unexplored: new Set(routing?.unexplored || []),
       error: routing?.error,
+      // Proxied ticks: forwards left for this tick in total (all branches)
+      forwards: Number.isInteger(routing?.forwards) ? routing.forwards : Globals.PROXY_TICK_MAX_FORWARDS,
       // Never forward to a node on the path, the sender, or an explored router
       isExcluded: (nodeId) => onPath.has(nodeId) || nodeId === routing?.from || visited.has(nodeId),
       visitedList: () => Array.from(visited).slice(-Globals.PROXY_MAX_VISITED),
@@ -1430,9 +1432,12 @@ export default class Node extends EventEmitter {
       context: { filter, down, up, event }
     })
     error.routing = {
+      miss: true,
       visited: hop.visitedList(),
-      unexplored: unexplored.slice(0, Globals.PROXY_MAX_VISITED)
+      unexplored: unexplored.slice(0, Globals.PROXY_MAX_VISITED),
+      forwards: hop.forwards
     }
+    error[kProxyMiss] = true
     return error
   }
   
@@ -1507,7 +1512,7 @@ export default class Node extends EventEmitter {
     // already explored. A router that cannot place the tick sends it back
     // (_system:proxy_tick_miss) and the next router is tried then.
     const _scope = _private.get(this)
-    while (!hop.atHopLimit) {
+    while (!hop.atHopLimit && hop.forwards > 0) {
       const routers = this._proxyCandidates(hop)
       if (routers.length === 0) break
       
@@ -1526,7 +1531,17 @@ export default class Node extends EventEmitter {
       // Remember this forward: a miss is accepted only from `routerNode`, for
       // this id, once; and where to send our own miss comes from here, not
       // from the (untrusted) miss message
-      const tickId = this._rememberForwardedTick(routerNode, { event, filter: filterOptions, down, up, routing: _routing })
+      const forwards = hop.forwards - 1
+      const tickId = this._rememberForwardedTick(routerNode, {
+        event,
+        filter: filterOptions,
+        down,
+        up,
+        routing: _routing,
+        // This node's own exploration, kept in full (the forwarded list is capped)
+        visited: Array.from(hop.visited),
+        forwards
+      })
       
       // Use the ACTUAL event and data, put routing info in metadata
       const tickParams = {
@@ -1541,7 +1556,8 @@ export default class Node extends EventEmitter {
             requestor: hop.requestor,
             path: hop.path,              // Nodes on the proxy path (incl. this one)
             visited: hop.visitedList(),  // Routers already explored for this tick
-            tick: tickId                 // Echoed back in a miss
+            tick: tickId,                // Echoed back in a miss
+            forwards                     // Forwards left for this tick (all branches)
           }
         }
       }
@@ -1559,8 +1575,9 @@ export default class Node extends EventEmitter {
         if (!this._takeForwardedTick(tickId, routerNode)) return
         this._routeProxyTick({ event, data, filter, down, up }, {
           ...(_routing || {}),
-          visited: hop.visitedList(),
-          unexplored: Array.from(hop.unexplored)
+          visited: Array.from(hop.visited),
+          unexplored: Array.from(hop.unexplored),
+          forwards
         })
       }
       try {
@@ -1627,7 +1644,8 @@ export default class Node extends EventEmitter {
           path: routing.path || [],   // as `to` sent it: ends with `to`
           tick: routing.tick,         // the id `to` gave this forward
           visited: missRouting?.visited || [],
-          unexplored: missRouting?.unexplored || []
+          unexplored: missRouting?.unexplored || [],
+          forwards: missRouting?.forwards
         }
       }
     }
@@ -1656,11 +1674,17 @@ export default class Node extends EventEmitter {
     if (!record) return
     
     const { event, filter, down, up } = record
+    // Forwards left: what the branch reports, never more than we gave it
+    const reported = routing.forwards
+    const forwards = Number.isInteger(reported) && reported >= 0 ? Math.min(reported, record.forwards) : record.forwards
+    
     this._routeProxyTick({ event, data: envelope.data, filter, down, up }, {
-      ...(record.routing || {}),
       // Our own routing as we received it (what our own miss would need)
-      visited: [...(record.routing?.visited || []), ...(sanitizeVisited(routing.visited) || [])],
-      unexplored: sanitizeVisited(routing.unexplored) || []
+      ...(record.routing || {}),
+      // Everything this node explored (kept in full) plus what the branch did
+      visited: [...record.visited, ...(sanitizeVisited(routing.visited) || [])],
+      unexplored: sanitizeVisited(routing.unexplored) || [],
+      forwards
     })
   }
   
@@ -1669,7 +1693,7 @@ export default class Node extends EventEmitter {
    * @private
    * @returns {string} tick id
    */
-  _rememberForwardedTick (routerNode, { event, filter, down, up, routing }) {
+  _rememberForwardedTick (routerNode, { event, filter, down, up, routing, visited, forwards }) {
     const { forwardedTicks } = _private.get(this)
     const now = Date.now()
     
@@ -1687,6 +1711,8 @@ export default class Node extends EventEmitter {
       down,
       up,
       routing,   // how this node received the tick (undefined if it originated it)
+      visited,   // routers this node explored for it so far
+      forwards,  // forwards left after this one
       expires: now + Globals.PROXY_TICK_RECORD_MS
     })
     return tickId
@@ -1948,7 +1974,12 @@ function withTimeout (promise, ms, address) {
  * @private
  */
 function isRoutingMiss (err) {
-  return err?.code === NodeErrorCode.NO_NODES_MATCH_FILTER || err?.code === NodeErrorCode.PROXY_HOP_LIMIT
+  // Only a miss a router produced itself (marked `routing.miss`): an error a
+  // request handler threw (even with the same code) means the request ran,
+  // and sending it elsewhere would run it twice. Old routers do not mark
+  // their misses, so the search stops at them (at-most-once wins).
+  if (err?.routing?.miss !== true) return false
+  return err.code === NodeErrorCode.NO_NODES_MATCH_FILTER || err.code === NodeErrorCode.PROXY_HOP_LIMIT
 }
 
 /**

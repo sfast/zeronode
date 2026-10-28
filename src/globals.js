@@ -33,5 +33,8 @@ export default {
   // ~1k proxied ticks/s per node, records are evicted early and a slow miss
   // is dropped (the tick is lost; ticks are best-effort)
   PROXY_TICK_RECORD_MS: 10000,
-  PROXY_TICK_RECORDS: 10000
+  PROXY_TICK_RECORDS: 10000,
+  // Router proxying: a proxied tick is forwarded at most this many times in
+  // total, over all branches of its search (bounds forwarding in large meshes)
+  PROXY_TICK_MAX_FORWARDS: 256
 }

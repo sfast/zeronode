@@ -21,7 +21,7 @@
 
 import Node from './node.js'
 import Globals from './globals.js'
-import { NodeError, NodeErrorCode } from './node-errors.js'
+import { NodeError, NodeErrorCode, kProxyMiss, kProxyReplyRouting } from './node-errors.js'
 
 const _private = new WeakMap()
 
@@ -111,13 +111,16 @@ export class Router extends Node {
     }
     
     try {
+      // Malformed routing: refuse before anything is delivered locally
+      if (hop.error) throw hop.error
+      
       // Answer before the previous hop gives up, so it sees our real error
       // instead of its own REQUEST_TIMEOUT. The margin scales with the budget
       // so short timeouts still work across several routers.
       const margin = Math.min(Globals.PROXY_HOP_MARGIN_MS, Math.floor(hop.budget / 4))
       const innerTimeout = hop.budget - margin
       
-      if (!hop.error && innerTimeout < Globals.PROXY_MIN_BUDGET_MS) {
+      if (innerTimeout < Globals.PROXY_MIN_BUDGET_MS) {
         throw new NodeError({
           code: NodeErrorCode.PROXY_DEADLINE_EXCEEDED,
           message: `Proxy request for '${event}' arrived with ${hop.budget}ms left; not forwarding`,
@@ -159,7 +162,7 @@ export class Router extends Node {
         )
       }
       
-      reply.error(error)
+      reply.error(toProxyReplyError(error))
     }
   }
   
@@ -199,6 +202,12 @@ export class Router extends Node {
         `Filter: ${JSON.stringify(filter)}, ` +
         `From: ${requestor || envelope.owner}`
       )
+    }
+    
+    // Malformed routing: drop before anything is delivered locally
+    if (hop.error) {
+      if (scope.enableStats) scope.stats.failedRoutes++
+      return
     }
     
     // Place it on our network; if that fails, it goes back to the sender,
@@ -324,6 +333,10 @@ function sanitizeProxyRouting (routing, sender) {
     requestor: typeof requestor === 'string' ? requestor : undefined,
     // Proxy ticks: the sender's id for this forward, echoed back in a miss
     tick: typeof routing.tick === 'string' && routing.tick.length <= 64 ? routing.tick : undefined,
+    // Proxy ticks: forwards left (absent from old peers: a fresh budget)
+    forwards: Number.isInteger(routing.forwards) && routing.forwards >= 0
+      ? Math.min(routing.forwards, Globals.PROXY_TICK_MAX_FORWARDS)
+      : undefined,
     budget: clamped
   }
   
@@ -333,9 +346,32 @@ function sanitizeProxyRouting (routing, sender) {
       message: 'Malformed proxy routing metadata; not forwarding',
       context: { from: hop.from }
     })
+    // Refused by this router before any delivery: a routing miss
+    hop.error.routing = { miss: true, visited: [], unexplored: [] }
+    hop.error[kProxyMiss] = true
   }
   
   return hop
+}
+
+/**
+ * The error a Router replies with for a proxy request. Only a miss this router
+ * produced itself carries routing data (so the previous hop may try another
+ * router); any other error — e.g. one thrown by the service's handler, whatever
+ * its code — is relayed as a final answer.
+ * @private
+ */
+function toProxyReplyError (error) {
+  if (!error?.[kProxyMiss]) return error
+  return {
+    message: error.message,
+    code: error.code,
+    [kProxyReplyRouting]: {
+      miss: true,
+      visited: error.routing?.visited || [],
+      unexplored: error.routing?.unexplored || []
+    }
+  }
 }
 
 // Largest delay setTimeout accepts (larger values fire after 1ms)
