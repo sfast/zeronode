@@ -132,6 +132,9 @@ export default class Node extends EventEmitter {
     
     _private.set(this, _scope)
     
+    // A proxied tick this node forwarded came back unplaced: try the next router
+    this.onTick('_system:proxy_tick_miss', (envelope) => this._handleProxyTickMiss(envelope))
+    
     // Setup auto-reconnect listener if enabled
     if (_scope.reconnect !== ReconnectPolicy.DISABLED) {
       this._setupAutoReconnect()
@@ -1225,7 +1228,7 @@ export default class Node extends EventEmitter {
     }
     
     // Proxy path bookkeeping (_routing is set when a Router forwards a proxy request)
-    const hop = this._prepareProxyHop(_routing, event)
+    const hop = this._prepareProxyHop(_routing)
     if (hop.error) {
       return Promise.reject(hop.error)
     }
@@ -1244,26 +1247,23 @@ export default class Node extends EventEmitter {
   async _forwardRequestToRouters ({ event, data, timeout, filterOptions, filter, down, up, hop }) {
     const _scope = _private.get(this)
     const startedAt = Date.now()
-    let lastMiss = null
     let hopTimeout = timeout
     
-    for (;;) {
-      // Find routers (always search both directions for maximum discovery),
-      // never the sender of this proxy, nor a router already on the path or tried
-      const routers = this._getFilteredNodes({
-        options: { router: true },
-        down: true,
-        up: true
-      }).filter(nodeId => !hop.exclude.has(nodeId))
-      
+    while (!hop.atHopLimit) {
+      // Routers (both directions), never the sender of this proxy, a node on
+      // the path or a router already explored
+      const routers = this._proxyCandidates(hop)
       if (routers.length === 0) break
       
       const routerNode = this._selectNode(routers, event)
-      hop.exclude.add(routerNode)
+      hop.visited.add(routerNode)
       
       // Send proxy request to router via system event (use internal method)
       const route = this._findRoute(routerNode)
-      if (!route) continue
+      if (!route) {
+        _scope.logger.debug(`[Router Fallback] Router '${routerNode}' is joined but has no route; skipping it`)
+        continue
+      }
       
       // Effective timeout of this hop (fixed on the first try); each try gets
       // what is left of it, sent as the next hop's time budget
@@ -1285,9 +1285,9 @@ export default class Node extends EventEmitter {
             down,
             up,
             requestor: hop.requestor,
-            path: hop.path,                     // Nodes on the proxy path (incl. this one)
-            visited: Array.from(hop.visited()), // Routers already explored for this request
-            budget: remaining                   // ms the next hop has before this hop gives up
+            path: hop.path,              // Nodes on the proxy path (incl. this one)
+            visited: hop.visitedList(),  // Routers already explored for this request
+            budget: remaining            // ms the next hop has before this hop gives up
           }
         },
         timeout: remaining
@@ -1308,27 +1308,14 @@ export default class Node extends EventEmitter {
         if (!isRoutingMiss(err)) throw err
         
         // The router could not route it: skip everything it explored, try the next
-        for (const nodeId of sanitizeVisited(err.routing?.visited) || []) {
-          hop.exclude.add(nodeId)
-        }
-        lastMiss = err
+        this._mergeProxyMiss(hop, err.routing)
       }
     }
     
     // ============================================================================
     // 3. NO MATCH (neither local nor router)
     // ============================================================================
-    const error = new NodeError({
-      code: lastMiss?.code === NodeErrorCode.PROXY_HOP_LIMIT ? NodeErrorCode.PROXY_HOP_LIMIT : NodeErrorCode.NO_NODES_MATCH_FILTER,
-      message: lastMiss?.code === NodeErrorCode.PROXY_HOP_LIMIT
-        ? lastMiss.message
-        : 'No nodes match filter and no routers available',
-      context: { filter, down, up, event }
-    })
-    // Tell the previous hop which routers this search covered
-    error.routing = { visited: Array.from(hop.visited()) }
-    
-    throw error
+    throw this._proxyMiss(hop, { filter, down, up, event })
   }
   
   /**
@@ -1338,38 +1325,79 @@ export default class Node extends EventEmitter {
    * @private
    * @returns {{ path: string[], exclude: Set<string>, requestor: string, error?: NodeError }}
    */
-  _prepareProxyHop (routing, event) {
+  _prepareProxyHop (routing) {
     const incomingPath = routing?.path || []
     const path = [...incomingPath, this.getId()]
-    // Routers explored for this request (DFS), plus the path and the sender
-    const exclude = new Set([...(routing?.visited || []), ...incomingPath, this.getId()])
-    if (routing?.from) {
-      exclude.add(routing.from)
+    const onPath = new Set(path)
+    
+    // Routers explored for this message so far (depth-first search). Kept
+    // apart from the path, which always travels in full.
+    const visited = new Set(routing?.visited || [])
+    if (this.getOptions()?.router) {
+      visited.add(this.getId())
     }
     
-    const hop = {
+    return {
       path,
-      exclude,
+      from: routing?.from,
       requestor: routing?.requestor || this.getId(),
-      // Routers explored so far, reported forward and back (capped)
-      visited: () => Array.from(exclude).slice(-Globals.PROXY_MAX_VISITED)
+      visited,
+      // Routers hop-limited branches could not try (reported by misses)
+      unexplored: new Set(routing?.unexplored || []),
+      error: routing?.error,
+      // Never forward to a node on the path, the sender, or an explored router
+      isExcluded: (nodeId) => onPath.has(nodeId) || nodeId === routing?.from || visited.has(nodeId),
+      visitedList: () => Array.from(visited).slice(-Globals.PROXY_MAX_VISITED),
+      atHopLimit: path.length > Globals.PROXY_MAX_HOPS
     }
+  }
+  
+  /**
+   * Routers this hop may still forward to
+   * @private
+   */
+  _proxyCandidates (hop) {
+    return this._getFilteredNodes({
+      options: { router: true },
+      down: true,
+      up: true
+    }).filter(nodeId => !hop.isExcluded(nodeId))
+  }
+  
+  /**
+   * The error a hop answers with when it cannot place a proxied message,
+   * carrying what it explored back to the previous hop
+   * @private
+   */
+  _proxyMiss (hop, { filter, down, up, event }, noMatchMessage = 'No nodes match filter and no routers available') {
+    const candidates = hop.atHopLimit ? this._proxyCandidates(hop) : []
+    for (const nodeId of candidates) hop.unexplored.add(nodeId)
     
-    if (routing?.error) {
-      hop.error = routing.error
-    } else if (path.length > Globals.PROXY_MAX_HOPS) {
-      hop.error = new NodeError({
-        code: NodeErrorCode.PROXY_HOP_LIMIT,
-        message: `Proxy hop limit (${Globals.PROXY_MAX_HOPS}) reached; no local node matches the filter`,
-        context: { event, path: incomingPath }
-      })
+    // Hop limit only if some router really went unexplored because of it
+    const unexplored = Array.from(hop.unexplored).filter(nodeId => !hop.visited.has(nodeId))
+    const limited = unexplored.length > 0
+    
+    const error = new NodeError({
+      code: limited ? NodeErrorCode.PROXY_HOP_LIMIT : NodeErrorCode.NO_NODES_MATCH_FILTER,
+      message: limited
+        ? `Proxy hop limit (${Globals.PROXY_MAX_HOPS}) reached; no reachable node matches the filter`
+        : noMatchMessage,
+      context: { filter, down, up, event }
+    })
+    error.routing = {
+      visited: hop.visitedList(),
+      unexplored: unexplored.slice(0, Globals.PROXY_MAX_VISITED)
     }
-    
-    if (hop.error) {
-      hop.error.routing = { visited: hop.visited() }
-    }
-    
-    return hop
+    return error
+  }
+  
+  /**
+   * Merge what a downstream miss explored into this hop
+   * @private
+   */
+  _mergeProxyMiss (hop, routing) {
+    for (const nodeId of sanitizeVisited(routing?.visited) || []) hop.visited.add(nodeId)
+    for (const nodeId of sanitizeVisited(routing?.unexplored) || []) hop.unexplored.add(nodeId)
   }
   
   /**
@@ -1425,34 +1453,30 @@ export default class Node extends EventEmitter {
     }
     
     // Proxy path bookkeeping (_routing is set when a Router forwards a proxy tick)
-    const hop = this._prepareProxyHop(_routing, event)
+    const hop = this._prepareProxyHop(_routing)
     if (hop.error) {
       return Promise.reject(hop.error)
     }
     
-    // Find routers, never the sender of this proxy or a router already on the path
-    const routers = this._getFilteredNodes({
-      options: { router: true },
-      down: true,
-      up: true
-    }).filter(nodeId => !hop.exclude.has(nodeId))
-    
-    if (routers.length > 0) {
-      const routerNode = this._selectNode(routers, event)
-      const _scope = _private.get(this)
+    // Routers, never the sender of this proxy, a node on the path or a router
+    // already explored. A router that cannot place the tick sends it back
+    // (_system:proxy_tick_miss) and the next router is tried then.
+    const _scope = _private.get(this)
+    while (!hop.atHopLimit) {
+      const routers = this._proxyCandidates(hop)
+      if (routers.length === 0) break
       
-      _scope.logger.debug(`[Router Fallback] Forwarding tickAny to router: ${routerNode}`)
+      const routerNode = this._selectNode(routers, event)
+      hop.visited.add(routerNode)
       
       // Send proxy tick to router via system event (use internal method)
       const route = this._findRoute(routerNode)
       if (!route) {
-        const error = new NodeError({
-          code: NodeErrorCode.NODE_NOT_FOUND,
-          message: `Router node not found: ${routerNode}`,
-          context: { routerNode }
-        })
-        return Promise.reject(error)
+        _scope.logger.debug(`[Router Fallback] Router '${routerNode}' is joined but has no route; skipping it`)
+        continue
       }
+      
+      _scope.logger.debug(`[Router Fallback] Forwarding tickAny to router: ${routerNode}`)
       
       // Use the ACTUAL event and data, put routing info in metadata
       const tickParams = {
@@ -1465,7 +1489,8 @@ export default class Node extends EventEmitter {
             down,
             up,
             requestor: hop.requestor,
-            path: hop.path   // Nodes already on the proxy path (incl. this one)
+            path: hop.path,              // Nodes on the proxy path (incl. this one)
+            visited: hop.visitedList()   // Routers already explored for this tick
           }
         }
       }
@@ -1486,13 +1511,94 @@ export default class Node extends EventEmitter {
     // 3. NO MATCH (neither local nor router)
     // ============================================================================
     // Reject to maintain backward compatibility with tests
-    const error = new NodeError({
-      code: NodeErrorCode.NO_NODES_MATCH_FILTER,
-      message: 'No nodes match filter criteria and no routers available',
-      context: { filter, down, up, event }
+    return Promise.reject(this._proxyMiss(hop, { filter, down, up, event }, 'No nodes match filter criteria and no routers available'))
+  }
+  
+  /**
+   * Place a proxied tick (on a router, or on any node a miss came back to).
+   * If it cannot be placed, send it back to the node it came from, with what
+   * was explored, so that node tries its next router. Never rejects.
+   * @private
+   * @returns {Promise<boolean>} true if forwarded or delivered
+   */
+  _routeProxyTick ({ event, data, filter, down, up }, routing) {
+    let result
+    try {
+      result = this.tickAny({ event, data, filter, down, up, _routing: routing })
+    } catch (err) {
+      result = Promise.reject(err)
+    }
+    
+    return Promise.resolve(result).then(() => true, (err) => {
+      if (isRoutingMiss(err) && routing?.from) {
+        this._sendProxyTickMiss({ event, data, filter, down, up }, routing, err.routing)
+      } else {
+        _private.get(this).logger.debug(`[Router Fallback] Dropping tick '${event}': ${err?.message}`)
+      }
+      return false
     })
-
-    return Promise.reject(error)
+  }
+  
+  /**
+   * Send a tick that could not be placed back to the node it came from
+   * @private
+   */
+  _sendProxyTickMiss ({ event, data, filter, down, up }, routing, missRouting) {
+    const to = routing.from
+    const route = this._findRoute(to)
+    if (!route) return
+    
+    const tickParams = {
+      event: '_system:proxy_tick_miss',
+      data,
+      metadata: {
+        routing: {
+          event,
+          filter,
+          down,
+          up,
+          requestor: routing.requestor,
+          path: routing.path || [],   // as `to` sent it: ends with `to`
+          visited: missRouting?.visited || [],
+          unexplored: missRouting?.unexplored || []
+        }
+      }
+    }
+    if (route.type === 'server') {
+      tickParams.to = route.targetId
+    }
+    
+    try {
+      route.target._sendSystemTick(tickParams)
+    } catch (err) {
+      _private.get(this).logger.debug(`[Router Fallback] Could not return tick '${event}' to ${to}: ${err.message}`)
+    }
+  }
+  
+  /**
+   * A tick this node forwarded could not be placed further on: try the next
+   * router (with everything explored so far), or pass the miss back again
+   * @private
+   */
+  _handleProxyTickMiss (envelope) {
+    const routing = envelope.metadata?.routing || {}
+    const { path, event, filter, down, up, requestor } = routing
+    
+    // Untrusted: we must be the last node of the path we sent
+    if (!Array.isArray(path) || path.length === 0 || path.length > Globals.PROXY_MAX_HOPS + 1 ||
+        !path.every(id => typeof id === 'string') || path[path.length - 1] !== this.getId() ||
+        typeof event !== 'string') {
+      return
+    }
+    
+    const incomingPath = path.slice(0, -1)
+    this._routeProxyTick({ event, data: envelope.data, filter, down, up }, {
+      path: incomingPath,
+      from: incomingPath[incomingPath.length - 1],
+      requestor: typeof requestor === 'string' ? requestor : undefined,
+      visited: sanitizeVisited(routing.visited) || [],
+      unexplored: sanitizeVisited(routing.unexplored) || []
+    })
   }
   
   /**

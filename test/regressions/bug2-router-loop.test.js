@@ -102,6 +102,63 @@ describe('Regression bug 2: router proxy loop is bounded', function () {
     }
   })
 
+  it('tickAny also finds the service behind a hub with a dead-end neighbour (20/20)', async () => {
+    const hub = await makeRouter('hub')
+    const deadEnd = await makeRouter('dead')
+    const target = await makeRouter('target')
+    await deadEnd.connect({ address: hub.getAddress() })
+    await target.connect({ address: hub.getAddress() })
+
+    let delivered = 0
+    const service = track(new Node({ id: `bug2-svc-${uid()}`, options: { service: 'svc' } }))
+    service.onTick('ping', () => { delivered++ })
+    await service.connect({ address: target.getAddress() })
+
+    const client = track(new Node({ id: `bug2-cli-${uid()}` }))
+    await client.connect({ address: hub.getAddress() })
+
+    for (let i = 0; i < 20; i++) {
+      await client.tickAny({ event: 'ping', filter: { service: 'svc' } })
+    }
+    await wait(300)
+
+    expect(delivered).to.equal(20)
+  })
+
+  it('an unroutable tickAny in a router cycle is dropped after visiting each router once', async () => {
+    const r1 = await makeRouter('r1')
+    const r2 = await makeRouter('r2')
+    const r3 = await makeRouter('r3')
+    await r1.connect({ address: r2.getAddress() })
+    await r2.connect({ address: r3.getAddress() })
+    await r3.connect({ address: r1.getAddress() })
+
+    const client = track(new Node({ id: `bug2-cli-${uid()}` }))
+    await client.connect({ address: r1.getAddress() })
+
+    await client.tickAny({ event: 'nope', filter: { service: 'missing' } })
+    await wait(300)
+
+    expect(proxyTotals(r1, r2, r3).ticks).to.be.at.most(3)
+  })
+
+  it('an unroutable request in a mesh larger than the hop limit reports NO_NODES_MATCH_FILTER', async () => {
+    const mesh = []
+    for (let i = 0; i < 10; i++) mesh.push(await makeRouter(`m${i}`))
+    for (let i = 0; i < mesh.length; i++) {
+      for (let j = i + 1; j < mesh.length; j++) {
+        await mesh[i].connect({ address: mesh[j].getAddress() })
+      }
+    }
+    const client = track(new Node({ id: `bug2-cli-${uid()}` }))
+    await client.connect({ address: mesh[0].getAddress() })
+
+    const err = await client.requestAny({ event: 'nope', filter: { service: 'missing' }, timeout: 2000 }).then(() => null, (e) => e)
+
+    expect(err?.code).to.equal(NodeErrorCode.NO_NODES_MATCH_FILTER)
+    expect(proxyTotals(...mesh).requests).to.be.at.most(mesh.length)
+  })
+
   it('an unroutable request in a router cycle (r1 → r2 → r3 → r1) visits each router once', async () => {
     const r1 = await makeRouter('r1')
     const r2 = await makeRouter('r2')
@@ -240,8 +297,8 @@ describe('Regression bug 2: router validates incoming routing metadata', functio
     expect(Date.now() - started).to.be.below(100)
   })
 
-  it('rejects a path that already holds the maximum number of hops', async () => {
+  it('at the hop limit with no router left to explore, answers NO_NODES_MATCH_FILTER', async () => {
     const { error } = await proxy({ event: 'x', filter: { service: 'missing' }, path: new Array(8).fill(0).map((_, i) => `r${i}`), budget: 1000 })
-    expect(error?.code).to.equal(NodeErrorCode.PROXY_HOP_LIMIT)
+    expect(error?.code).to.equal(NodeErrorCode.NO_NODES_MATCH_FILTER)
   })
 })

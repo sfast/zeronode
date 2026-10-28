@@ -201,52 +201,24 @@ export class Router extends Node {
       )
     }
     
-    const onRouted = () => {
+    // Place it on our network; if that fails, it goes back to the sender,
+    // which tries its next router. Never rejects.
+    this._routeProxyTick({
+      event,
+      data,
+      filter,
+      down: down !== undefined ? down : true,
+      up: up !== undefined ? up : true
+    }, hop).then((routed) => {
+      // successfulRoutes for ticks means "forwarded or delivered locally"
       if (scope.enableStats) {
-        scope.stats.successfulRoutes++
+        routed ? scope.stats.successfulRoutes++ : scope.stats.failedRoutes++
       }
       
       if (scope.debugLogging) {
-        this.getLogger().debug(`[Router] Successfully routed tick for event: ${event}`)
+        this.getLogger().debug(`[Router] Tick for event '${event}' ${routed ? 'routed' : 'not routed'}`)
       }
-    }
-    
-    const onFailed = (error) => {
-      if (scope.enableStats) {
-        scope.stats.failedRoutes++
-      }
-      
-      if (scope.debugLogging) {
-        this.getLogger().warn(
-          `[Router] Failed to route tick - ` +
-          `Event: ${event}, ` +
-          `Error: ${error?.message}`
-        )
-      }
-    }
-    
-    let result
-    try {
-      // Router performs tickAny on its own network
-      result = this.tickAny({
-        event,
-        data,
-        filter,
-        down: down !== undefined ? down : true,
-        up: up !== undefined ? up : true,
-        _routing: hop
-      })
-    } catch (error) {
-      onFailed(error)
-      return
-    }
-    
-    // tickAny rejects (e.g. hop limit, no match): never leave it unhandled
-    if (result && typeof result.then === 'function') {
-      result.then(onRouted, onFailed)
-    } else {
-      onRouted()
-    }
+    })
   }
   
   /**
