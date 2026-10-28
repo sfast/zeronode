@@ -295,12 +295,14 @@ export default class Client extends Protocol {
   async connect (serverAddress, timeout) {
     let _scope = _private.get(this)
     
-    // Overlapping a disconnect()/close() still in progress: refuse before
-    // touching any state, so that teardown completes as intended
-    if (_scope.disconnecting) {
+    // Overlapping a disconnect()/close() still in progress, or after close():
+    // refuse before touching any state, so that teardown completes as intended
+    if (_scope.teardown || _scope.closedForGood) {
       throw new TransportError({
         code: TransportErrorCode.ALREADY_CONNECTED,
-        message: `Cannot connect to ${serverAddress} while a disconnect is in progress`,
+        message: _scope.closedForGood
+          ? `Cannot connect to ${serverAddress}: client is closed`
+          : `Cannot connect to ${serverAddress} while a disconnect is in progress`,
         transportId: this.getId(),
         address: serverAddress
       })
@@ -362,9 +364,23 @@ export default class Client extends Protocol {
   async disconnect () {
     let _scope = _private.get(this)
     
+    // Concurrent disconnect()/close() calls share one teardown
+    if (!_scope.teardown) {
+      _scope.teardown = this._teardown().finally(() => {
+        _scope.teardown = null
+      })
+    }
+    return _scope.teardown
+  }
+  
+  /**
+   * @private
+   */
+  async _teardown () {
+    let _scope = _private.get(this)
+    
     // ✅ Mark that WE (client) are intentionally disconnecting
     _scope.closing = true
-    _scope.disconnecting = true
     
     this._stopPing()
     this._stopReconnectGrace()
@@ -387,17 +403,13 @@ export default class Client extends Protocol {
     // Note: Don't clear serverId here - TRANSPORT_CLOSED handler needs it
 
     // disconnect from transport and detach listeners
-    try {
-      await super.disconnect()
-    } finally {
-      _scope.disconnecting = false
-    }
+    await super.disconnect()
   }
   
   async close () {
+    // Closed for good, from this moment: a connect() is refused from now on
+    _private.get(this).closedForGood = true
     await this.disconnect()
-    // Closed for good: a later connect() is refused, as during disconnect()
-    _private.get(this).disconnecting = true
     await super.close() // close underlying transport and cleanup
   }
   

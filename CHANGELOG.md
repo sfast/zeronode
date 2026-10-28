@@ -89,9 +89,11 @@ named in brackets.
 - Server client-instance ids are released on unbind/close. Forwarded-tick
   records expire after `Globals.PROXY_TICK_RECORD_MS` (a sweep runs while any
   exist) and none remain after `close()`.
-- A `Client.connect()` called while `disconnect()`/`close()` is in progress
-  is refused (`TRANSPORT_ALREADY_CONNECTED`) instead of disturbing the
-  teardown; a closed `Client` cannot connect again (use a new one).
+- Concurrent `Client.disconnect()`/`close()` calls share one teardown. A
+  `Client.connect()` called while it is in progress, or once `close()` has
+  started, is refused at once (`TRANSPORT_ALREADY_CONNECTED`) instead of
+  disturbing the teardown; a closed `Client` cannot connect again (use a new
+  one; `Node` always does).
 
 ### Added
 - `NodeEvent.PEER_UPDATED`, `ServerEvent.ERROR`,

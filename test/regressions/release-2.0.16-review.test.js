@@ -328,6 +328,33 @@ describe('Release 2.0.16 review (round 2): lifecycle and error reporting', funct
     expect(events).to.include('CLOSED')
   })
 
+  it('a connect() between concurrent disconnect() and close() is refused; close() stays final', async () => {
+    const server = new Server({ id: `rr4-s-${uid()}` })
+    const client = new Client({ id: `rr4-c-${uid()}` })
+    closers.push(() => server.close(), () => client.close())
+    await server.bind(`local://rr4-teardown-${uid()}`)
+    await client.connect(server.getAddress())
+
+    const events = []
+    client.on(ClientEvent.CLOSED, () => events.push('CLOSED'))
+    client.on(ClientEvent.NOT_READY, (e) => events.push(e.reason))
+    const first = client.disconnect()
+    const closing = client.close()
+    await first
+    const started = Date.now()
+    const attempt = await client.connect(server.getAddress(), 80).then(() => 'connected', (e) => e)
+    await closing
+
+    expect(attempt, 'refused').to.be.an('error')
+    expect(Date.now() - started, 'refused at once, not a handshake timeout').to.be.below(50)
+    expect(events).to.not.include('TRANSPORT_FAILED')
+    expect(events).to.include('CLOSED')
+
+    await client.disconnect()
+    const after = await client.connect(server.getAddress(), 80).then(() => 'connected', (e) => e)
+    expect(after?.message).to.match(/client is closed/)
+  })
+
   it('forwarded-tick records expire while idle and none survive close()', async () => {
     const captured = captureMap((key, value) => String(value?.routerNode).startsWith('rr3-leaf-'))
     const ttl = Globals.PROXY_TICK_RECORD_MS
