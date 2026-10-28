@@ -1,8 +1,8 @@
 {
   "spec": ["test/**/*.test.js", "src/**/*.test.js"],
+  "require": ["test/setup/unhandled-rejection.js"],
   "exit": true,
   "timeout": 10000,
   "recursive": true,
   "color": true
 }
-
