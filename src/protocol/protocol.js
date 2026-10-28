@@ -182,6 +182,7 @@ export default class Protocol extends EventEmitter {
    * @param {string} [params.to] - Recipient ID (optional for broadcast)
    * @param {string} params.event - Event name (cannot start with '_system:')
    * @param {*} [params.data] - Event data
+   * @param {Object} [params.metadata] - Metadata (delivered as envelope.metadata)
    * @throws {ProtocolError} If event is a system event or transport is offline
    */
   tick({ to, event, data, metadata } = {}) {
@@ -208,7 +209,7 @@ export default class Protocol extends EventEmitter {
     }
     
     // Send via internal implementation
-    this._doTick({ to, event, data })
+    this._doTick({ to, event, data, metadata })
   }
   
   // ============================================================================
