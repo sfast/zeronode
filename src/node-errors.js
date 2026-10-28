@@ -23,6 +23,10 @@ export const NodeErrorCode = {
  * a proxied message (nothing was delivered). Never set from a peer's reply.
  * @private
  */
+// Symbol.for (global registry) on purpose: several zeronode copies may run in
+// one process (nested node_modules) and must recognise each other's markers.
+// The cross-process guarantee comes from Router: only its serializer puts a
+// miss marker on the wire.
 export const kProxyMiss = Symbol.for('zeronode.proxyMiss')
 
 /**

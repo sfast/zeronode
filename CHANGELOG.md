@@ -155,7 +155,7 @@ named in brackets.
   them (it fails rather than risk running a handler twice).
 - In meshes of more than `Globals.PROXY_MAX_VISITED` (64) routers, the
   earliest explored routers may be explored again (bounded by the hop limit,
-  and for requests by the budget).
+  for requests by the budget, and for ticks by `PROXY_TICK_MAX_FORWARDS`).
 - Router tick stats are per router: `failedRoutes` counts ticks a router could
   not place, even if another router delivered them later.
 - Proxied ticks are best-effort. Each node remembers the ticks it forwarded

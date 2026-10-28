@@ -1413,7 +1413,7 @@ export default class Node extends EventEmitter {
    * carrying what it explored back to the previous hop
    * @private
    */
-  _proxyMiss (hop, { filter, down, up, event }, noMatchMessage = 'No nodes match filter and no routers available') {
+  _proxyMiss (hop, { filter, down, up, event }, noMatchMessage = 'No nodes match filter and no routers available', isTick = false) {
     const candidates = hop.atHopLimit ? this._proxyCandidates(hop) : []
     for (const nodeId of candidates) hop.unexplored.add(nodeId)
     
@@ -1432,7 +1432,8 @@ export default class Node extends EventEmitter {
       miss: true,
       visited: hop.visitedList(),
       unexplored: unexplored.slice(0, Globals.PROXY_MAX_VISITED),
-      forwards: hop.forwards
+      // Ticks only (requests are bounded by their time budget instead)
+      ...(isTick ? { forwards: hop.forwards } : {})
     }
     error[kProxyMiss] = true
     return error
@@ -1591,7 +1592,7 @@ export default class Node extends EventEmitter {
     // 3. NO MATCH (neither local nor router)
     // ============================================================================
     // Reject to maintain backward compatibility with tests
-    return Promise.reject(this._proxyMiss(hop, { filter, down, up, event }, 'No nodes match filter criteria and no routers available'))
+    return Promise.reject(this._proxyMiss(hop, { filter, down, up, event }, 'No nodes match filter criteria and no routers available', true))
   }
   
   /**
