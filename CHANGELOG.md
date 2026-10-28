@@ -86,8 +86,12 @@ named in brackets.
 - A `Client` reused after `disconnect()` keeps its reconnect grace period.
 - Re-sending options changed during a handshake no longer extends
   `connect()`'s timeout or delays `disconnect()`/`close()`.
-- Server client-instance ids and forwarded-tick records are released on
-  unbind/close and on expiry.
+- Server client-instance ids are released on unbind/close. Forwarded-tick
+  records expire after `Globals.PROXY_TICK_RECORD_MS` (a sweep runs while any
+  exist) and none remain after `close()`.
+- A `Client.connect()` called while `disconnect()`/`close()` is in progress
+  is refused (`TRANSPORT_ALREADY_CONNECTED`) instead of disturbing the
+  teardown; a closed `Client` cannot connect again (use a new one).
 
 ### Added
 - `NodeEvent.PEER_UPDATED`, `ServerEvent.ERROR`,
@@ -119,8 +123,10 @@ named in brackets.
 - New system ticks `_system:options_update` and `_system:proxy_tick_miss`.
 - Handshake metadata `instance` (client instance id).
 - `metadata.routing` on proxied messages: `path`, `visited`, `budget`
-  (requests), `tick` (ticks); error replies of proxied requests carry
-  `routing.{visited, unexplored}`.
+  (requests), `tick` and `forwards` (ticks); a router's own miss replies
+  carry `routing.{miss, visited, unexplored}` (requests) and
+  `_system:proxy_tick_miss` carries `routing.{tick, visited, unexplored,
+  forwards}` (ticks).
 
 ### Known limitations
 - Node ids must be unique per process. Two live processes sharing an id now

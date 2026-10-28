@@ -130,7 +130,8 @@ export default class Node extends EventEmitter {
       peerIdToAddress: new Map(),   // peerId → address
       pendingConnects: new Map(),   // address → { client, cancelled, promise } (handshake in progress)
       closed: false,                // set by close(); connect() rejects afterwards
-      forwardedTicks: new Map()     // tickId → record of a proxied tick this node forwarded
+      forwardedTicks: new Map(),    // tickId → record of a proxied tick this node forwarded
+      forwardedTickSweep: null      // interval dropping expired forwardedTicks
     }
     
     _private.set(this, _scope)
@@ -1690,8 +1691,15 @@ export default class Node extends EventEmitter {
    * @returns {string} tick id
    */
   _rememberForwardedTick (routerNode, { event, filter, down, up, routing, visited, forwards }) {
-    const { forwardedTicks } = _private.get(this)
+    const _scope = _private.get(this)
+    const { forwardedTicks } = _scope
     const now = Date.now()
+    const tickId = randomUUID()
+    
+    // Closing: nothing could continue this tick any more; keep no record
+    if (_scope.closed) return tickId
+    
+    this._scheduleForwardedTickSweep()
     
     // Drop expired / excess records (Map keeps insertion order: oldest first)
     for (const [id, record] of forwardedTicks) {
@@ -1699,7 +1707,6 @@ export default class Node extends EventEmitter {
       forwardedTicks.delete(id)
     }
     
-    const tickId = randomUUID()
     forwardedTicks.set(tickId, {
       routerNode,
       event,
@@ -1712,6 +1719,30 @@ export default class Node extends EventEmitter {
       expires: now + Globals.PROXY_TICK_RECORD_MS
     })
     return tickId
+  }
+  
+  /**
+   * Drop expired forwarded-tick records while records exist (most ticks are
+   * delivered and never come back as a miss). The timer does not keep the
+   * process alive and stops once the map is empty.
+   * @private
+   */
+  _scheduleForwardedTickSweep () {
+    const _scope = _private.get(this)
+    if (_scope.forwardedTickSweep) return
+    
+    _scope.forwardedTickSweep = setInterval(() => {
+      const now = Date.now()
+      for (const [id, record] of _scope.forwardedTicks) {
+        if (record.expires > now) break
+        _scope.forwardedTicks.delete(id)
+      }
+      if (_scope.forwardedTicks.size === 0) {
+        clearInterval(_scope.forwardedTickSweep)
+        _scope.forwardedTickSweep = null
+      }
+    }, Globals.PROXY_TICK_RECORD_MS)
+    _scope.forwardedTickSweep.unref?.()
   }
   
   /**
@@ -1932,6 +1963,13 @@ export default class Node extends EventEmitter {
     })
     clients.clear()
     clientsAddressIndex.clear()
+    
+    // Anything recorded while shutting down, and the sweep timer
+    _scope.forwardedTicks.clear()
+    if (_scope.forwardedTickSweep) {
+      clearInterval(_scope.forwardedTickSweep)
+      _scope.forwardedTickSweep = null
+    }
     
     // Emit stopped event
     this.emit(NodeEvent.STOPPED)

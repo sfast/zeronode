@@ -22,6 +22,7 @@ import Protocol, { ProtocolEvent, ProtocolSystemEvent } from './protocol.js'
 import { resolvePingInterval } from './config.js'
 import { ProtocolErrorCode } from './protocol-errors.js'
 import { Transport } from '../transport/transport.js'
+import { TransportError, TransportErrorCode } from '../transport/errors.js'
 
 // ============================================================================
 // CLIENT EVENTS (Public API)
@@ -293,6 +294,18 @@ export default class Client extends Protocol {
   
   async connect (serverAddress, timeout) {
     let _scope = _private.get(this)
+    
+    // Overlapping a disconnect()/close() still in progress: refuse before
+    // touching any state, so that teardown completes as intended
+    if (_scope.disconnecting) {
+      throw new TransportError({
+        code: TransportErrorCode.ALREADY_CONNECTED,
+        message: `Cannot connect to ${serverAddress} while a disconnect is in progress`,
+        transportId: this.getId(),
+        address: serverAddress
+      })
+    }
+    
     _scope.serverAddress = serverAddress
     
     // A new connection: a previous intentional disconnect() no longer applies
@@ -351,6 +364,7 @@ export default class Client extends Protocol {
     
     // ✅ Mark that WE (client) are intentionally disconnecting
     _scope.closing = true
+    _scope.disconnecting = true
     
     this._stopPing()
     this._stopReconnectGrace()
@@ -373,11 +387,17 @@ export default class Client extends Protocol {
     // Note: Don't clear serverId here - TRANSPORT_CLOSED handler needs it
 
     // disconnect from transport and detach listeners
-    await super.disconnect();
+    try {
+      await super.disconnect()
+    } finally {
+      _scope.disconnecting = false
+    }
   }
   
   async close () {
     await this.disconnect()
+    // Closed for good: a later connect() is refused, as during disconnect()
+    _private.get(this).disconnecting = true
     await super.close() // close underlying transport and cleanup
   }
   

@@ -12,7 +12,7 @@
 
 import { expect } from 'chai'
 import Node, {
-  Router, Server, Client, ServerEvent, NodeError, NodeErrorCode, ProtocolErrorCode, ProtocolSystemEvent, Transport
+  Router, Server, Client, ServerEvent, ClientEvent, NodeError, NodeErrorCode, ProtocolErrorCode, ProtocolSystemEvent, Transport
 } from '../../src/index.js'
 import { LocalTransport } from '../../src/transport/local/index.js'
 import { Envelope } from '../../src/protocol/envelope.js'
@@ -308,4 +308,64 @@ describe('Release 2.0.16 review (round 2): lifecycle and error reporting', funct
       await node.close().catch(() => {})
     }
   })
+
+  it('a connect() overlapping close() does not turn the intentional close into a failure', async () => {
+    const server = new Server({ id: `rr3-s-${uid()}` })
+    const client = new Client({ id: `rr3-c-${uid()}` })
+    closers.push(() => server.close(), () => client.close())
+    await server.bind(`local://rr3-overlap-${uid()}`)
+    await client.connect(server.getAddress())
+
+    const events = []
+    client.on(ClientEvent.CLOSED, () => events.push('CLOSED'))
+    client.on(ClientEvent.NOT_READY, (e) => events.push(e.reason))
+    const closing = client.close()
+    const rejected = await client.connect(server.getAddress(), 100).then(() => null, (e) => e)
+    await closing
+
+    expect(rejected, 'overlapping connect rejects').to.be.an('error')
+    expect(events).to.not.include('TRANSPORT_FAILED')
+    expect(events).to.include('CLOSED')
+  })
+
+  it('forwarded-tick records expire while idle and none survive close()', async () => {
+    const captured = captureMap((key, value) => String(value?.routerNode).startsWith('rr3-leaf-'))
+    const ttl = Globals.PROXY_TICK_RECORD_MS
+    Globals.PROXY_TICK_RECORD_MS = 20
+    try {
+      for (const mode of ['idle', 'close-race']) {
+        captured.map = null
+        const hub = new Router({ id: `rr3-hub-${mode}-${uid()}` })
+        const leaf = new Router({ id: `rr3-leaf-${mode}-${uid()}` })
+        const svc = new Node({ id: `rr3-svc-${mode}-${uid()}`, options: { service: `hit-${mode}` } })
+        closers.push(() => hub.close(), () => leaf.close(), () => svc.close())
+        await hub.bind(`local://${hub.getId()}`)
+        await leaf.bind(`local://${leaf.getId()}`)
+        await leaf.connect({ address: hub.getAddress() })
+        let delivered = 0
+        svc.onTick('hit', () => { delivered++ })
+        await svc.connect({ address: leaf.getAddress() })
+
+        if (mode === 'idle') {
+          await hub.tickAny({ event: 'hit', filter: { service: `hit-${mode}` } })
+        } else {
+          const caller = new Node({ id: `rr3-caller-${uid()}` })
+          closers.push(() => caller.close())
+          await caller.connect({ address: hub.getAddress() })
+          const tick = caller.tickAny({ event: 'hit', filter: { service: `hit-${mode}` } })
+          const closing = hub.close()
+          await tick
+          await closing
+        }
+        await wait(100)
+
+        expect(captured.map?.size ?? 0, `${mode}: records left`).to.equal(0)
+        if (mode === 'idle') expect(delivered).to.equal(1)
+      }
+    } finally {
+      Globals.PROXY_TICK_RECORD_MS = ttl
+      captured.restore()
+    }
+  })
 })
+
