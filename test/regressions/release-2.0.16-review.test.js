@@ -355,6 +355,31 @@ describe('Release 2.0.16 review (round 2): lifecycle and error reporting', funct
     expect(after?.message).to.match(/client is closed/)
   })
 
+  it('a connect() from a callback fired synchronously by disconnect() is refused', async () => {
+    const server = new Server({ id: `rr5-s-${uid()}` })
+    const client = new Client({ id: `rr5-c-${uid()}` })
+    closers.push(() => server.close(), () => client.close())
+    await server.bind(`local://rr5-sync-${uid()}`)
+    await client.connect(server.getAddress())
+
+    // The stop message is refused synchronously, so teardown runs straight on
+    const socket = client._getSocket()
+    const send = socket.sendBuffer.bind(socket)
+    socket.sendBuffer = (buffer, to) => {
+      if (new Envelope(buffer).event === ProtocolSystemEvent.CLIENT_STOP) throw new Error('refused')
+      return send(buffer, to)
+    }
+
+    let attempt
+    client.once(ClientEvent.NOT_READY, () => {
+      attempt = client.connect(server.getAddress(), 100).then(() => 'connected', (e) => e)
+    })
+    await client.disconnect()
+
+    expect(await attempt, 'refused').to.be.an('error')
+    expect(client.isOnline()).to.equal(false)
+  })
+
   it('forwarded-tick records expire while idle and none survive close()', async () => {
     const captured = captureMap((key, value) => String(value?.routerNode).startsWith('rr3-leaf-'))
     const ttl = Globals.PROXY_TICK_RECORD_MS

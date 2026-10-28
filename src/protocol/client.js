@@ -364,11 +364,17 @@ export default class Client extends Protocol {
   async disconnect () {
     let _scope = _private.get(this)
     
-    // Concurrent disconnect()/close() calls share one teardown
+    // Concurrent disconnect()/close() calls share one teardown. It is
+    // registered before any teardown code runs (the body starts a microtask
+    // later), so even a callback fired synchronously by the teardown sees it
+    // and a connect() from there is refused.
     if (!_scope.teardown) {
-      _scope.teardown = this._teardown().finally(() => {
-        _scope.teardown = null
-      })
+      _scope.closing = true
+      _scope.teardown = Promise.resolve()
+        .then(() => this._teardown())
+        .finally(() => {
+          _scope.teardown = null
+        })
     }
     return _scope.teardown
   }
