@@ -314,6 +314,8 @@ function sanitizeProxyRouting (routing, sender) {
     visited: badVisited ? [] : (visited || []),
     from: typeof sender === 'string' ? sender : undefined,
     requestor: typeof requestor === 'string' ? requestor : undefined,
+    // Proxy ticks: the sender's id for this forward, echoed back in a miss
+    tick: typeof routing.tick === 'string' && routing.tick.length <= 64 ? routing.tick : undefined,
     budget: clamped
   }
   

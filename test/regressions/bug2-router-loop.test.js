@@ -254,6 +254,120 @@ describe('Regression bug 2: router proxy loop is bounded', function () {
   })
 })
 
+/**
+ * A 2.0.15-style router: proxies forward to any router peer (even the sender)
+ * and carry no path/visited/budget. Uses internals to send system messages.
+ */
+function makeOldStyleRouter (id) {
+  const node = new Node({ id, options: { router: true } })
+  const stats = { requests: 0, ticks: 0 }
+  const pickRouter = () => {
+    const routers = node.getFilteredNodes({ options: { router: true } })
+    return routers[Math.floor(Math.random() * routers.length)]
+  }
+  const routeTo = (peerId, params) => {
+    const route = node._findRoute(peerId)
+    if (route.type === 'server') params.to = route.targetId
+    return route.target
+  }
+  node.onRequest('_system:proxy_request', async (envelope, reply) => {
+    stats.requests++
+    const { event, filter, timeout } = envelope.metadata.routing
+    const local = node.getFilteredNodes({ options: filter })
+    if (local.length) return node.request({ to: local[0], event, data: envelope.data, timeout })
+    const next = pickRouter()
+    if (!next) return reply.error({ code: NodeErrorCode.NO_NODES_MATCH_FILTER, message: 'none' })
+    const params = { event: '_system:proxy_request', data: envelope.data, timeout, metadata: { routing: { event, filter, timeout, requestor: id } } }
+    return routeTo(next, params)._sendSystemRequest(params)
+  })
+  node.onTick('_system:proxy_tick', (envelope) => {
+    stats.ticks++
+    const { event, filter } = envelope.metadata.routing
+    const local = node.getFilteredNodes({ options: filter })
+    if (local.length) return node.tick({ to: local[0], event, data: envelope.data })
+    const next = pickRouter()
+    if (!next) return
+    const params = { event: '_system:proxy_tick', data: envelope.data, metadata: { routing: { event, filter, requestor: id } } }
+    routeTo(next, params)._sendSystemTick(params)
+  })
+  return { node, stats }
+}
+
+describe('Regression bug 2: mixed versions and forged messages', function () {
+  this.timeout(15000)
+
+  let nodes = []
+  const track = (node) => { nodes.push(node); return node }
+
+  afterEach(async () => {
+    for (const node of nodes.reverse()) await node.close().catch(() => {})
+    nodes = []
+  })
+
+  const ring = async () => {
+    const n1 = track(new Router({ id: `bug2-n1-${uid()}` }))
+    const n3 = track(new Router({ id: `bug2-n3-${uid()}` }))
+    const old = makeOldStyleRouter(`bug2-old-${uid()}`)
+    track(old.node)
+    for (const node of [n1, n3, old.node]) await node.bind('tcp://127.0.0.1:0')
+    await n1.connect({ address: old.node.getAddress() })
+    await old.node.connect({ address: n3.getAddress() })
+    await n3.connect({ address: n1.getAddress() })
+    const client = track(new Node({ id: `bug2-mcli-${uid()}` }))
+    await client.connect({ address: n1.getAddress() })
+    return { n1, n3, old, client }
+  }
+
+  it('an unroutable request in a ring with an old-style router ends quickly', async () => {
+    const { n1, n3, old, client } = await ring()
+
+    const err = await client.requestAny({ event: 'nope', filter: { service: 'missing' }, timeout: 2000 }).then(() => null, (e) => e)
+    const proxies = n1.getRoutingStats().proxyRequests + n3.getRoutingStats().proxyRequests + old.stats.requests
+
+    expect(err?.code).to.equal(NodeErrorCode.NO_NODES_MATCH_FILTER)
+    expect(proxies).to.be.at.most(5)
+  })
+
+  it('an unroutable tick in a ring with an old-style router dies out', async () => {
+    const { n1, n3, old, client } = await ring()
+
+    await client.tickAny({ event: 'nope', filter: { service: 'missing' } })
+    await wait(500)
+    const proxies = n1.getRoutingStats().proxyTicks + n3.getRoutingStats().proxyTicks + old.stats.ticks
+
+    expect(proxies).to.be.at.most(5)
+  })
+
+  it('a forged proxy_tick_miss makes a node re-send nothing', async () => {
+    const router = track(new Router({ id: `bug2-fr-${uid()}` }))
+    await router.bind('tcp://127.0.0.1:0')
+
+    let delivered = 0
+    const victim = track(new Node({ id: `bug2-victim-${uid()}`, options: { service: 'v' } }))
+    victim.onTick('hit', () => { delivered++ })
+    await victim.connect({ address: router.getAddress() })
+
+    const plain = track(new Node({ id: `bug2-plain-${uid()}` }))
+    await plain.bind('tcp://127.0.0.1:0')
+    await plain.connect({ address: router.getAddress() })
+
+    const attacker = track(new Node({ id: `bug2-att-${uid()}` }))
+    await attacker.connect({ address: plain.getAddress() })
+    const route = attacker._findRoute(plain.getId())
+
+    for (let i = 0; i < 5; i++) {
+      route.target._sendSystemTick({
+        event: '_system:proxy_tick_miss',
+        data: 'forged',
+        metadata: { routing: { event: 'hit', filter: { service: 'v' }, path: [plain.getId()], tick: `fake-${i}` } }
+      })
+    }
+    await wait(300)
+
+    expect(delivered).to.equal(0)
+  })
+})
+
 describe('Regression bug 2: router validates incoming routing metadata', function () {
   let router
 

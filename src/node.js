@@ -35,6 +35,7 @@ import winston from 'winston'
 import md5 from 'md5'
 import animal from 'animal-id'
 import { EventEmitter } from 'events'
+import { randomUUID } from 'crypto'
 import { PatternEmitter } from '@sfast/pattern-emitter-ts'
 
 import { NodeError, NodeErrorCode, assertValidAddress } from './node-errors.js'
@@ -127,7 +128,8 @@ export default class Node extends EventEmitter {
       connectionTargets: new Map(), // address → { peerId, attempts, timer, timeout }
       peerIdToAddress: new Map(),   // peerId → address
       pendingConnects: new Map(),   // address → { client, cancelled, promise } (handshake in progress)
-      closed: false                 // set by close(); connect() rejects afterwards
+      closed: false,                // set by close(); connect() rejects afterwards
+      forwardedTicks: new Map()     // tickId → record of a proxied tick this node forwarded
     }
     
     _private.set(this, _scope)
@@ -1336,6 +1338,12 @@ export default class Node extends EventEmitter {
     if (this.getOptions()?.router) {
       visited.add(this.getId())
     }
+    // The router this came from has been explored on this path by definition.
+    // Recording it matters when it is an old router: it strips path/visited,
+    // so without this the search could be sent back through it again.
+    if (routing?.from && _private.get(this).peerOptions.get(routing.from)?.router) {
+      visited.add(routing.from)
+    }
     
     return {
       path,
@@ -1478,6 +1486,11 @@ export default class Node extends EventEmitter {
       
       _scope.logger.debug(`[Router Fallback] Forwarding tickAny to router: ${routerNode}`)
       
+      // Remember this forward: a miss is accepted only from `routerNode`, for
+      // this id, once; and where to send our own miss comes from here, not
+      // from the (untrusted) miss message
+      const tickId = this._rememberForwardedTick(routerNode, { event, filter: filterOptions, down, up, routing: _routing })
+      
       // Use the ACTUAL event and data, put routing info in metadata
       const tickParams = {
         event: '_system:proxy_tick',
@@ -1490,7 +1503,8 @@ export default class Node extends EventEmitter {
             up,
             requestor: hop.requestor,
             path: hop.path,              // Nodes on the proxy path (incl. this one)
-            visited: hop.visitedList()   // Routers already explored for this tick
+            visited: hop.visitedList(),  // Routers already explored for this tick
+            tick: tickId                 // Echoed back in a miss
           }
         }
       }
@@ -1559,6 +1573,7 @@ export default class Node extends EventEmitter {
           up,
           requestor: routing.requestor,
           path: routing.path || [],   // as `to` sent it: ends with `to`
+          tick: routing.tick,         // the id `to` gave this forward
           visited: missRouting?.visited || [],
           unexplored: missRouting?.unexplored || []
         }
@@ -1582,23 +1597,62 @@ export default class Node extends EventEmitter {
    */
   _handleProxyTickMiss (envelope) {
     const routing = envelope.metadata?.routing || {}
-    const { path, event, filter, down, up, requestor } = routing
     
-    // Untrusted: we must be the last node of the path we sent
-    if (!Array.isArray(path) || path.length === 0 || path.length > Globals.PROXY_MAX_HOPS + 1 ||
-        !path.every(id => typeof id === 'string') || path[path.length - 1] !== this.getId() ||
-        typeof event !== 'string') {
-      return
-    }
+    // Only a miss for a tick this node forwarded, from the router it was
+    // forwarded to, once. Anything else (forged, replayed, late) is dropped.
+    const record = this._takeForwardedTick(routing.tick, envelope.owner)
+    if (!record) return
     
-    const incomingPath = path.slice(0, -1)
+    const { event, filter, down, up } = record
     this._routeProxyTick({ event, data: envelope.data, filter, down, up }, {
-      path: incomingPath,
-      from: incomingPath[incomingPath.length - 1],
-      requestor: typeof requestor === 'string' ? requestor : undefined,
-      visited: sanitizeVisited(routing.visited) || [],
+      ...(record.routing || {}),
+      // Our own routing as we received it (what our own miss would need)
+      visited: [...(record.routing?.visited || []), ...(sanitizeVisited(routing.visited) || [])],
       unexplored: sanitizeVisited(routing.unexplored) || []
     })
+  }
+  
+  /**
+   * Record a proxied tick this node forwards (bounded, short-lived)
+   * @private
+   * @returns {string} tick id
+   */
+  _rememberForwardedTick (routerNode, { event, filter, down, up, routing }) {
+    const { forwardedTicks } = _private.get(this)
+    const now = Date.now()
+    
+    // Drop expired / excess records (Map keeps insertion order: oldest first)
+    for (const [id, record] of forwardedTicks) {
+      if (record.expires > now && forwardedTicks.size < Globals.PROXY_TICK_RECORDS) break
+      forwardedTicks.delete(id)
+    }
+    
+    const tickId = randomUUID()
+    forwardedTicks.set(tickId, {
+      routerNode,
+      event,
+      filter,
+      down,
+      up,
+      routing,   // how this node received the tick (undefined if it originated it)
+      expires: now + Globals.PROXY_TICK_RECORD_MS
+    })
+    return tickId
+  }
+  
+  /**
+   * Consume the record of a forwarded tick if `sender` is the router it went to
+   * @private
+   */
+  _takeForwardedTick (tickId, sender) {
+    const { forwardedTicks } = _private.get(this)
+    if (typeof tickId !== 'string') return null
+    
+    const record = forwardedTicks.get(tickId)
+    if (!record || record.routerNode !== sender || record.expires <= Date.now()) return null
+    
+    forwardedTicks.delete(tickId)
+    return record
   }
   
   /**

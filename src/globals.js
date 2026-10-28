@@ -25,6 +25,11 @@ export default {
   PROXY_HOP_MARGIN_MS: 50,
   // Router proxying: a hop with less budget than this does not forward
   PROXY_MIN_BUDGET_MS: 5,
-  // Router proxying: max routers reported as explored for one request
-  PROXY_MAX_VISITED: 64
+  // Router proxying: max routers reported as explored for one message
+  // (beyond that, the earliest explored may be explored again)
+  PROXY_MAX_VISITED: 64,
+  // Router proxying: forwarded ticks are remembered this long (10s), at most
+  // this many, so a miss coming back can be matched to its forward
+  PROXY_TICK_RECORD_MS: 10000,
+  PROXY_TICK_RECORDS: 10000
 }
