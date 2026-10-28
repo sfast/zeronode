@@ -542,6 +542,12 @@ export default class Node extends EventEmitter {
     // setOptions() ran during the handshake: the server may have the old ones
     if (_scope.options !== options) {
       await client.setOptions(_scope.options)
+      
+      // disconnect()/close() may have run during that send
+      if (attempt.cancelled || _scope.closed) {
+        await this._discardClient(client, address)
+        throw connectCancelledError(address)
+      }
     }
     
     // Get server ID (now available after handshake)

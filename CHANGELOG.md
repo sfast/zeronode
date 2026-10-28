@@ -67,7 +67,8 @@ named in brackets.
   handshake) carry the current options. `await setOptions()` resolves when
   the updates are handed to the transport (no acknowledgement; at most
   `RECONNECT_GRACE_MS` while a connection is re-establishing). Options
-  replace the previous ones; the caller's object is no longer mutated. A
+  replace the previous ones; `setOptions()` no longer mutates the caller's
+  object (the constructor still adds `_id` to the object it is given). A
   `Router` keeps `router: true`.
 - **A restarted peer reusing its id is accepted (#9)** [f6-router-handover]:
   `ZMQ_ROUTER_HANDOVER` now defaults to on (the most recent connection with an
@@ -97,6 +98,10 @@ named in brackets.
   now dropped after 30s instead of 60s. The server assumes its clients ping at
   the server's own configured `PING_INTERVAL`.
 - A ROUTER `sendBuffer()` returns the send promise (it returned `true`).
+- Server-side tick handler failures and malformed incoming frames are now
+  reported as `NodeEvent.ERROR` (`source: 'server'`) and logged at error
+  level, once per occurrence (they used to kill the receive loop silently).
+  A misbehaving peer can therefore produce many error events/log lines.
 
 ### Wire (all additive; older peers ignore it)
 - New system ticks `_system:options_update` and `_system:proxy_tick_miss`.
