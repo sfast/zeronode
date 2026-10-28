@@ -23,9 +23,10 @@ export class RequestTracker {
    * @param {Function} handlers.resolve - Success callback
    * @param {Function} handlers.reject - Error callback
    * @param {number} [handlers.timeout] - Optional timeout override
+   * @param {string} [handlers.to] - Recipient (lets rejectForPeer find it)
    * @returns {string} requestId (for chaining)
    */
-  track(requestId, { resolve, reject, timeout }) {
+  track(requestId, { resolve, reject, timeout, to }) {
     const timeoutMs = timeout || this.ctx.config.PROTOCOL_REQUEST_TIMEOUT
     
     const timer = setTimeout(() => {
@@ -36,6 +37,7 @@ export class RequestTracker {
       resolve, 
       reject, 
       timer,
+      to,
       startTime: Date.now()
     })
     
@@ -105,12 +107,66 @@ export class RequestTracker {
   }
   
   /**
+   * Fail one pending request (e.g. its send failed)
+   * Clears its timer and rejects it with `error`
+   * 
+   * @param {string} requestId - Request to fail
+   * @param {Error} error - Rejection error
+   * @returns {boolean} true if it was pending
+   */
+  fail(requestId, error) {
+    const request = this.requests.get(requestId)
+    if (!request) return false
+    
+    clearTimeout(request.timer)
+    this.requests.delete(requestId)
+    request.reject(error)
+    return true
+  }
+  
+  /**
+   * Reject the pending requests sent to one peer (it left or is unreachable)
+   * 
+   * @param {string} peerId - Recipient whose requests to reject
+   * @param {Object} params
+   * @param {string} params.code - ProtocolErrorCode for the rejection
+   * @param {string} params.message - Rejection message
+   * @returns {number} Number of requests rejected
+   */
+  rejectForPeer(peerId, { code, message }) {
+    let count = 0
+    
+    this.requests.forEach((request, id) => {
+      if (request.to !== peerId) return
+      clearTimeout(request.timer)
+      this.requests.delete(id)
+      request.reject(new ProtocolError({
+        code,
+        message,
+        protocolId: this.ctx.protocolId,
+        envelopeId: id,
+        context: { peerId }
+      }))
+      count++
+    })
+    
+    if (count > 0) {
+      this.ctx.debug && this.ctx.logger?.warn(
+        `[RequestTracker] Rejected ${count} pending request(s) to '${peerId}': ${message}`
+      )
+    }
+    
+    return count
+  }
+  
+  /**
    * Reject all pending requests (used during close/disconnect)
    * Clears all timeout timers
    * 
    * @param {string} reason - Rejection reason
+   * @param {string} [code] - ProtocolErrorCode (default REQUEST_TIMEOUT, as before)
    */
-  rejectAll(reason) {
+  rejectAll(reason, code = ProtocolErrorCode.REQUEST_TIMEOUT) {
     if (this.requests.size === 0) return
     
     this.ctx.debug && this.ctx.logger?.warn(
@@ -120,7 +176,7 @@ export class RequestTracker {
     this.requests.forEach((request, id) => {
       clearTimeout(request.timer)
       request.reject(new ProtocolError({
-        code: ProtocolErrorCode.REQUEST_TIMEOUT,
+        code,
         message: reason,
         protocolId: this.ctx.protocolId,
         envelopeId: id

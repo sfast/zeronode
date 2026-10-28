@@ -14,6 +14,7 @@ export const ProtocolEvent = {
   TRANSPORT_READY: 'protocol:transport_ready',       // Transport can send/receive bytes
   TRANSPORT_NOT_READY: 'protocol:transport_not_ready', // Transport disconnected/unbound
   TRANSPORT_CLOSED: 'protocol:transport_closed',      // Transport permanently closed
+  PEER_UNREACHABLE: 'protocol:peer_unreachable',      // Transport has no route to a peer: { peerId }
   ERROR: 'protocol:error'                             // Protocol-surfaced transport/protocol error
 }
 
@@ -31,6 +32,7 @@ export class LifecycleManager {
     this._onNotReady = this._onNotReady.bind(this)
     this._onClosed = this._onClosed.bind(this)
     this._onError = this._onError.bind(this)
+    this._onSendFailed = this._onSendFailed.bind(this)
   }
   
   // ============================================================================
@@ -69,6 +71,7 @@ export class LifecycleManager {
     this.ctx.socket.on(TransportEvent.NOT_READY, this._onNotReady)
     this.ctx.socket.on(TransportEvent.CLOSED, this._onClosed)
     this.ctx.socket.on(TransportEvent.ERROR, this._onError)
+    this.ctx.socket.on(TransportEvent.SEND_FAILED, this._onSendFailed)
   }
   
   /**
@@ -84,6 +87,7 @@ export class LifecycleManager {
       this.ctx.socket.removeAllListeners(TransportEvent.NOT_READY)
       this.ctx.socket.removeAllListeners(TransportEvent.CLOSED)
       this.ctx.socket.removeAllListeners(TransportEvent.ERROR)
+      this.ctx.socket.removeAllListeners(TransportEvent.SEND_FAILED)
       
       this.ctx.debug && this.ctx.logger?.debug('[Lifecycle] Detached socket event handlers')
     } catch (err) {
@@ -151,6 +155,18 @@ export class LifecycleManager {
   _onError(err) {
     this.ctx.debug && this.ctx.logger?.error(`[Lifecycle] Transport error (${this.ctx.protocolId})`, err)
     this.protocolEmitter.emit(ProtocolEvent.ERROR, err)
+  }
+  
+  /**
+   * Handle an asynchronous send failure.
+   * Only EHOSTUNREACH means the peer is gone. EAGAIN (its queue is full) means
+   * it is slow: that send fails, the peer stays.
+   * @private
+   */
+  _onSendFailed({ recipient, error }) {
+    if (error?.code === 'EHOSTUNREACH' && recipient) {
+      this.protocolEmitter.emit(ProtocolEvent.PEER_UNREACHABLE, { peerId: recipient })
+    }
   }
   
   // ============================================================================

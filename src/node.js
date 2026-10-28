@@ -41,6 +41,7 @@ import { NodeError, NodeErrorCode, assertValidAddress } from './node-errors.js'
 import NodeUtils from './utils.js'
 import Server, { ServerEvent } from './protocol/server.js'
 import Client, { ClientEvent } from './protocol/client.js'
+import { ProtocolErrorCode } from './protocol/protocol-errors.js'
 
 // ============================================================================
 // NODE EVENTS (Orchestration Layer - Public API)
@@ -249,6 +250,13 @@ export default class Node extends EventEmitter {
     _scope.joinedPeers.add(peerId)
     _scope.peerOptions.set(peerId, peerOptions || {})
     _scope.peerDirection.set(peerId, direction)
+  }
+  
+  /**
+   * @private
+   */
+  _isJoinedPeer (peerId) {
+    return _private.get(this).joinedPeers.has(peerId)
   }
   
   /**
@@ -1187,7 +1195,15 @@ export default class Node extends EventEmitter {
     
     if (filteredNodes.length > 0) {
       const targetNode = this._selectNode(filteredNodes, event)
-      return this.request({ to: targetNode, event, data, timeout })
+      return this.request({ to: targetNode, event, data, timeout }).catch((err) => {
+        // The chosen peer turned out to be gone (crashed). The message never
+        // left this node, so trying again cannot run the handler twice; the
+        // dead peer has already been removed, so this terminates.
+        if (err?.code === ProtocolErrorCode.PEER_UNREACHABLE && !this._isJoinedPeer(targetNode)) {
+          return this.requestAny({ event, data, timeout, filter, down, up })
+        }
+        throw err
+      })
     }
     
     // ============================================================================

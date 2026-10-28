@@ -126,10 +126,12 @@ export const ZMQConfigDefaults = {
   
   /**
    * ZMQ_ROUTER_MANDATORY: Fail if sending to unknown peer
-   * false = silently drop messages to unknown peers (production default)
-   * true = throw error when sending to unknown peer (debugging)
+   * true = a send to a peer that is not connected fails with EHOSTUNREACH
+   *        (default, applied in RouterSocket together with a router send
+   *        timeout of 0 unless ZMQ_SNDTIMEO is given)
+   * false = libzmq default: such messages are dropped silently
    */
-  // ZMQ_ROUTER_MANDATORY: false,  // Optional - undefined means ZeroMQ default
+  // ZMQ_ROUTER_MANDATORY: true,  // Optional - undefined means true (see RouterSocket)
   
   /**
    * ZMQ_ROUTER_HANDOVER: A new connection whose identity is already connected

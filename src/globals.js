@@ -7,8 +7,11 @@ export default {
   PROTOCOL_BUFFER_STRATEGY: BufferStrategy.EXACT,
   // Client ping interval (10s)
   CLIENT_PING_INTERVAL: 10000,
-  // Once client connected Server health checks client pings in this interval (30s)    
-  CLIENT_HEALTH_CHECK_INTERVAL: 30000,  
-  // Client considered GHOST after 60s without ping
-  CLIENT_GHOST_TIMEOUT: 60000
+  // Once client connected Server health checks client pings in this interval (5s)
+  CLIENT_HEALTH_CHECK_INTERVAL: 5000,
+  // Client considered GHOST after 30s (3 x ping interval) without ping
+  CLIENT_GHOST_TIMEOUT: 30000,
+  // Client: requests pending when the transport drops survive a reconnect
+  // within this time (2s), then fail with PEER_UNREACHABLE
+  RECONNECT_GRACE_MS: 2000
 }

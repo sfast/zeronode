@@ -85,6 +85,17 @@ export const TransportEvent = {
   ERROR: 'transport:error',
   
   /**
+   * SEND_FAILED - An asynchronous send failed (optional)
+   * 
+   * Payload: { recipient?: string, error: Error }
+   * error.code carries the transport's reason, e.g. 'EHOSTUNREACH' (no such
+   * peer: it is gone) or 'EAGAIN' (peer's queue is full: it is slow, not gone)
+   * 
+   * Emitted by transports whose sendBuffer() returns a promise (ZeroMQ).
+   */
+  SEND_FAILED: 'transport:send_failed',
+  
+  /**
    * RECONNECT_RETRY - Transport is retrying connection (optional, for observability)
    * 
    * Only emitted by transports that auto-reconnect (e.g., ZeroMQ dealer)
@@ -102,7 +113,7 @@ export const TransportEvent = {
  * 
  * class MyTransport extends EventEmitter {
  *   // Required methods:
- *   sendBuffer(buffer, recipient?)           // Send raw buffer
+ *   sendBuffer(buffer, recipient?)           // Send raw buffer (may return a promise of the send)
  *   getId()                                   // Get transport ID
  *   getConfig()                               // Get configuration
  *   isOnline()                                // Check if online

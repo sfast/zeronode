@@ -15,7 +15,10 @@ export const ProtocolErrorCode = {
   INVALID_ENVELOPE: 'INVALID_ENVELOPE',      // Malformed or invalid envelope
   INVALID_RESPONSE: 'INVALID_RESPONSE',      // Response doesn't match any pending request
   INVALID_EVENT: 'INVALID_EVENT',            // Invalid event name (e.g., system event from public API)
-  HANDLER_ERROR: 'HANDLER_ERROR'             // Handler threw an error
+  HANDLER_ERROR: 'HANDLER_ERROR',            // Handler threw an error
+  PEER_UNREACHABLE: 'PEER_UNREACHABLE',      // Peer is gone (transport has no route to it / server lost)
+  PEER_LEFT: 'PEER_LEFT',                    // Peer left (stop, timeout, replaced) with the request pending
+  SEND_FAILED: 'SEND_FAILED'                 // Message could not be sent (e.g. peer's queue is full)
 }
 
 /**

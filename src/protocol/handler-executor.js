@@ -248,7 +248,7 @@ export class HandlerExecutor {
       recipient: envelope.owner
     }, this.ctx.config.BUFFER_STRATEGY)
     
-    this.ctx.socket.sendBuffer(buffer, envelope.owner)
+    this._sendReply(buffer, envelope)
   }
   
   /**
@@ -275,7 +275,22 @@ export class HandlerExecutor {
       recipient: envelope.owner
     }, this.ctx.config.BUFFER_STRATEGY)
     
-    this.ctx.socket.sendBuffer(buffer, envelope.owner)
+    this._sendReply(buffer, envelope)
+  }
+  
+  /**
+   * Send a reply; the requester may be gone or offline by now, which must
+   * neither throw into the handler chain nor float as an unhandled rejection
+   * (async send failures are already reported by the transport)
+   * @private
+   */
+  _sendReply(buffer, envelope) {
+    try {
+      this.ctx.socket.sendBuffer(buffer, envelope.owner)
+    } catch (err) {
+      this.ctx.debug && this.ctx.logger?.warn(
+        `[HandlerExecutor] Could not send reply for ${envelope.id} to '${envelope.owner}': ${err.message}`
+      )
+    }
   }
 }
-

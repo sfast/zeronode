@@ -19,6 +19,7 @@
 import { randomUUID } from 'crypto'
 import Globals from '../globals.js'
 import Protocol, { ProtocolEvent, ProtocolSystemEvent } from './protocol.js'
+import { ProtocolErrorCode } from './protocol-errors.js'
 import { Transport } from '../transport/transport.js'
 
 // ============================================================================
@@ -103,7 +104,8 @@ export default class Client extends Protocol {
       // Identifies this Client instance in handshakes, so the server can tell a
       // re-handshake (same instance, e.g. after a blip) from a restarted
       // process reusing the same id (new instance)
-      instanceId: randomUUID()
+      instanceId: randomUUID(),
+      reconnectGraceTimer: null  // pending requests fail if the server stays away this long
     }
     
     _private.set(this, _scope)
@@ -145,6 +147,10 @@ export default class Client extends Protocol {
       
       this._stopPing()
       
+      // Pending requests survive a short blip (the reply still arrives after
+      // the reconnect), but not a server that is gone
+      this._startReconnectGrace()
+      
       // Emit application event with actual server ID
       const serverIdValue = serverId || 'unknown'
       
@@ -159,6 +165,7 @@ export default class Client extends Protocol {
       let { serverId, closing } = _scope
       
       this._stopPing()
+      this._stopReconnectGrace()
 
       const serverIdValue = serverId || 'unknown'
       
@@ -200,6 +207,9 @@ export default class Client extends Protocol {
       // ✅ Store server ID (now we know who we're talking to)
       _scope.serverId = serverId
       
+      // Back within the grace period: pending requests keep waiting
+      this._stopReconnectGrace()
+      
       // ✅ Start ping now that handshake is complete and we know server ID
       this._startPing()
       
@@ -217,6 +227,13 @@ export default class Client extends Protocol {
       let { serverId } = _private.get(this)
       
       this._stopPing()
+      this._stopReconnectGrace()
+      
+      // The server stopped: it will not answer what is still pending
+      this._rejectAllPendingRequests({
+        code: ProtocolErrorCode.PEER_LEFT,
+        message: `Server '${serverId || 'unknown'}' stopped before replying`
+      })
       
       this.emit(ClientEvent.SERVER_LEFT, { serverId: serverId || 'unknown' })
     })
@@ -371,6 +388,28 @@ export default class Client extends Protocol {
         })
       }
     }, pingInterval)
+  }
+  
+  _startReconnectGrace () {
+    let _scope = _private.get(this)
+    if (_scope.reconnectGraceTimer || _scope.closing) return
+    
+    _scope.reconnectGraceTimer = setTimeout(() => {
+      _scope.reconnectGraceTimer = null
+      const serverId = _scope.serverId || 'unknown'
+      this._rejectAllPendingRequests({
+        code: ProtocolErrorCode.PEER_UNREACHABLE,
+        message: `Server '${serverId}' unreachable for ${Globals.RECONNECT_GRACE_MS}ms`
+      })
+    }, Globals.RECONNECT_GRACE_MS)
+  }
+  
+  _stopReconnectGrace () {
+    let _scope = _private.get(this)
+    if (_scope.reconnectGraceTimer) {
+      clearTimeout(_scope.reconnectGraceTimer)
+      _scope.reconnectGraceTimer = null
+    }
   }
   
   _stopPing () {

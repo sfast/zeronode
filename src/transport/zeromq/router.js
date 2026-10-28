@@ -50,10 +50,18 @@ export default class RouterSocket extends Socket {
    * Config is already merged with defaults
    */
   static _configureRouterOptions (socket, config) {
-    // Router mandatory: Fail if sending to unknown peer
-    // Optional - only set if explicitly provided by user
-    if (config.ZMQ_ROUTER_MANDATORY !== undefined) {
-      socket.mandatory = config.ZMQ_ROUTER_MANDATORY
+    // Router mandatory: a send to an identity that is not connected fails with
+    // EHOSTUNREACH instead of being dropped silently. On by default so a crashed
+    // peer is detected on the first send to it.
+    socket.mandatory = config.ZMQ_ROUTER_MANDATORY ?? true
+    
+    // With mandatory on, a send to an unknown peer would block forever under the
+    // default infinite send timeout; 0 makes it fail at once (EHOSTUNREACH, or
+    // EAGAIN when a live peer's queue is full). Router only: a Dealer must keep
+    // queueing while ZeroMQ reconnects. An explicit ZMQ_SNDTIMEO still wins
+    // (applied by the base class).
+    if (config.ZMQ_SNDTIMEO === undefined) {
+      socket.sendTimeout = 0
     }
 
     // Router handover: a new connection with an identity that is already

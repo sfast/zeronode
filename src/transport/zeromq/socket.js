@@ -236,8 +236,12 @@ class Socket extends EventEmitter {
     
     try {
       let msg = this.getSocketMsgFromBuffer(buffer, recipient)
-      socket.send(msg)
-      return true
+      // zeromq's send() returns a promise. Its rejection is always handled here
+      // (SEND_FAILED), so it can never become an unhandled rejection; callers
+      // that need the outcome of this particular send can await the result.
+      const sent = socket.send(msg)
+      sent.catch((err) => this._emitSendFailed(err, recipient))
+      return sent
     } catch (err) {
       // Wrap any ZMQ send errors (HWM reached, socket error, etc.)
       throw new TransportError({
@@ -246,6 +250,18 @@ class Socket extends EventEmitter {
         transportId: this.getId(),
         cause: err
       })
+    }
+  }
+
+  /**
+   * @private
+   */
+  _emitSendFailed (error, recipient) {
+    this.debug && this.logger?.warn(`[Socket] Send to '${recipient}' failed: ${error?.code || error?.message}`)
+    try {
+      this.emit(TransportEvent.SEND_FAILED, { recipient, error })
+    } catch (emitErr) {
+      this.logger?.error(`[Socket] SEND_FAILED listener failed: ${emitErr.message}`)
     }
   }
 

@@ -153,7 +153,7 @@ export default class Protocol extends EventEmitter {
     
     return new Promise((resolve, reject) => {
       // Track request
-      requestTracker.track(id, { resolve, reject, timeout })
+      requestTracker.track(id, { resolve, reject, timeout, to })
       
       // Create and send envelope
       const buffer = Envelope.createBuffer({
@@ -166,7 +166,7 @@ export default class Protocol extends EventEmitter {
         recipient: to
       }, config.BUFFER_STRATEGY)
       
-      socket.sendBuffer(buffer, to)
+      this._sendTracked(buffer, to, id)
     })
   }
   
@@ -293,7 +293,7 @@ export default class Protocol extends EventEmitter {
     
     return new Promise((resolve, reject) => {
       // Track request
-      requestTracker.track(id, { resolve, reject, timeout })
+      requestTracker.track(id, { resolve, reject, timeout, to })
       
       // Create and send envelope
       const buffer = Envelope.createBuffer({
@@ -306,7 +306,7 @@ export default class Protocol extends EventEmitter {
         recipient: to
       }, config.BUFFER_STRATEGY)
       
-      socket.sendBuffer(buffer, to)
+      this._sendTracked(buffer, to, id)
     })
   }
   
@@ -328,6 +328,47 @@ export default class Protocol extends EventEmitter {
     }, config.BUFFER_STRATEGY)
     
     socket.sendBuffer(buffer, to)
+  }
+  
+  /**
+   * Send a request envelope and fail that request (not just log) if its send
+   * fails, synchronously or asynchronously
+   * @private
+   */
+  _sendTracked(buffer, to, id) {
+    let { socket, requestTracker } = _private.get(this)
+    
+    const fail = (err) => requestTracker.fail(id, toSendError(err, to, this.getId(), id))
+    
+    try {
+      const sent = socket.sendBuffer(buffer, to)
+      if (sent && typeof sent.then === 'function') {
+        sent.then(null, fail)
+      }
+    } catch (err) {
+      fail(err)
+    }
+  }
+  
+  /**
+   * Reject pending requests sent to a peer that left / is unreachable
+   * @protected
+   * @param {string} peerId
+   * @param {Object} params - { code: ProtocolErrorCode, message }
+   * @returns {number} Number of rejected requests
+   */
+  _rejectPendingRequestsTo(peerId, { code, message }) {
+    let { requestTracker } = _private.get(this)
+    return requestTracker.rejectForPeer(peerId, { code, message })
+  }
+  
+  /**
+   * Reject all pending requests (single-peer Client: its server is gone)
+   * @protected
+   */
+  _rejectAllPendingRequests({ code, message }) {
+    let { requestTracker } = _private.get(this)
+    requestTracker.rejectAll(message, code)
   }
   
   // ============================================================================
@@ -438,4 +479,26 @@ export default class Protocol extends EventEmitter {
     
     await lifecycle.close()
   }
+}
+
+/**
+ * Map a transport send failure to a ProtocolError for the request that failed
+ * @private
+ */
+function toSendError (err, to, protocolId, envelopeId) {
+  const reason = err?.code === 'EHOSTUNREACH' || err?.cause?.code === 'EHOSTUNREACH'
+    ? 'EHOSTUNREACH'
+    : (err?.cause?.code || err?.code)
+  const unreachable = reason === 'EHOSTUNREACH'
+  
+  return new ProtocolError({
+    code: unreachable ? ProtocolErrorCode.PEER_UNREACHABLE : ProtocolErrorCode.SEND_FAILED,
+    message: unreachable
+      ? `Peer '${to}' is unreachable`
+      : `Failed to send request to '${to ?? 'server'}': ${err?.message ?? reason}`,
+    protocolId,
+    envelopeId,
+    cause: err instanceof Error ? err : undefined,
+    context: { to, reason }
+  })
 }

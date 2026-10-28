@@ -33,6 +33,7 @@ export const ProtocolEvent = {
   TRANSPORT_READY: 'protocol:transport_ready',       // Transport can send/receive bytes
   TRANSPORT_NOT_READY: 'protocol:transport_not_ready', // Transport disconnected/unbound
   TRANSPORT_CLOSED: 'protocol:transport_closed',      // Transport permanently closed
+  PEER_UNREACHABLE: 'protocol:peer_unreachable',      // Transport has no route to a peer: { peerId }
   ERROR: 'protocol:error'                             // Protocol-surfaced transport/protocol error
 }
 

@@ -18,6 +18,7 @@
 
 import Globals from '../globals.js'
 import Protocol, { ProtocolEvent, ProtocolSystemEvent } from './protocol.js'
+import { ProtocolErrorCode } from './protocol-errors.js'
 import { Transport } from '../transport/transport.js'
 
 // ============================================================================
@@ -95,6 +96,28 @@ export default class Server extends Protocol {
     // Protocol/transport error (e.g. a failing tick handler) - surface it
     this.on(ProtocolEvent.ERROR, (err) => {
       this.emit(ServerEvent.ERROR, err)
+    })
+    
+    // A send found no route to a joined client: it is gone (crash, kill),
+    // don't wait for the ghost timeout
+    this.on(ProtocolEvent.PEER_UNREACHABLE, ({ peerId }) => {
+      let { clientLastSeen, clientInstances } = _private.get(this)
+      if (!clientLastSeen.has(peerId)) return
+      
+      clientLastSeen.delete(peerId)
+      clientInstances.delete(peerId)
+      this.emit(ServerEvent.CLIENT_LEFT, { clientId: peerId, reason: 'UNREACHABLE' })
+    })
+    
+    // Whatever the reason a client left, requests waiting on it cannot be
+    // answered any more: reject them now instead of at their timeout.
+    // Registered in the constructor, so it runs before Node's listeners.
+    this.on(ServerEvent.CLIENT_LEFT, ({ clientId, reason }) => {
+      const unreachable = reason === 'UNREACHABLE'
+      this._rejectPendingRequestsTo(clientId, {
+        code: unreachable ? ProtocolErrorCode.PEER_UNREACHABLE : ProtocolErrorCode.PEER_LEFT,
+        message: `Client '${clientId}' left (${reason}) before replying`
+      })
     })
   }
   
