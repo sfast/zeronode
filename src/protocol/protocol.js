@@ -338,15 +338,21 @@ export default class Protocol extends EventEmitter {
   _sendTracked(buffer, to, id) {
     let { socket, requestTracker } = _private.get(this)
     
-    const fail = (err) => requestTracker.fail(id, toSendError(err, to, this.getId(), id))
-    
     try {
       const sent = socket.sendBuffer(buffer, to)
       if (sent && typeof sent.then === 'function') {
-        sent.then(null, fail)
+        sent.then(
+          () => requestTracker.markSent(id),
+          (err) => requestTracker.fail(id, toSendError(err, to, this.getId(), id))
+        )
+      } else {
+        // Synchronous transport: accepted
+        requestTracker.markSent(id)
       }
     } catch (err) {
-      fail(err)
+      // Synchronous refusal (e.g. transport offline): reject with the transport
+      // error as before (code TRANSPORT_SEND_FAILED), but also drop the timer
+      requestTracker.fail(id, err)
     }
   }
   
@@ -499,6 +505,9 @@ function toSendError (err, to, protocolId, envelopeId) {
     protocolId,
     envelopeId,
     cause: err instanceof Error ? err : undefined,
-    context: { to, reason }
+    // The transport refused this message: it never reached the peer, so it is
+    // safe to send it elsewhere. Rejections for requests that may have been
+    // delivered (peer left, reconnect grace expired) never carry this.
+    context: { to, reason, delivered: false }
   })
 }

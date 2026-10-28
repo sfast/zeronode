@@ -1196,10 +1196,13 @@ export default class Node extends EventEmitter {
     if (filteredNodes.length > 0) {
       const targetNode = this._selectNode(filteredNodes, event)
       return this.request({ to: targetNode, event, data, timeout }).catch((err) => {
-        // The chosen peer turned out to be gone (crashed). The message never
-        // left this node, so trying again cannot run the handler twice; the
-        // dead peer has already been removed, so this terminates.
-        if (err?.code === ProtocolErrorCode.PEER_UNREACHABLE && !this._isJoinedPeer(targetNode)) {
+        // The chosen peer turned out to be gone (crashed) and the transport
+        // refused this very message (delivered === false): it never reached a
+        // handler, so another peer may take it. A request that may have been
+        // delivered is never retried (at-most-once). The dead peer has been
+        // removed, so this terminates.
+        if (err?.code === ProtocolErrorCode.PEER_UNREACHABLE && err.context?.delivered === false &&
+            !this._isJoinedPeer(targetNode)) {
           return this.requestAny({ event, data, timeout, filter, down, up })
         }
         throw err

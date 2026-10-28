@@ -38,6 +38,8 @@ export class RequestTracker {
       reject, 
       timer,
       to,
+      sendSettled: false,   // outcome of the transport send not known yet
+      peerLeftError: null,  // peer left while the send was unsettled
       startTime: Date.now()
     })
     
@@ -125,7 +127,27 @@ export class RequestTracker {
   }
   
   /**
-   * Reject the pending requests sent to one peer (it left or is unreachable)
+   * The transport accepted the request's message (queued for the peer).
+   * If the peer left in the meantime, reject with that now.
+   * 
+   * @param {string} requestId
+   */
+  markSent(requestId) {
+    const request = this.requests.get(requestId)
+    if (!request) return
+    
+    request.sendSettled = true
+    if (request.peerLeftError) {
+      this.fail(requestId, request.peerLeftError)
+    }
+  }
+  
+  /**
+   * Reject the pending requests sent to one peer (it left or is unreachable).
+   * A request whose own send has not settled yet is left to its send outcome:
+   * refused → it fails as "not delivered"; accepted → it fails with this error.
+   * That keeps "not delivered" (safe to send elsewhere) distinguishable from
+   * "may have been delivered".
    * 
    * @param {string} peerId - Recipient whose requests to reject
    * @param {Object} params
@@ -138,16 +160,23 @@ export class RequestTracker {
     
     this.requests.forEach((request, id) => {
       if (request.to !== peerId) return
-      clearTimeout(request.timer)
-      this.requests.delete(id)
-      request.reject(new ProtocolError({
+      const error = new ProtocolError({
         code,
         message,
         protocolId: this.ctx.protocolId,
         envelopeId: id,
         context: { peerId }
-      }))
+      })
       count++
+      
+      if (!request.sendSettled) {
+        request.peerLeftError = error
+        return
+      }
+      
+      clearTimeout(request.timer)
+      this.requests.delete(id)
+      request.reject(error)
     })
     
     if (count > 0) {

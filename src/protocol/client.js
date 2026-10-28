@@ -204,6 +204,16 @@ export default class Client extends Protocol {
         return
       }
       
+      // A different server answered at this address (e.g. restarted under a
+      // new id): the old one will not answer what is pending
+      const previousServerId = _scope.serverId
+      if (previousServerId && previousServerId !== serverId) {
+        this._rejectAllPendingRequests({
+          code: ProtocolErrorCode.PEER_LEFT,
+          message: `Server '${previousServerId}' was replaced by '${serverId}' before replying`
+        })
+      }
+      
       // ✅ Store server ID (now we know who we're talking to)
       _scope.serverId = serverId
       
@@ -402,6 +412,8 @@ export default class Client extends Protocol {
         message: `Server '${serverId}' unreachable for ${Globals.RECONNECT_GRACE_MS}ms`
       })
     }, Globals.RECONNECT_GRACE_MS)
+    // Pending request timers keep the process alive already; this one must not
+    _scope.reconnectGraceTimer.unref?.()
   }
   
   _stopReconnectGrace () {

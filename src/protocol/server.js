@@ -364,7 +364,10 @@ export default class Server extends Protocol {
     
     const config = this.getConfig()
     const checkInterval = (config.CLIENT_HEALTH_CHECK_INTERVAL ?? config.clientHealthCheckInterval) || Globals.CLIENT_HEALTH_CHECK_INTERVAL || 30000
-    const ghostThreshold = (config.CLIENT_GHOST_TIMEOUT ?? config.clientGhostTimeout) || Globals.CLIENT_GHOST_TIMEOUT || 60000
+    // Unless configured, a client is a ghost after 3 missed pings (with the
+    // default 10s ping: Globals.CLIENT_GHOST_TIMEOUT, 30s)
+    const pingInterval = (config.PING_INTERVAL ?? config.pingInterval ?? config.CLIENT_PING_INTERVAL) || Globals.CLIENT_PING_INTERVAL
+    const ghostThreshold = (config.CLIENT_GHOST_TIMEOUT ?? config.clientGhostTimeout) || 3 * pingInterval
     
     _scope.healthCheckInterval = setInterval(() => {
       this._checkClientHealth(ghostThreshold)
