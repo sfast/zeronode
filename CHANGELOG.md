@@ -7,6 +7,148 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.0.16] - 2026-10-28
+
+Reliability fixes from the 2026-10-28 review. Every fix is a better default:
+no new config keys. The public API stays source-compatible; wire changes are
+additive only (see "Wire"). Each bug has a regression test in
+`test/regressions/` that fails on 2.0.15 (`b00e31e`); the review repro is
+named in brackets.
+
+### Fixed
+- **Receive loop survives handler errors (#1)** [r2-tick-throw]: a throwing
+  tick handler (sync or async) or a malformed frame no longer ends the socket
+  receive loop. Each tick handler runs in isolation; failures surface as
+  `NodeEvent.ERROR` (`HANDLER_ERROR` / `INVALID_ENVELOPE`), on the server too
+  (new `ServerEvent.ERROR`).
+- **Router proxy loops are bounded (#2)** [r6-router-loop]: routers no longer
+  bounce an unroutable `requestAny`/`tickAny` between each other (~28k proxy
+  requests per router in 1.5s before; now one per router). Proxied messages
+  carry the proxy `path`, the routers already `visited` and, for requests, a
+  relative time `budget`. Routers are searched depth-first: a router that
+  cannot place a request answers with what it explored and the previous hop
+  tries its next router; a router that cannot place a tick sends it back
+  (`_system:proxy_tick_miss`) for the same purpose. Each router is tried at
+  most once per message; a path is limited to `Globals.PROXY_MAX_HOPS` (8)
+  nodes (`PROXY_HOP_LIMIT`, only when a router really went unexplored). Each
+  hop answers inside its budget (margin `min(50ms, budget/4)`), so callers get
+  the real error (`NO_NODES_MATCH_FILTER`, `PROXY_DEADLINE_EXCEEDED`) instead
+  of `REQUEST_TIMEOUT`. Malformed routing metadata fails closed; a tick miss is
+  accepted only from the router the tick was forwarded to, once.
+- **Crashed peers fail fast (#3)** [r4-crash-stale]: the ROUTER socket now
+  defaults to `mandatory` with a send timeout of 0, so a send to a dead peer
+  fails with `EHOSTUNREACH` at once: the request rejects with
+  `PEER_UNREACHABLE` (`context.delivered === false`), the peer leaves
+  (`PEER_LEFT` reason `UNREACHABLE`), and `requestAny` sends it to another
+  matching peer — only in this case, where the message provably never left.
+  A request that may have been delivered (`context.delivered === 'unknown'`)
+  is never resent (at-most-once). A full queue (`EAGAIN`, slow peer) fails only
+  that send (`SEND_FAILED`) and keeps the peer.
+- **`disconnect()` stays disconnected (#4)** [r1-disconnect-reconnects]:
+  auto-reconnect no longer undoes an explicit `disconnect()`; the client
+  socket is released too.
+- **Failed `connect()` leaks nothing (#5)** [r5-connect-fail-leak]: the client
+  is closed on failure, so no ghost upstream peer appears later. A `connect()`
+  still in its handshake is cancelled by `disconnect()`/`close()`
+  (`CONNECT_CANCELLED`); `connect()` after `close()` rejects. Concurrent
+  `connect()` calls to one address share one attempt; each caller waits at
+  most its own timeout, and no longer than the first caller's.
+- **`tick()` delivers metadata (#6)** [r3-tick-metadata].
+- **Pending requests fail when their peer leaves (#7)**: requests to a peer
+  that stops, times out, becomes unreachable or is replaced reject at once
+  (`PEER_LEFT` / `PEER_UNREACHABLE`). Client requests survive a transport
+  blip of up to `Globals.RECONNECT_GRACE_MS` (2s), then fail with
+  `PEER_UNREACHABLE`; a reconnect that reaches a different server id rejects
+  what the old server owed (`PEER_LEFT`).
+- **`setOptions()` propagates (#8)** [r7-setoptions-propagation]: connected
+  peers receive the new options (`_system:options_update`), update
+  `getPeerOptions()` and filtered routing, and emit the new
+  `NodeEvent.PEER_UPDATED`; later handshakes (and a `connect()` still in its
+  handshake) carry the current options. `await setOptions()` resolves when
+  the updates are handed to the transport (no acknowledgement; at most
+  `RECONNECT_GRACE_MS` while a connection is re-establishing). Options
+  replace the previous ones; the caller's object is no longer mutated. A
+  `Router` keeps `router: true`.
+- **A restarted peer reusing its id is accepted (#9)** [f6-router-handover]:
+  `ZMQ_ROUTER_HANDOVER` now defaults to on (the most recent connection with an
+  id wins). A handshake from a new *instance* of a joined id emits
+  `PEER_LEFT` (`REPLACED`) then `PEER_JOINED`; a re-handshake of the same
+  instance (after a blip) does not.
+- `MessageDispatcher.offRequest(pattern)` without a handler no longer throws.
+
+### Added
+- `NodeEvent.PEER_UPDATED`, `ServerEvent.ERROR`,
+  `ServerEvent.CLIENT_OPTIONS_UPDATED`, `ClientEvent.SERVER_OPTIONS_UPDATED`,
+  `ProtocolEvent.PEER_UNREACHABLE`, `TransportEvent.SEND_FAILED`.
+- Error codes: `NodeErrorCode.CONNECT_CANCELLED`, `PROXY_HOP_LIMIT`,
+  `PROXY_DEADLINE_EXCEEDED`; `ProtocolErrorCode.PEER_UNREACHABLE`,
+  `PEER_LEFT`, `SEND_FAILED`; `TransportErrorCode.MESSAGE_HANDLER_FAILED`.
+- `error.context.delivered` on request rejections: `false` (never sent, safe
+  to resend) or `'unknown'` (may have run).
+- `TickOptions.metadata` in `index.d.ts`.
+- Test suite fails on unhandled promise rejections.
+
+### Changed (defaults)
+- ROUTER: `ZMQ_ROUTER_MANDATORY` true, send timeout 0 (unless
+  `ZMQ_SNDTIMEO` is set), `ZMQ_ROUTER_HANDOVER` true. Explicit config wins.
+- `CLIENT_HEALTH_CHECK_INTERVAL` 5s (was 30s). Unless `CLIENT_GHOST_TIMEOUT`
+  is set, a client is a ghost after 3 × the ping interval (30s with the
+  default 10s ping; was 60s). A client whose event loop stalls for longer is
+  now dropped after 30s instead of 60s. The server assumes its clients ping at
+  the server's own configured `PING_INTERVAL`.
+- A ROUTER `sendBuffer()` returns the send promise (it returned `true`).
+
+### Wire (all additive; older peers ignore it)
+- New system ticks `_system:options_update` and `_system:proxy_tick_miss`.
+- Handshake metadata `instance` (client instance id).
+- `metadata.routing` on proxied messages: `path`, `visited`, `budget`
+  (requests), `tick` (ticks); error replies of proxied requests carry
+  `routing.{visited, unexplored}`.
+
+### Known limitations
+- Node ids must be unique per process. Two live processes sharing an id now
+  take it over from each other alternately (each takeover is `REPLACED`, with
+  a warning, and rejects requests pending to the id) instead of one being
+  silently invisible. Check this before rolling out to deployments with
+  stable ids (e.g. `${GAME_NAME}-${name}`).
+- If a client's connection blips while the server sends to it, the server
+  sees `EHOSTUNREACH`: `PEER_LEFT` (`UNREACHABLE`) then `PEER_JOINED` when it
+  re-handshakes, requests the server had pending to it are rejected, and a
+  reply sent in that window is lost (as before, when the ROUTER dropped it
+  silently), so the client waits for its own timeout.
+- Narrow windows: a request the server sends to the new instance between an
+  id takeover and its handshake is rejected as `REPLACED`; a request a client
+  sends after reconnecting but before a *different* server's handshake ack is
+  rejected as `PEER_LEFT`.
+- With an infinite `ZMQ_SNDTIMEO` on the router, a peer leaving does not fail
+  pending requests early (their sends never settle).
+- Options propagation does not reach peers on < 2.0.16. Loop protection needs
+  every router on >= 2.0.16: an old router is recorded as visited by the new
+  ones next to it, but between two or more old routers requests can still
+  loop until the caller's timeout and **ticks can loop indefinitely**.
+- In meshes of more than `Globals.PROXY_MAX_VISITED` (64) routers, the
+  earliest explored routers may be explored again (bounded by the hop limit,
+  and for requests by the budget).
+- Router tick stats are per router: `failedRoutes` counts ticks a router could
+  not place, even if another router delivered them later.
+- Proxied ticks are best-effort. Each node remembers the ticks it forwarded
+  (`Globals.PROXY_TICK_RECORDS`, 10k, for `PROXY_TICK_RECORD_MS`, 10s) to
+  match misses coming back; above ~1k proxied ticks/s per node a slow miss can
+  find its record evicted and the tick is dropped.
+- `tickAny`/`tickAll` take no `metadata`.
+- Repeated handshakes may still emit duplicate `PEER_JOINED`/`PEER_LEFT`
+  events (unchanged).
+
+---
+
+## [2.0.12] – [2.0.15]
+
+No changelog entries were written for these versions. Note: 2.0.13 widened
+the envelope `dataLength` field to 4 bytes, so nodes on <= 2.0.12 and
+>= 2.0.13 cannot talk to each other.
+
+---
+
 ## [2.0.11] - 2026-01-25
 
 ### Fixed
