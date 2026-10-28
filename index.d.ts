@@ -328,7 +328,16 @@ export enum NodeErrorCode {
   INVALID_ADDRESS = 'INVALID_ADDRESS',
   
   /** connect() was cancelled by disconnect()/close() before the handshake completed */
-  CONNECT_CANCELLED = 'CONNECT_CANCELLED'
+  CONNECT_CANCELLED = 'CONNECT_CANCELLED',
+  
+  /** Predicate filters cannot be forwarded to a router */
+  PREDICATE_NOT_ROUTABLE = 'PREDICATE_NOT_ROUTABLE',
+  
+  /** Router proxy path reached the hop limit */
+  PROXY_HOP_LIMIT = 'PROXY_HOP_LIMIT',
+  
+  /** No time budget left to forward a proxy request */
+  PROXY_DEADLINE_EXCEEDED = 'PROXY_DEADLINE_EXCEEDED'
 }
 
 /**

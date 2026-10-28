@@ -13,7 +13,9 @@ export const NodeErrorCode = {
   NO_NODES_MATCH_FILTER: 'NO_NODES_MATCH_FILTER',     // Filter matched zero nodes
   INVALID_ADDRESS: 'INVALID_ADDRESS',                 // Invalid or missing address
   PREDICATE_NOT_ROUTABLE: 'PREDICATE_NOT_ROUTABLE',   // Predicate filters cannot be forwarded to router
-  CONNECT_CANCELLED: 'CONNECT_CANCELLED'              // connect() was cancelled by disconnect()/close() mid-handshake
+  CONNECT_CANCELLED: 'CONNECT_CANCELLED',             // connect() was cancelled by disconnect()/close() mid-handshake
+  PROXY_HOP_LIMIT: 'PROXY_HOP_LIMIT',                 // Proxy path reached Globals.PROXY_MAX_HOPS
+  PROXY_DEADLINE_EXCEEDED: 'PROXY_DEADLINE_EXCEEDED'  // No time budget left to forward a proxy request
 }
 
 /**

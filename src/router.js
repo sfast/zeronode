@@ -20,6 +20,8 @@
  */
 
 import Node from './node.js'
+import Globals from './globals.js'
+import { NodeError, NodeErrorCode } from './node-errors.js'
 
 const _private = new WeakMap()
 
@@ -91,7 +93,8 @@ export class Router extends Node {
     
     // Extract routing info from metadata
     const routing = envelope.metadata?.routing || {}
-    const { event, filter, timeout, down, up, requestor } = routing
+    const { event, filter, down, up, requestor } = routing
+    const hop = sanitizeProxyRouting(routing, envelope.owner)
     
     // User data is in envelope.data (unchanged!)
     const data = envelope.data
@@ -108,6 +111,22 @@ export class Router extends Node {
     }
     
     try {
+      // Answer before the previous hop gives up, so it sees our real error
+      // instead of its own REQUEST_TIMEOUT. Old peers send no budget: fall back
+      // to their timeout (or our default).
+      const budget = hop.budget ?? (Number.isFinite(routing.timeout) && routing.timeout > 0
+        ? routing.timeout
+        : Globals.PROTOCOL_REQUEST_TIMEOUT)
+      const margin = Globals.PROXY_HOP_MARGIN_MS
+      
+      if (hop.budget !== undefined && budget <= margin) {
+        throw new NodeError({
+          code: NodeErrorCode.PROXY_DEADLINE_EXCEEDED,
+          message: `Proxy request for '${event}' arrived with ${budget}ms left; not forwarding`,
+          context: { event, budget }
+        })
+      }
+      
       // Router performs requestAny on its own network
       const result = await this.requestAny({
         event,
@@ -115,7 +134,8 @@ export class Router extends Node {
         filter,
         down: down !== undefined ? down : true,
         up: up !== undefined ? up : true,
-        timeout
+        timeout: Math.max(budget - margin, margin),
+        _routing: hop
       })
       
       if (scope.enableStats) {
@@ -167,6 +187,7 @@ export class Router extends Node {
     // Extract routing info from metadata
     const routing = envelope.metadata?.routing || {}
     const { event, filter, down, up, requestor } = routing
+    const hop = sanitizeProxyRouting(routing, envelope.owner)
     
     // User data is in envelope.data (unchanged!)
     const data = envelope.data
@@ -182,16 +203,7 @@ export class Router extends Node {
       )
     }
     
-    try {
-      // Router performs tickAny on its own network
-      this.tickAny({
-        event,
-        data,
-        filter,
-        down: down !== undefined ? down : true,
-        up: up !== undefined ? up : true
-      })
-      
+    const onRouted = () => {
       if (scope.enableStats) {
         scope.stats.successfulRoutes++
       }
@@ -199,8 +211,9 @@ export class Router extends Node {
       if (scope.debugLogging) {
         this.getLogger().debug(`[Router] Successfully routed tick for event: ${event}`)
       }
-      
-    } catch (error) {
+    }
+    
+    const onFailed = (error) => {
       if (scope.enableStats) {
         scope.stats.failedRoutes++
       }
@@ -209,9 +222,32 @@ export class Router extends Node {
         this.getLogger().warn(
           `[Router] Failed to route tick - ` +
           `Event: ${event}, ` +
-          `Error: ${error.message}`
+          `Error: ${error?.message}`
         )
       }
+    }
+    
+    let result
+    try {
+      // Router performs tickAny on its own network
+      result = this.tickAny({
+        event,
+        data,
+        filter,
+        down: down !== undefined ? down : true,
+        up: up !== undefined ? up : true,
+        _routing: hop
+      })
+    } catch (error) {
+      onFailed(error)
+      return
+    }
+    
+    // tickAny rejects (e.g. hop limit, no match): never leave it unhandled
+    if (result && typeof result.then === 'function') {
+      result.then(onRouted, onFailed)
+    } else {
+      onRouted()
     }
   }
   
@@ -282,5 +318,25 @@ export class Router extends Node {
   }
 }
 
-export default Router
+/**
+ * Validate the routing info of an incoming proxy message. It comes from a peer,
+ * so anything malformed is treated as absent (old peers send none of it).
+ * @private
+ * @returns {{ path: string[], from: string, requestor?: string, budget?: number }}
+ */
+function sanitizeProxyRouting (routing, sender) {
+  const { path, budget, requestor } = routing
+  
+  const validPath = Array.isArray(path) &&
+    path.length <= Globals.PROXY_MAX_HOPS &&
+    path.every(id => typeof id === 'string')
+  
+  return {
+    path: validPath ? path : [],
+    from: typeof sender === 'string' ? sender : undefined,
+    requestor: typeof requestor === 'string' ? requestor : undefined,
+    budget: Number.isFinite(budget) ? budget : undefined
+  }
+}
 
+export default Router

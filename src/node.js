@@ -39,6 +39,7 @@ import { PatternEmitter } from '@sfast/pattern-emitter-ts'
 
 import { NodeError, NodeErrorCode, assertValidAddress } from './node-errors.js'
 import NodeUtils from './utils.js'
+import Globals from './globals.js'
 import Server, { ServerEvent } from './protocol/server.js'
 import Client, { ClientEvent } from './protocol/client.js'
 import { ProtocolErrorCode } from './protocol/protocol-errors.js'
@@ -1178,7 +1179,7 @@ export default class Node extends EventEmitter {
   /**
    * Send request to any matching node
    */
-  async requestAny ({ event, data, timeout, filter, down = true, up = true } = {}) {
+  async requestAny ({ event, data, timeout, filter, down = true, up = true, _routing } = {}) {
     // Extract options and predicate from filter if wrapped
     const filterOptions = filter?.options || (filter?.predicate ? undefined : filter)
     const filterPredicate = filter?.predicate
@@ -1223,12 +1224,19 @@ export default class Node extends EventEmitter {
       return Promise.reject(error)
     }
     
-    // Find routers (always search both directions for maximum discovery)
+    // Proxy path bookkeeping (_routing is set when a Router forwards a proxy request)
+    const hop = this._prepareProxyHop(_routing, event)
+    if (hop.error) {
+      return Promise.reject(hop.error)
+    }
+    
+    // Find routers (always search both directions for maximum discovery),
+    // never the node that sent us this proxy or a router already on the path
     const routers = this._getFilteredNodes({
       options: { router: true },
       down: true,
       up: true
-    })
+    }).filter(nodeId => !hop.exclude.has(nodeId))
     
     if (routers.length > 0) {
       const routerNode = this._selectNode(routers, event)
@@ -1247,6 +1255,9 @@ export default class Node extends EventEmitter {
         return Promise.reject(error)
       }
       
+      // Effective timeout of this hop; sent as the next hop's time budget
+      const hopTimeout = timeout || route.target.getConfig().PROTOCOL_REQUEST_TIMEOUT
+      
       // Use the ACTUAL event and data, put routing info in metadata
       const requestParams = {
         event: '_system:proxy_request',
@@ -1255,13 +1266,15 @@ export default class Node extends EventEmitter {
           routing: {
             event,           // The real event to route
             filter: filterOptions,
-            timeout,
+            timeout: hopTimeout,
             down,
             up,
-            requestor: this.getId()
+            requestor: hop.requestor,
+            path: hop.path,         // Nodes already on the proxy path (incl. this one)
+            budget: hopTimeout      // ms the next hop has before this hop gives up
           }
         },
-        timeout
+        timeout: hopTimeout
       }
       
       // NOTE: Server vs Client API difference
@@ -1288,6 +1301,34 @@ export default class Node extends EventEmitter {
   }
   
   /**
+   * Compute the proxy path for forwarding to a router.
+   * `routing` is the sanitized routing info of an incoming proxy message
+   * ({ path, from, requestor }) or undefined for a locally originated call.
+   * @private
+   * @returns {{ path: string[], exclude: Set<string>, requestor: string, error?: NodeError }}
+   */
+  _prepareProxyHop (routing, event) {
+    const incomingPath = routing?.path || []
+    const path = [...incomingPath, this.getId()]
+    const exclude = new Set(incomingPath)
+    if (routing?.from) {
+      exclude.add(routing.from)
+    }
+    
+    const hop = { path, exclude, requestor: routing?.requestor || this.getId() }
+    
+    if (path.length > Globals.PROXY_MAX_HOPS) {
+      hop.error = new NodeError({
+        code: NodeErrorCode.PROXY_HOP_LIMIT,
+        message: `Proxy hop limit (${Globals.PROXY_MAX_HOPS}) reached; no local node matches the filter`,
+        context: { event, path: incomingPath }
+      })
+    }
+    
+    return hop
+  }
+  
+  /**
    * Send request to any downstream node
    */
   async requestDownAny ({ event, data, timeout, filter } = {}) {
@@ -1304,7 +1345,7 @@ export default class Node extends EventEmitter {
   /**
    * Send tick to any matching node
    */
-  tickAny ({ event, data, filter, down = true, up = true } = {}) {
+  tickAny ({ event, data, filter, down = true, up = true, _routing } = {}) {
     // Extract options and predicate from filter if wrapped
     const filterOptions = filter?.options || (filter?.predicate ? undefined : filter)
     const filterPredicate = filter?.predicate
@@ -1339,12 +1380,18 @@ export default class Node extends EventEmitter {
       return Promise.reject(error)
     }
     
-    // Find routers
+    // Proxy path bookkeeping (_routing is set when a Router forwards a proxy tick)
+    const hop = this._prepareProxyHop(_routing, event)
+    if (hop.error) {
+      return Promise.reject(hop.error)
+    }
+    
+    // Find routers, never the sender of this proxy or a router already on the path
     const routers = this._getFilteredNodes({
       options: { router: true },
       down: true,
       up: true
-    })
+    }).filter(nodeId => !hop.exclude.has(nodeId))
     
     if (routers.length > 0) {
       const routerNode = this._selectNode(routers, event)
@@ -1373,7 +1420,8 @@ export default class Node extends EventEmitter {
             filter: filterOptions,
             down,
             up,
-            requestor: this.getId()
+            requestor: hop.requestor,
+            path: hop.path   // Nodes already on the proxy path (incl. this one)
           }
         }
       }

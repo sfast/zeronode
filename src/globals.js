@@ -13,5 +13,11 @@ export default {
   CLIENT_GHOST_TIMEOUT: 30000,
   // Client: requests pending when the transport drops survive a reconnect
   // within this time (2s), then fail with PEER_UNREACHABLE
-  RECONNECT_GRACE_MS: 2000
+  RECONNECT_GRACE_MS: 2000,
+  // Router proxying: max nodes on a proxy path (caller + routers) before a
+  // router refuses to forward again (bounds router↔router loops)
+  PROXY_MAX_HOPS: 8,
+  // Router proxying: each hop answers this much before the previous hop's
+  // timer fires, so the caller sees the real error instead of REQUEST_TIMEOUT
+  PROXY_HOP_MARGIN_MS: 50
 }
