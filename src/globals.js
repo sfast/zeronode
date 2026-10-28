@@ -29,7 +29,9 @@ export default {
   // (beyond that, the earliest explored may be explored again)
   PROXY_MAX_VISITED: 64,
   // Router proxying: forwarded ticks are remembered this long (10s), at most
-  // this many, so a miss coming back can be matched to its forward
+  // this many, so a miss coming back can be matched to its forward. Above
+  // ~1k proxied ticks/s per node, records are evicted early and a slow miss
+  // is dropped (the tick is lost; ticks are best-effort)
   PROXY_TICK_RECORD_MS: 10000,
   PROXY_TICK_RECORDS: 10000
 }

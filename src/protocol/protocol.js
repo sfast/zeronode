@@ -248,7 +248,7 @@ export default class Protocol extends EventEmitter {
     }
     
     // Send via internal implementation (bypass validation)
-    this._doTick({ to, event, data, metadata })
+    return this._doTick({ to, event, data, metadata })
   }
   
   /**
@@ -327,7 +327,8 @@ export default class Protocol extends EventEmitter {
       owner: this.getId()
     }, config.BUFFER_STRATEGY)
     
-    socket.sendBuffer(buffer, to)
+    // Transports may return a promise of the send (always handled by them)
+    return socket.sendBuffer(buffer, to)
   }
   
   /**

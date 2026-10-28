@@ -7,8 +7,11 @@
  */
 
 import { expect } from 'chai'
+import { fork } from 'child_process'
+import { fileURLToPath } from 'url'
 import Node, { Router, NodeErrorCode } from '../../src/index.js'
 
+const ROUTER_CHILD = fileURLToPath(new URL('./fixtures/router-child.js', import.meta.url))
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms))
 const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
@@ -336,6 +339,43 @@ describe('Regression bug 2: mixed versions and forged messages', function () {
     const proxies = n1.getRoutingStats().proxyTicks + n3.getRoutingStats().proxyTicks + old.stats.ticks
 
     expect(proxies).to.be.at.most(5)
+  })
+
+  it('a tick forwarded to a router that just died goes to the next router', async () => {
+    const hub = track(new Router({ id: `bug2-hub-${uid()}` }))
+    await hub.bind('tcp://127.0.0.1:0')
+
+    const children = []
+    let delivered = 0
+    const spawn = async (mode) => {
+      const child = fork(ROUTER_CHILD, [hub.getAddress(), `bug2-${mode}-${uid()}`, mode], { stdio: ['ignore', 'ignore', 'ignore', 'ipc'] })
+      children.push(child)
+      child.on('message', (msg) => { if (msg === 'ping') delivered++ })
+      await new Promise(resolve => child.once('message', resolve))
+      return child
+    }
+
+    try {
+      await spawn('live')
+      const dead = await spawn('dead')
+      const client = track(new Node({ id: `bug2-tcli-${uid()}` }))
+      await client.connect({ address: hub.getAddress() })
+
+      // Killed, but still listed by the hub until a send to it fails
+      const exited = new Promise(resolve => dead.once('exit', resolve))
+      dead.kill('SIGKILL')
+      await exited
+      await wait(100)
+
+      for (let i = 0; i < 20; i++) {
+        await client.tickAny({ event: 'ping', filter: { service: 'svc' } })
+      }
+      await wait(500)
+
+      expect(delivered).to.equal(20)
+    } finally {
+      for (const child of children) if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+    }
   })
 
   it('a forged proxy_tick_miss makes a node re-send nothing', async () => {

@@ -1519,7 +1519,22 @@ export default class Node extends EventEmitter {
         tickParams.to = route.targetId
       }
       
-      route.target._sendSystemTick(tickParams)
+      // If the router refuses the tick at the transport (gone, or its queue is
+      // full), it never got it: forget the forward and try the next router
+      const tryNext = () => {
+        if (!this._takeForwardedTick(tickId, routerNode)) return
+        this._routeProxyTick({ event, data, filter, down, up }, {
+          ...(_routing || {}),
+          visited: hop.visitedList(),
+          unexplored: Array.from(hop.unexplored)
+        })
+      }
+      try {
+        const sent = route.target._sendSystemTick(tickParams)
+        if (sent && typeof sent.then === 'function') sent.then(null, tryNext)
+      } catch (err) {
+        tryNext()
+      }
       // Return resolved promise for consistency (tick is fire-and-forget)
       return Promise.resolve()
     }
