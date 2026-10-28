@@ -303,6 +303,9 @@ export enum TransportEvent {
   /** Transport error */
   ERROR = 'transport:error',
   
+  /** An asynchronous send failed: { recipient?, error } (error.code e.g. EHOSTUNREACH, EAGAIN) */
+  SEND_FAILED = 'transport:send_failed',
+  
   /** Transport closed */
   CLOSED = 'transport:closed'
 }
@@ -374,7 +377,16 @@ export enum ProtocolErrorCode {
   INVALID_EVENT = 'INVALID_EVENT',
   
   /** Handler error */
-  HANDLER_ERROR = 'HANDLER_ERROR'
+  HANDLER_ERROR = 'HANDLER_ERROR',
+  
+  /** Peer is gone (no route to it, or the server stayed unreachable past the reconnect grace) */
+  PEER_UNREACHABLE = 'PEER_UNREACHABLE',
+  
+  /** Peer left (stop, timeout, replaced) while the request was pending */
+  PEER_LEFT = 'PEER_LEFT',
+  
+  /** Message could not be sent (e.g. the peer's queue is full) */
+  SEND_FAILED = 'SEND_FAILED'
 }
 
 /**
