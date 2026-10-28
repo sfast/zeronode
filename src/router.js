@@ -222,6 +222,14 @@ export class Router extends Node {
   }
   
   /**
+   * Update options; a Router always keeps `router: true` (peers find routers
+   * by that option)
+   */
+  async setOptions(options = {}) {
+    return super.setOptions({ ...options, router: true })
+  }
+  
+  /**
    * Get routing statistics
    * 
    * @returns {Object} Statistics object

@@ -52,7 +52,8 @@ export const NodeEvent = {
   PEER_JOINED: 'node:peer_joined', // New peer discovered (upstream or downstream)
   PEER_LEFT: 'node:peer_left',     // Peer disconnected
   STOPPED: 'node:stopped',         // Node stopped
-  ERROR: 'node:error'              // Node-level error (normalized payload)
+  ERROR: 'node:error',             // Node-level error (normalized payload)
+  PEER_UPDATED: 'node:peer_updated' // Joined peer changed its options: { peerId, direction, peerOptions }
 }
 
 // ============================================================================
@@ -259,6 +260,18 @@ export default class Node extends EventEmitter {
   }
   
   /**
+   * Apply an options update from a joined peer
+   * @private
+   */
+  _updatePeerOptions (peerId, peerOptions, direction) {
+    const _scope = _private.get(this)
+    if (!_scope.joinedPeers.has(peerId)) return
+    
+    _scope.peerOptions.set(peerId, peerOptions || {})
+    this.emit(NodeEvent.PEER_UPDATED, { peerId, direction, peerOptions: peerOptions || {} })
+  }
+  
+  /**
    * @private
    */
   _isJoinedPeer (peerId) {
@@ -380,6 +393,11 @@ export default class Node extends EventEmitter {
         address: this.getAddress?.(),
         error: err
       })
+    })
+    
+    // Transform: Server.CLIENT_OPTIONS_UPDATED → Node.PEER_UPDATED
+    server.on(ServerEvent.CLIENT_OPTIONS_UPDATED, ({ clientId, clientOptions }) => {
+      this._updatePeerOptions(clientId, clientOptions, 'downstream')
     })
     
     // Transform: Server.CLIENT_JOINED → Node.PEER_JOINED
@@ -636,6 +654,11 @@ export default class Node extends EventEmitter {
         direction: 'upstream',     // We connected TO this server
         peerOptions: serverOptions || {}
       })
+    })
+    
+    // Transform: Client.SERVER_OPTIONS_UPDATED → Node.PEER_UPDATED
+    listen(ClientEvent.SERVER_OPTIONS_UPDATED, ({ serverId, serverOptions }) => {
+      this._updatePeerOptions(serverId, serverOptions, 'upstream')
     })
     
     // Transform: Client.NOT_READY → Node.PEER_LEFT (transport lost readiness)
@@ -1742,9 +1765,18 @@ export default class Node extends EventEmitter {
     
     _scope.options = options
     
-    // Note: Options are used during handshakes and are part of Node's identity
-    // They don't need to be actively propagated to existing connections
-    // Server and clients will use updated options for new connections
+    // Server and every client hold their own reference for handshakes: replace
+    // it (later handshakes must not send stale options), then tell connected
+    // peers. Resolves once the updates are handed to the transport; peers do
+    // not acknowledge them. Peers on versions without OPTIONS_UPDATE ignore it.
+    const updates = []
+    if (_scope.server) {
+      updates.push(_scope.server.setOptions(options))
+    }
+    _scope.clients.forEach(client => {
+      updates.push(client.setOptions(options))
+    })
+    await Promise.allSettled(updates)
   }
   
   /**

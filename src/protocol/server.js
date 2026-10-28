@@ -31,6 +31,7 @@ export const ServerEvent = {
   CLOSED: 'server:closed',             // Server closed
   CLIENT_JOINED: 'server:client_joined',   // Client connected & authenticated
   CLIENT_LEFT: 'server:client_left',       // Client left (graceful, timeout, or failed)
+  CLIENT_OPTIONS_UPDATED: 'server:client_options_updated', // Joined client changed its options
   ERROR: 'server:error'                    // Server-level error (transport/protocol failure)
 }
 
@@ -224,6 +225,23 @@ export default class Server extends Protocol {
     })
     
     // ============================================================================
+    // OPTIONS UPDATE - a joined client changed its options
+    // ============================================================================
+    this.onTick(ProtocolSystemEvent.OPTIONS_UPDATE, (envelope) => {
+      let { clientLastSeen } = _private.get(this)
+      
+      const clientId = envelope.owner
+      const clientOptions = envelope.data
+      
+      // Only from a joined client, only a plain object (identity is the
+      // self-declared owner, the same trust level as handshake and ping)
+      if (!clientLastSeen.has(clientId) || !isPlainObject(clientOptions)) return
+      
+      clientLastSeen.set(clientId, Date.now())
+      this.emit(ServerEvent.CLIENT_OPTIONS_UPDATED, { clientId, clientOptions })
+    })
+    
+    // ============================================================================
     // CLIENT LIFECYCLE
     // ============================================================================
     this.onTick(ProtocolSystemEvent.CLIENT_STOP, (envelope) => {
@@ -302,6 +320,28 @@ export default class Server extends Protocol {
   getAddress () {
     const socket = this._getSocket()
     return socket.getAddress()
+  }
+  
+  /**
+   * Replace this server's options (sent in later handshake acks) and tell every
+   * joined client. Resolves once the updates are handed to the transport;
+   * clients do not acknowledge them.
+   * @param {Object} options
+   * @returns {Promise<void>}
+   */
+  async setOptions (options) {
+    let _scope = _private.get(this)
+    _scope.options = options
+    
+    const sends = []
+    for (const clientId of _scope.clientLastSeen.keys()) {
+      try {
+        sends.push(this._sendSystemTick({ to: clientId, event: ProtocolSystemEvent.OPTIONS_UPDATE, data: options || {} }))
+      } catch (err) {
+        // Offline: the next handshake carries the new options anyway
+      }
+    }
+    await Promise.allSettled(sends)
   }
   
   /**
@@ -403,4 +443,8 @@ export default class Server extends Protocol {
       }
     })
   }
+}
+
+function isPlainObject (value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
 }

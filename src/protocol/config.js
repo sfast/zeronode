@@ -54,7 +54,8 @@ export const ProtocolSystemEvent = {
   REQUEST_HANDSHAKE: '_system:request_handshake',        // Server → Client: Request fresh handshake (resurrection)
   CLIENT_PING: '_system:client_ping',            // Client → Server: Heartbeat
   CLIENT_STOP: '_system:client_stop',            // Client → Server: Graceful disconnect
-  SERVER_STOP: '_system:server_stop'             // Server → Client: Server shutting down
+  SERVER_STOP: '_system:server_stop',           // Server → Client: Server shutting down
+  OPTIONS_UPDATE: '_system:options_update'       // Either way: sender's options changed (data = full options)
 }
 
 // ============================================================================

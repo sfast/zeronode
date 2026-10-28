@@ -33,6 +33,7 @@ export const ClientEvent = {
   ERROR: 'client:error',                // Client-level error (transport/protocol failure)
   SERVER_LEFT: 'client:server_left',   // Server left (shutdown, disconnect, etc.)
   SERVER_JOINED: 'client:server_joined',   // Server joined (handshake complete)
+  SERVER_OPTIONS_UPDATED: 'client:server_options_updated', // Joined server changed its options
 }
 
 /**
@@ -250,6 +251,20 @@ export default class Client extends Protocol {
     })
     
     // ============================================================================
+    // OPTIONS UPDATE - the server changed its options
+    // ============================================================================
+    this.onTick(ProtocolSystemEvent.OPTIONS_UPDATE, (envelope) => {
+      let { serverId } = _private.get(this)
+      const serverOptions = envelope.data
+      
+      // Only from our joined server, only a plain object
+      if (!serverId || envelope.owner !== serverId) return
+      if (serverOptions === null || typeof serverOptions !== 'object' || Array.isArray(serverOptions)) return
+      
+      this.emit(ClientEvent.SERVER_OPTIONS_UPDATED, { serverId, serverOptions })
+    })
+    
+    // ============================================================================
     // RESURRECTION - Server requests fresh handshake after timeout
     // ============================================================================
     this.onTick(ProtocolSystemEvent.REQUEST_HANDSHAKE, (envelope) => {
@@ -360,6 +375,25 @@ export default class Client extends Protocol {
   async close () {
     await this.disconnect()
     await super.close() // close underlying transport and cleanup
+  }
+  
+  /**
+   * Replace this client's options (sent in later handshakes) and tell the
+   * server if joined. Resolves once the update is handed to the transport;
+   * the server does not acknowledge it.
+   * @param {Object} options
+   * @returns {Promise<void>}
+   */
+  async setOptions (options) {
+    let _scope = _private.get(this)
+    _scope.options = options
+    
+    if (!this.isOnline()) return
+    try {
+      await this._sendSystemTick({ to: _scope.serverId, event: ProtocolSystemEvent.OPTIONS_UPDATE, data: options || {} })
+    } catch (err) {
+      // Offline or send failed: the next handshake carries the new options
+    }
   }
   
   /**

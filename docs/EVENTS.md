@@ -1,12 +1,13 @@
 # Events Reference
 
-Zeronode has **4 events**:
+Zeronode has **5 events**:
 
 ```javascript
 import { Node, NodeEvent } from 'zeronode'
 
 node.on(NodeEvent.PEER_JOINED, ({ peerId, direction, peerOptions }) => {})
 node.on(NodeEvent.PEER_LEFT, ({ peerId, direction, reason }) => {})
+node.on(NodeEvent.PEER_UPDATED, ({ peerId, direction, peerOptions }) => {})
 node.on(NodeEvent.ERROR, ({ source, error }) => {})
 node.on(NodeEvent.STOPPED, () => {})
 ```
@@ -32,8 +33,26 @@ A peer disconnected.
 
 ```javascript
 node.on(NodeEvent.PEER_LEFT, ({ peerId, direction, reason }) => {
-  // reason: 'TIMEOUT', 'not_ready', 'server_left', etc.
+  // reason (downstream): 'CLIENT_STOP', 'TIMEOUT' (no ping),
+  //   'UNREACHABLE' (a send found no route: crashed/killed),
+  //   'REPLACED' (a new instance connected with the same id)
+  // reason (upstream): 'TRANSPORT_NOT_READY', 'TRANSPORT_FAILED',
+  //   'server_left', 'closed'
+  // Requests pending on that peer are rejected at once (PEER_LEFT /
+  // PEER_UNREACHABLE) instead of waiting for their timeout.
   // Always handle this to clean up resources
+})
+```
+
+---
+
+## PEER_UPDATED
+
+A joined peer changed its options with `setOptions()`.
+
+```javascript
+node.on(NodeEvent.PEER_UPDATED, ({ peerId, direction, peerOptions }) => {
+  // peerOptions: the peer's complete new options (also in getPeerOptions(peerId))
 })
 ```
 
@@ -45,6 +64,9 @@ An error occurred.
 
 ```javascript
 node.on(NodeEvent.ERROR, ({ source, error }) => {
+  // source: 'server' or 'client'. Includes failures of tick handlers
+  // (error.code 'HANDLER_ERROR') and malformed incoming messages
+  // ('INVALID_ENVELOPE'); the node keeps receiving after either.
   console.error(`Error from ${source}:`, error.message)
 })
 

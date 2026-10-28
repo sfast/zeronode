@@ -234,6 +234,9 @@ export enum NodeEvent {
   /** Peer left the network */
   PEER_LEFT = 'node:peer_left',
   
+  /** A joined peer changed its options (setOptions) */
+  PEER_UPDATED = 'node:peer_updated',
+  
   /** Node stopped */
   STOPPED = 'node:stopped',
   
@@ -260,6 +263,9 @@ export enum ClientEvent {
   /** Server left (shutdown, disconnect, timeout) */
   SERVER_LEFT = 'client:server_left',
   
+  /** Joined server changed its options */
+  SERVER_OPTIONS_UPDATED = 'client:server_options_updated',
+  
   /** Client error */
   ERROR = 'client:error'
 }
@@ -282,6 +288,9 @@ export enum ServerEvent {
   
   /** Client left */
   CLIENT_LEFT = 'server:client_left',
+  
+  /** Joined client changed its options */
+  CLIENT_OPTIONS_UPDATED = 'server:client_options_updated',
   
   /** Server error (protocol/transport failure, e.g. a failing tick handler) */
   ERROR = 'server:error'
@@ -490,6 +499,12 @@ export interface PeerLeftPayload {
   peerId: string;
   direction: 'upstream' | 'downstream';
   reason?: string;
+}
+
+export interface PeerUpdatedPayload {
+  peerId: string;
+  peerOptions: Record<string, any>;
+  direction: 'upstream' | 'downstream';
 }
 
 export interface NodeErrorPayload {
@@ -787,12 +802,14 @@ export default class Node extends EventEmitter {
   
   on(event: NodeEvent.PEER_JOINED, listener: (payload: PeerJoinedPayload) => void): this;
   on(event: NodeEvent.PEER_LEFT, listener: (payload: PeerLeftPayload) => void): this;
+  on(event: NodeEvent.PEER_UPDATED, listener: (payload: PeerUpdatedPayload) => void): this;
   on(event: NodeEvent.STOPPED, listener: () => void): this;
   on(event: NodeEvent.ERROR, listener: (payload: NodeErrorPayload) => void): this;
   on(event: string | symbol, listener: (...args: any[]) => void): this;
   
   once(event: NodeEvent.PEER_JOINED, listener: (payload: PeerJoinedPayload) => void): this;
   once(event: NodeEvent.PEER_LEFT, listener: (payload: PeerLeftPayload) => void): this;
+  once(event: NodeEvent.PEER_UPDATED, listener: (payload: PeerUpdatedPayload) => void): this;
   once(event: NodeEvent.STOPPED, listener: () => void): this;
   once(event: NodeEvent.ERROR, listener: (payload: NodeErrorPayload) => void): this;
   once(event: string | symbol, listener: (...args: any[]) => void): this;

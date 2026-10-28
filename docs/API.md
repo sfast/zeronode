@@ -620,6 +620,10 @@ node.on(NodeEvent.PEER_LEFT, ({ peerId, direction, reason }) => {
   console.log(`Peer ${peerId} left: ${reason}`)
 })
 
+node.on(NodeEvent.PEER_UPDATED, ({ peerId, direction, peerOptions }) => {
+  console.log(`Peer ${peerId} changed its options`, peerOptions)
+})
+
 node.on(NodeEvent.ERROR, ({ source, error }) => {
   console.error(`Error from ${source}:`, error.message)
 })
@@ -671,17 +675,28 @@ console.log(`My options:`, options)
 
 ### `setOptions(options)`
 
-Update this node's options/metadata (propagates to connected peers).
+Replace this node's options/metadata and propagate them to connected peers.
+
+Every joined peer (the server's clients and the servers this node is connected
+to) receives a `_system:options_update` and emits `NodeEvent.PEER_UPDATED`;
+its `getPeerOptions()` and filtered routing (`requestAny`, `tickAny`, ...) use
+the new options from then on. Later handshakes (e.g. after a reconnect) also
+carry the new options.
 
 **Parameters:**
-- `options` (Object): New options (merged with existing)
+- `options` (Object): New options. They **replace** the current ones; spread
+  `node.getOptions()` to keep existing fields. A `Router` always keeps
+  `router: true`.
 
-**Returns:** `Promise<void>`
+**Returns:** `Promise<void>` — resolves once the updates are handed to the
+transport. Peers do not acknowledge them, so a peer may apply the update
+slightly later. Peers running a zeronode version without options propagation
+(< 2.0.16) ignore the update and keep the options from the handshake.
 
 **Example:**
 ```javascript
 // Update status
-await node.setOptions({ status: 'busy' })
+await node.setOptions({ ...node.getOptions(), status: 'busy' })
 
 // Update multiple fields
 await node.setOptions({
@@ -834,6 +849,7 @@ import { NodeEvent } from 'zeronode'
 
 NodeEvent.PEER_JOINED   // 'node:peer_joined'
 NodeEvent.PEER_LEFT     // 'node:peer_left'
+NodeEvent.PEER_UPDATED  // 'node:peer_updated' (a joined peer called setOptions)
 NodeEvent.STOPPED       // 'node:stopped'
 NodeEvent.ERROR         // 'node:error'
 ```
