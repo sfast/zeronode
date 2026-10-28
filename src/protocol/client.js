@@ -389,10 +389,20 @@ export default class Client extends Protocol {
     _scope.options = options
     
     if (!this.isOnline()) return
+    
+    let timer
     try {
-      await this._sendSystemTick({ to: _scope.serverId, event: ProtocolSystemEvent.OPTIONS_UPDATE, data: options || {} })
+      const sent = this._sendSystemTick({ to: _scope.serverId, event: ProtocolSystemEvent.OPTIONS_UPDATE, data: options || {} })
+      // A DEALER send waits while ZeroMQ reconnects: don't hold the caller
+      // longer than the reconnect grace (the next handshake carries the options)
+      await Promise.race([
+        sent,
+        new Promise(resolve => { timer = setTimeout(resolve, Globals.RECONNECT_GRACE_MS); timer.unref?.() })
+      ])
     } catch (err) {
       // Offline or send failed: the next handshake carries the new options
+    } finally {
+      clearTimeout(timer)
     }
   }
   

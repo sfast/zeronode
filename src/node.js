@@ -539,6 +539,11 @@ export default class Node extends EventEmitter {
       throw connectCancelledError(address)
     }
     
+    // setOptions() ran during the handshake: the server may have the old ones
+    if (_scope.options !== options) {
+      await client.setOptions(_scope.options)
+    }
+    
     // Get server ID (now available after handshake)
     const serverId = client.getServerId()
     
@@ -1755,6 +1760,9 @@ export default class Node extends EventEmitter {
   async setOptions (options = {}) {
     const _scope = _private.get(this)
     
+    // Own copy: the caller's object is neither mutated nor required to be extensible
+    options = { ...options }
+    
     // Maintain node identity
     Object.defineProperty(options, '_id', {
       value: _scope.id,
@@ -1775,6 +1783,11 @@ export default class Node extends EventEmitter {
     }
     _scope.clients.forEach(client => {
       updates.push(client.setOptions(options))
+    })
+    // Connects still in their handshake: their next handshake uses the new
+    // options (and _connect re-sends them if the handshake already went out)
+    _scope.pendingConnects.forEach(attempt => {
+      if (attempt.client) updates.push(attempt.client.setOptions(options))
     })
     await Promise.allSettled(updates)
   }

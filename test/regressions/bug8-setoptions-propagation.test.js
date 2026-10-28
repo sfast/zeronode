@@ -8,6 +8,7 @@
 
 import { expect } from 'chai'
 import net from 'net'
+import * as zmq from 'zeromq'
 import Node, { Router, NodeEvent, Transport } from '../../src/index.js'
 import { LocalTransport } from '../../src/transport/local/index.js'
 
@@ -71,6 +72,18 @@ describe('Regression bug 8: setOptions() reaches connected peers', function () {
     expect(updates[0]).to.include({ peerId: server.getId(), direction: 'upstream' })
   })
 
+  it('does not mutate the caller\'s object and accepts a frozen one', async () => {
+    await setup()
+    const frozen = Object.freeze({ service: 'svc', __status: 'frozen' })
+
+    await client.setOptions(frozen)
+    await wait(50)
+
+    expect(frozen).to.not.have.property('_id')
+    expect(client.getOptions()._id).to.equal(client.getId())
+    expect(server.getPeerOptions(client.getId()).__status).to.equal('frozen')
+  })
+
   it('a Router keeps router: true across setOptions()', async () => {
     await setup(Router)
 
@@ -104,6 +117,30 @@ async function startProxy (target) {
 
 describe('Regression bug 8: a re-handshake carries the current options', function () {
   this.timeout(10000)
+
+  it('setOptions() during a pending connect() reaches the server once joined', async () => {
+    const probe = new zmq.Router()
+    await probe.bind('tcp://127.0.0.1:*')
+    const address = probe.lastEndpoint
+    probe.close()
+    await wait(50)
+
+    const client = new Node({ id: `bug8-pcli-${uid()}`, options: { __status: 'stopped' } })
+    const server = new Node({ id: `bug8-psrv-${uid()}` })
+    try {
+      const connecting = client.connect({ address, timeout: 3000 })
+      await wait(100)
+      await client.setOptions({ __status: 'started' })
+      await server.bind(address)
+      await connecting
+      await wait(100)
+
+      expect(server.getPeerOptions(client.getId()).__status).to.equal('started')
+    } finally {
+      await client.close().catch(() => {})
+      await server.close().catch(() => {})
+    }
+  })
 
   it('after a transport blip the server still sees the updated options', async () => {
     const server = new Node({ id: `bug8-zsrv-${uid()}` })
