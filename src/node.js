@@ -521,7 +521,7 @@ export default class Node extends EventEmitter {
     this._syncHandlersToTarget(client)
     
     // Attach client event handlers
-    this._attachClientEvents(client)
+    this._attachClientEvents(client, address, attempt)
     attempt.client = client
     
     // Connect (Client.connect() waits for handshake to complete).
@@ -554,10 +554,12 @@ export default class Node extends EventEmitter {
     
     logger.info(`[Node] Connected: ${id} → ${remoteNodeId} (${address})`)
     
-    // Store client by remote node's ID
+    // Store client by remote node's ID; later handshakes of this client
+    // (its DEALER reconnecting by itself) re-key it in the SERVER_JOINED listener
     clients.set(remoteNodeId, client)
     clientsAddressIndex.set(addressHash, remoteNodeId)
-    
+    attempt.registered = true
+
     // Track connection for auto-reconnect
     if (_scope.reconnect !== ReconnectPolicy.DISABLED) {
       if (!connectionTargets.has(address)) {
@@ -570,8 +572,15 @@ export default class Node extends EventEmitter {
       peerIdToAddress.set(remoteNodeId, address)
     }
     
-    // Note: PEER_JOINED event will be emitted when ClientEvent.SERVER_JOINED fires (handshake complete)
-    
+    // Announce the peer only now that it is routable (the SERVER_JOINED
+    // listener held the first handshake back for this)
+    this._announceUpstreamPeer(remoteNodeId, attempt.joined?.serverOptions)
+
+    // A PEER_JOINED listener ran disconnect()/close(): they clean up
+    if (attempt.cancelled || _scope.closed) {
+      throw connectCancelledError(address)
+    }
+
     // Return server info with options from Node
     return {
       id: remoteNodeId,
@@ -628,7 +637,7 @@ export default class Node extends EventEmitter {
    * Attach client event handlers and transform to Node events
    * @private
    */
-  _attachClientEvents (client) {
+  _attachClientEvents (client, address, attempt) {
     const _scope = _private.get(this)
     const { logger } = _scope
     
@@ -654,14 +663,26 @@ export default class Node extends EventEmitter {
     
     // Transform: Client.SERVER_JOINED → Node.PEER_JOINED (handshake complete, peer identified)
     listen(ClientEvent.SERVER_JOINED, ({ serverId, serverOptions }) => {
-      // ✅ Track JOINED state in Node (single operation)
-      this._addJoinedPeer(serverId, serverOptions, 'upstream')
-      
-      this.emit(NodeEvent.PEER_JOINED, {
-        peerId: serverId,
-        direction: 'upstream',     // We connected TO this server
-        peerOptions: serverOptions || {}
-      })
+      // A late handshake after close(), or of a client already let go, must
+      // not repopulate anything
+      if (_scope.closed || discardedClients.has(client)) return
+
+      // First handshake: this fires before `await client.connect()` resumes.
+      // connect() registers the client and announces the peer then, so that
+      // PEER_JOINED is only seen once the peer is routable (and a cancelled
+      // connect announces nothing)
+      if (!attempt.registered) {
+        attempt.joined = { serverId, serverOptions }
+        return
+      }
+
+      // A later handshake (the DEALER reconnected by itself): the server at
+      // this address may have restarted under a new id
+      if (!this._rekeyClient(client, address, serverId)) return
+      // A PEER_LEFT listener of the old id may have disconnected or closed
+      if (_scope.closed || discardedClients.has(client)) return
+
+      this._announceUpstreamPeer(serverId, serverOptions)
     })
     
     // Transform: Client.SERVER_OPTIONS_UPDATED → Node.PEER_UPDATED
@@ -712,7 +733,89 @@ export default class Node extends EventEmitter {
       // Only cleanup on explicit disconnect() call
     })
   }
-  
+
+  /**
+   * Mark an upstream peer joined and emit PEER_JOINED
+   * @private
+   */
+  _announceUpstreamPeer (serverId, serverOptions) {
+    // ✅ Track JOINED state in Node (single operation)
+    this._addJoinedPeer(serverId, serverOptions, 'upstream')
+
+    this.emit(NodeEvent.PEER_JOINED, {
+      peerId: serverId,
+      direction: 'upstream', // We connected TO this server
+      peerOptions: serverOptions || {}
+    })
+  }
+
+  /**
+   * A registered client handshook again. If the server at `address` now
+   * answers under a new id (restarted), move the client, the address index,
+   * the reconnect target and the id → address mapping to the new id, and end
+   * the old id's session, so that only the current id is known for the
+   * address. Runs before the new id is announced, so a PEER_JOINED listener
+   * can route to it at once.
+   * @private
+   * @returns {boolean} false if the new id must not be announced
+   */
+  _rekeyClient (client, address, serverId) {
+    const _scope = _private.get(this)
+    const { clients, clientsAddressIndex, connectionTargets, peerIdToAddress, joinedPeers, peerDirection, logger } = _scope
+
+    const addressHash = md5(address)
+    const oldId = clientsAddressIndex.get(addressHash)
+
+    // Not the client registered at this address (only after an id collision
+    // at connect time): leave the maps alone, as before
+    if (oldId === undefined || clients.get(oldId) !== client) return true
+
+    const endOldSession = () => {
+      if (peerIdToAddress.get(oldId) === address) peerIdToAddress.delete(oldId)
+      // Still joined if neither NOT_READY nor SERVER_LEFT was seen for it.
+      // Its id → address mapping is gone, so this schedules no reconnect.
+      if (joinedPeers.has(oldId) && peerDirection.get(oldId) === 'upstream') {
+        this._removeJoinedPeer(oldId)
+        this.emit(NodeEvent.PEER_LEFT, { peerId: oldId, direction: 'upstream', reason: 'replaced' })
+      }
+    }
+
+    if (oldId !== serverId) {
+      // Another connection already holds the new id (one server reachable at
+      // two addresses): never take its entry. This client stays registered
+      // under the old key, so disconnect(address) still finds and closes it;
+      // the peer is joined (and routed) through the other connection.
+      const holder = clients.get(serverId)
+      if (holder !== undefined && holder !== client) {
+        logger.warn(`[Node] Server at ${address} now answers as '${serverId}', already connected through another address; not re-keying '${oldId}'`)
+        endOldSession()
+        return false
+      }
+
+      logger.info(`[Node] Server at ${address} is now '${serverId}' (was '${oldId}')`)
+      clients.delete(oldId)
+      clients.set(serverId, client)
+      clientsAddressIndex.set(addressHash, serverId)
+    }
+
+    // The session is back: a reconnect timer for the address is not needed,
+    // and the next loss starts at the first backoff step again
+    const target = connectionTargets.get(address)
+    if (target && !target.cancelled) {
+      target.peerId = serverId
+      target.attempts = 0
+      if (target.timer) {
+        clearTimeout(target.timer)
+        target.timer = null
+      }
+      peerIdToAddress.set(serverId, address)
+    }
+
+    if (oldId !== serverId) endOldSession()
+
+    return true
+  }
+
   /**
    * Detach the listeners added by _attachClientEvents (Client internals stay)
    * @private
@@ -880,6 +983,18 @@ export default class Node extends EventEmitter {
   }
   
   /**
+   * Whether the client registered for `address` has a live session
+   * (transport up and handshake done)
+   * @private
+   */
+  _hasSession (address) {
+    const { clients, clientsAddressIndex } = _private.get(this)
+    const nodeId = clientsAddressIndex.get(md5(address))
+    const client = nodeId !== undefined ? clients.get(nodeId) : undefined
+    return !!client && client.isOnline()
+  }
+
+  /**
    * Schedule a reconnect attempt with exponential backoff
    * @private
    */
@@ -915,6 +1030,17 @@ export default class Node extends EventEmitter {
         // A disconnect()/close() during this attempt cancels the pending
         // connect itself (CONNECT_CANCELLED), so nothing is registered
         await this.connect({ address })
+        if (target.cancelled) return
+
+        // connect() resolves at once for an address whose client is still
+        // there, session or not. Without a session that client's DEALER keeps
+        // reconnecting by itself; its next handshake re-keys it and ends these
+        // retries (_rekeyClient). Until then, keep checking with backoff.
+        if (!this._hasSession(address)) {
+          logger.info(`[Node] Reconnect to ${address}: client known but no session yet, retrying`)
+          this._scheduleReconnect(address)
+          return
+        }
         logger.info(`[Node] Successfully reconnected to ${address}`)
       } catch (err) {
         if (target.cancelled) return
