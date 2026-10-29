@@ -53,6 +53,7 @@ export default class Server extends Protocol {
       clientLastSeen: new Map(),    // clientId → timestamp (for health checks)
       clientInstances: new Map(),   // clientId → instance id from the handshake (restart detection)
       pendingHandshakes: new Map(), // clientId → when a resurrection handshake was requested
+      stopping: false,              // unbind()/close() started: no handshake is accepted
       healthCheckInterval: null,
       options  // ✅ Store node options for handshake responses
     }
@@ -132,7 +133,11 @@ export default class Server extends Protocol {
     // HANDSHAKE - Client discovery via messages
     // ============================================================================
     this.onTick(ProtocolSystemEvent.HANDSHAKE_INIT_FROM_CLIENT, (envelope) => {
-      let { clientLastSeen, clientInstances, pendingHandshakes } = _private.get(this)
+      const _scope = _private.get(this)
+      let { clientLastSeen, clientInstances, pendingHandshakes } = _scope
+
+      // Going down: accept no session (the client retries elsewhere or times out)
+      if (_scope.stopping) return
       
       const clientId = envelope.owner
       const clientOptions = envelope.data
@@ -149,6 +154,8 @@ export default class Server extends Protocol {
         clientLastSeen.delete(clientId)
         clientInstances.delete(clientId)
         this.emit(ServerEvent.CLIENT_LEFT, { clientId, reason: 'REPLACED' })
+        // A CLIENT_LEFT listener may have started unbind()/close()
+        if (_scope.stopping) return
       }
       
       // Mark as seen (this IS the "joined" state)
@@ -172,6 +179,10 @@ export default class Server extends Protocol {
         clientOptions: clientOptions || {}
       })
       
+      // A CLIENT_JOINED listener may have started unbind()/close(): no ack
+      // after the SERVER_STOP the unbind sent
+      if (_scope.stopping) return
+
       // Send welcome response (complete handshake) with server options
       const { options: serverOptions } = _private.get(this)
       
@@ -271,6 +282,7 @@ export default class Server extends Protocol {
   
   async bind (bindAddress) {
       let _scope = _private.get(this)
+    _scope.stopping = false
     
     // Check if already bound to this address (idempotent)
     const currentAddress = this.getAddress()
@@ -288,6 +300,9 @@ export default class Server extends Protocol {
   }
   
   async unbind () {
+    // Synchronously, before anything is awaited: no handshake is accepted
+    // from now on (also one already being processed when a listener calls this)
+    this._stopAccepting()
     this._stopHealthChecks()
     
     // Notify all clients individually with system event before unbind
@@ -318,7 +333,16 @@ export default class Server extends Protocol {
     await super.unbind()
   }
   
+  /**
+   * Accept no handshake from now on (unbind()/close() under way)
+   * @protected
+   */
+  _stopAccepting () {
+    _private.get(this).stopping = true
+  }
+
   async close () {
+    this._stopAccepting()
     await this.unbind()
     await super.close() // close underlying transport and cleanup
   }

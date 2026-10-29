@@ -481,6 +481,8 @@ export default class Node extends EventEmitter {
     
     // Transform: Server.CLIENT_JOINED → Node.PEER_JOINED
     server.on(ServerEvent.CLIENT_JOINED, ({ clientId, clientOptions }) => {
+      // close() under way (e.g. called from a PEER_LEFT listener): no new session
+      if (_private.get(this).closed) return
       // Client connected TO our server; a re-handshake of a joined client
       // (e.g. after a transport blip) is not a new join
       this._peerJoined(clientId, clientOptions, 'downstream')
@@ -2195,8 +2197,10 @@ export default class Node extends EventEmitter {
     const { server, clients, clientsAddressIndex, logger, connectionTargets, peerIdToAddress } = _scope
     const promises = []
     
-    // connect() rejects from now on (also one already past its handshake)
+    // connect() rejects from now on (also one already past its handshake),
+    // and the server accepts no handshake any more
     _scope.closed = true
+    server?._stopAccepting()
     
     // Proxied ticks forwarded earlier can no longer be continued
     _scope.forwardedTicks.clear()
