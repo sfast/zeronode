@@ -427,10 +427,14 @@ export default class Node extends EventEmitter {
       return Promise.resolve()
     }
     
-    await server.unbind()
-    // The server forgot its clients: so does the Node, or they would stay
-    // joined (and selected by requestAny) with no route behind them
-    this._forgetDownstreamPeers()
+    try {
+      await server.unbind()
+    } finally {
+      // The server forgot its clients (also when the transport refused to
+      // unbind): so does the Node, or they would stay joined (and selected by
+      // requestAny) with no route behind them
+      this._forgetDownstreamPeers()
+    }
   }
 
   /**
@@ -1194,6 +1198,12 @@ export default class Node extends EventEmitter {
         // reconnecting by itself; its next handshake re-keys it and ends these
         // retries (_rekeyClient). Until then, keep checking with backoff.
         if (!this._hasSession(address)) {
+          // A transport that is up but has no session (the server said it
+          // stops without dropping the link, or an ack was lost) gets no new
+          // handshake from ZeroMQ: ask for one (ignored until the server
+          // accepts sessions again)
+          const nodeId = _scope.clientsAddressIndex.get(md5(address))
+          _scope.clients.get(nodeId)?._sendClientConnected()
           logger.info(`[Node] Reconnect to ${address}: client known but no session yet, retrying`)
           this._scheduleReconnect(address)
           return

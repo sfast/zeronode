@@ -21,6 +21,7 @@ import Protocol, { ProtocolEvent, ProtocolSystemEvent } from './protocol.js'
 import { resolvePingInterval } from './config.js'
 import { ProtocolErrorCode } from './protocol-errors.js'
 import { Transport } from '../transport/transport.js'
+import { TransportError, TransportErrorCode } from '../transport/errors.js'
 
 // ============================================================================
 // SERVER EVENTS
@@ -55,7 +56,6 @@ export default class Server extends Protocol {
       pendingHandshakes: new Map(), // clientId → when a resurrection handshake was requested
       stopping: false,              // unbind()/close() started: no handshake is accepted
       unbinding: null,              // promise of the last unbind() requested (they run one at a time)
-      stopGeneration: 0,            // counts unbind()/close() requests
       healthCheckInterval: null,
       options  // ✅ Store node options for handshake responses
     }
@@ -289,9 +289,11 @@ export default class Server extends Protocol {
     while (_scope.unbinding) await _scope.unbinding.catch(() => {})
     _scope.stopping = false
     
-    // Check if already bound to this address (idempotent)
+    // Check if already bound to this address (idempotent). Also how serving
+    // resumes after an unbind() the transport refused (still bound there).
     const currentAddress = this.getAddress()
     if (currentAddress === bindAddress) {
+      if (this._getSocket().isOnline()) this._startHealthChecks()
       return // Already bound to this address
     }
     
@@ -312,10 +314,9 @@ export default class Server extends Protocol {
     // One at a time: an unbind() requested while one runs (e.g. from its error
     // listener) runs after it
     const _scope = _private.get(this)
-    const generation = _scope.stopGeneration
     const previous = _scope.unbinding
     const unbinding = (previous ? previous.catch(() => {}) : Promise.resolve())
-      .then(() => this._unbind(generation))
+      .then(() => this._unbind())
     _scope.unbinding = unbinding
     try {
       await unbinding
@@ -325,14 +326,11 @@ export default class Server extends Protocol {
   }
 
   /**
-   * unbind() body. `generation`: the stop request it serves
+   * unbind() body
    * @private
    */
-  async _unbind (generation) {
+  async _unbind () {
     this._stopHealthChecks()
-    
-    // The clients told to stop (asked back if the unbind fails)
-    const stoppedClients = Array.from(_private.get(this).clientLastSeen.keys())
 
     // Notify all clients individually with system event before unbind
     try {
@@ -361,21 +359,18 @@ export default class Server extends Protocol {
     // unbind from transport and detach listeners
     await super.unbind()
 
-    // The transport refused to unbind (it reported the error) and is still
-    // bound and receiving: keep serving, unless a newer unbind()/close() was
-    // requested meanwhile. The clients told to stop are asked to handshake
-    // again (they stopped pinging, so nothing else would bring them back).
-    if (this._getSocket().isOnline() && _scope.stopGeneration === generation) {
-      _scope.stopping = false
-      this._startHealthChecks()
-      for (const clientId of stoppedClients) {
-        try {
-          _scope.pendingHandshakes.set(clientId, Date.now())
-          this._sendSystemTick({ to: clientId, event: ProtocolSystemEvent.REQUEST_HANDSHAKE, data: null })
-        } catch (err) {
-          this.debug && this.logger?.error(`Error asking '${clientId}' to handshake again: `, err)
-        }
-      }
+    // The transport refused to unbind (it reported ServerEvent.ERROR too):
+    // say so. The server has told its clients it stops and forgot them; it
+    // stays bound but accepts no session. bind() at the same address resumes
+    // serving (clients come back with their next handshake), close() releases
+    // the transport.
+    if (this._getSocket().isOnline()) {
+      throw new TransportError({
+        code: TransportErrorCode.UNBIND_FAILED,
+        message: `Server '${this.getId()}' could not unbind from ${this.getAddress()}: still bound, not accepting sessions (bind() resumes, close() releases)`,
+        transportId: this.getId(),
+        address: this.getAddress()
+      })
     }
   }
   
@@ -384,9 +379,7 @@ export default class Server extends Protocol {
    * @protected
    */
   _stopAccepting () {
-    const _scope = _private.get(this)
-    _scope.stopping = true
-    _scope.stopGeneration++
+    _private.get(this).stopping = true
   }
 
   /**
@@ -401,8 +394,10 @@ export default class Server extends Protocol {
     this._stopAccepting()
     try {
       await this.unbind()
+    } catch (err) {
+      // Closing releases the transport whatever the unbind did
+      this.debug && this.logger?.warn(`[Server] unbind before close failed: ${err.message}`)
     } finally {
-      // Also if the transport refused to unbind, or unbind() rejected
       this._stopAccepting()
       this._stopHealthChecks()
       await super.close() // close underlying transport and cleanup

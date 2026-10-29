@@ -86,10 +86,15 @@ patch from the commit before these if they are not wanted yet.
   when a `PEER_LEFT` / `PEER_JOINED` listener starts it), and a client this
   node is ending (`disconnect()`, reconnect policy) joins nothing: listeners
   can tear down from inside peer events without the session coming back.
-  `unbind()` calls run one at a time and `bind()` waits for them; a transport
-  unbind that libzmq refuses leaves the server serving and asks the clients
-  it had told to stop to handshake again; `close()` always closes the
-  transport.
+  `unbind()` calls run one at a time and `bind()` waits for them. If libzmq
+  refuses the transport unbind, `unbind()` now rejects
+  (`TRANSPORT_UNBIND_FAILED`): the server has told its clients it stops and
+  accepts no session, but stays bound; `bind()` at the same address resumes
+  serving, `close()` always releases the transport.
+- A client whose link to its server stayed up while the session ended (the
+  server said it stops without dropping the link, or an ack was lost) asks
+  for a session again from its reconnect timer (`reconnect: 'always'`);
+  ZeroMQ only re-handshakes after the link drops.
 - `requestAny` / `tickAny` / `tickAll` with `down` / `up` send through a
   connection of the selected direction (a peer joined both ways was reached
   through the other one).
