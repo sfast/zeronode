@@ -316,10 +316,10 @@ export enum ServerEvent {
  * Transport-level events
  */
 export enum TransportEvent {
-  /** Transport ready */
+  /** Transport ready: { address } on a ZeroMQ dealer (the endpoint connected to) */
   READY = 'transport:ready',
   
-  /** Transport not ready */
+  /** Transport not ready: { address } on a ZeroMQ dealer; once per explicit disconnect */
   NOT_READY = 'transport:not_ready',
   
   /** Message received */
@@ -330,6 +330,9 @@ export enum TransportEvent {
   
   /** An asynchronous send failed: { recipient?, error } (error.code e.g. EHOSTUNREACH, EAGAIN) */
   SEND_FAILED = 'transport:send_failed',
+  
+  /** A ZeroMQ dealer is retrying its connection: { address, interval } (interval in ms) */
+  RECONNECT_RETRY = 'transport:reconnect_retry',
   
   /** Transport closed */
   CLOSED = 'transport:closed'

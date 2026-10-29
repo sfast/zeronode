@@ -39,7 +39,11 @@ export default class DealerSocket extends Socket {
     let _scope = {
       socket,
       routerAddress: null,
-      eventsAttached: false
+      eventsAttached: false,
+      // Set by disconnect() before it reports NOT_READY, cleared by connect():
+      // close() after disconnect() must not report it again, and monitor
+      // events still queued from the old link are ignored
+      disconnected: false
     }
 
     _private.set(this, _scope)
@@ -113,6 +117,7 @@ export default class DealerSocket extends Socket {
     }
 
     this.setAddress(routerAddress)
+    _scope.disconnected = false
 
     // Attach listeners BEFORE connecting (events fire asynchronously)
     this.attachSocketEventListeners()
@@ -134,6 +139,11 @@ export default class DealerSocket extends Socket {
     let _scope = _private.get(this)
     let { socket, routerAddress } = _scope
 
+    // Latched before anything is emitted: a listener that runs close() (or
+    // disconnect() again) from NOT_READY sees it already reported
+    const alreadyDisconnected = _scope.disconnected
+    _scope.disconnected = true
+
     try {
       // 1. Disconnect from current endpoint (idempotent)
       if (routerAddress) {
@@ -147,9 +157,11 @@ export default class DealerSocket extends Socket {
     // 2. Mark offline
     this.setOffline()
 
-    // 3. Explicitly emit NOT_READY 
+    // 3. Explicitly emit NOT_READY, once per explicit disconnect
     // (ZeroMQ doesn't reliably fire native 'disconnect' event on manual disconnect)
-    this.emit(TransportEvent.NOT_READY)
+    if (!alreadyDisconnected) {
+      this.emit(TransportEvent.NOT_READY, { address: routerAddress })
+    }
 
     // 4. Wait a tick for event to propagate
     await new Promise(resolve => setImmediate(resolve))
@@ -178,24 +190,30 @@ export default class DealerSocket extends Socket {
     if (socket.events) {
       _scope.eventsAttached = true
 
+      // zeromq.js passes one event object: { type, address[, interval] }.
+      // Events still queued after an explicit disconnect() are ignored.
+
       // Map ZeroMQ connect → TransportEvent.READY
-      socket.events.on('connect', (fd, endpoint) => {
+      socket.events.on('connect', ({ address }) => {
+        if (_scope.disconnected) return
         this.setOnline()
         this.debug && this.logger.info(`Emitted '${TransportEvent.READY}' on socket '${this.getId()}'`)
-        this.emit(TransportEvent.READY, { fd, endpoint })
+        this.emit(TransportEvent.READY, { address })
       })
       
       // Map ZeroMQ disconnect → TransportEvent.NOT_READY
-      socket.events.on('disconnect', (fd, endpoint) => {
+      socket.events.on('disconnect', ({ address }) => {
+        if (_scope.disconnected) return
         this.setOffline()
         this.debug && this.logger.info(`Emitted '${TransportEvent.NOT_READY}' on socket '${this.getId()}'`)
         // Note: ZeroMQ auto-retries per reconnectInterval/reconnectMaxInterval
-        this.emit(TransportEvent.NOT_READY, { fd, endpoint })
+        this.emit(TransportEvent.NOT_READY, { address })
       })
 
-      socket.events.on('connect:retry', (fd, endpoint) => {
+      socket.events.on('connect:retry', ({ address, interval }) => {
+        if (_scope.disconnected) return
         this.debug && this.logger.info(`Emitted '${TransportEvent.RECONNECT_RETRY}' on socket '${this.getId()}'`)
-        this.emit(TransportEvent.RECONNECT_RETRY, { fd, endpoint })
+        this.emit(TransportEvent.RECONNECT_RETRY, { address, interval })
       })
     }
   }

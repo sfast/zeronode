@@ -34,6 +34,8 @@ export const TransportEvent = {
    * 
    * This does NOT mean "ready for business logic" - just "ready for bytes"
    * Protocol will handle handshake logic on top of this
+   *
+   * Payload: { address } (ZeroMQ dealer: the endpoint connected to)
    */
   READY: 'transport:ready',
   
@@ -45,6 +47,8 @@ export const TransportEvent = {
    * 
    * Transport may try to reconnect automatically (ZMQ does this)
    * Protocol will handle session restoration if READY fires again
+   *
+   * Payload: { address } (ZeroMQ dealer); reported once per explicit disconnect
    */
   NOT_READY: 'transport:not_ready',
   
@@ -99,7 +103,8 @@ export const TransportEvent = {
    * RECONNECT_RETRY - Transport is retrying connection (optional, for observability)
    * 
    * Only emitted by transports that auto-reconnect (e.g., ZeroMQ dealer)
-   * Payload: { fd, endpoint } or similar transport-specific details
+   * Payload: { address, interval } (ZeroMQ dealer: the endpoint and the
+   * current reconnect interval in ms)
    * 
    * Not required for core protocol functionality, but useful for logging/debugging
    */
