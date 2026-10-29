@@ -331,3 +331,78 @@ describe('2.1 (7): reconnect attempts are observable', function () {
     expect(attempts.length, 'no attempts after disconnect()').to.equal(seen)
   })
 })
+
+describe('2.1 (8): ZMTP heartbeats detect an unresponsive server', function () {
+  this.timeout(15000)
+
+  const SERVER_CHILD = new URL('./fixtures/server-child.js', import.meta.url)
+  let child
+  let client
+  let server
+
+  afterEach(async () => {
+    await client?.close().catch(() => {})
+    await server?.close().catch(() => {})
+    if (child && child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+    child = client = server = null
+  })
+
+  const startFrozenableServer = async () => {
+    const { fork } = await import('child_process')
+    const { fileURLToPath } = await import('url')
+    child = fork(fileURLToPath(SERVER_CHILD), [`hb-srv-${uid()}`, 'x'], { stdio: ['ignore', 'ignore', 'ignore', 'ipc'] })
+    const { address } = await new Promise(resolve => child.once('message', resolve))
+    return address
+  }
+
+  it('a frozen server (TCP still up) is reported lost within the heartbeat timeout', async () => {
+    const address = await startFrozenableServer()
+    client = new Node({ id: `hb-cli-${uid()}`, config: { logger: quiet(), ZMQ_HEARTBEAT_IVL: 100, ZMQ_HEARTBEAT_TIMEOUT: 300 } })
+    const events = recorder(client)
+    await client.connect({ address })
+
+    child.kill('SIGSTOP')
+    const frozenAt = Date.now()
+    await until(() => events.some(e => e.startsWith('left')), 3000, 'PEER_LEFT for the frozen server')
+    expect(Date.now() - frozenAt).to.be.below(1500)
+    expect(events.find(e => e.startsWith('left'))).to.match(/ lost$/)
+  })
+
+  it('with heartbeats off (ZMQ_HEARTBEAT_IVL: 0) a frozen server is not detected', async () => {
+    const address = await startFrozenableServer()
+    client = new Node({ id: `hb-off-${uid()}`, config: { logger: quiet(), ZMQ_HEARTBEAT_IVL: 0 } })
+    const events = recorder(client)
+    await client.connect({ address })
+
+    child.kill('SIGSTOP')
+    await wait(1000)
+    expect(events.filter(e => e.startsWith('left'))).to.deep.equal([])
+  })
+
+  it('an idle server without heartbeats keeps a heartbeating client connected', async () => {
+    // The server sets no heartbeat options (as a 2.0.15 server): libzmq answers PINGs itself
+    server = new Node({ id: `hb-plain-${uid()}` })
+    await server.bind('tcp://127.0.0.1:0')
+    client = new Node({ id: `hb-idle-${uid()}`, config: { logger: quiet(), ZMQ_HEARTBEAT_IVL: 100, ZMQ_HEARTBEAT_TIMEOUT: 300 } })
+    const events = recorder(client)
+    await client.connect({ address: server.getAddress() })
+
+    await wait(1500)
+    expect(events).to.deep.equal([`joined upstream ${server.getId()}`])
+  })
+
+  it('clients heartbeat by default (5s / 15s); servers only when configured', async () => {
+    const { ZMQConfigDefaults, DealerHeartbeatDefaults } = await import('../../src/transport/zeromq/config.js')
+    expect(DealerHeartbeatDefaults).to.deep.equal({ ZMQ_HEARTBEAT_IVL: 5000, ZMQ_HEARTBEAT_TIMEOUT: 15000 })
+    expect(ZMQConfigDefaults.ZMQ_HEARTBEAT_IVL).to.equal(undefined)
+  })
+
+  it('invalid heartbeat / reconnect settings are rejected', async () => {
+    const { validateConfig } = await import('../../src/transport/zeromq/config.js')
+    expect(() => validateConfig({ ZMQ_HEARTBEAT_IVL: -1 })).to.throw(/ZMQ_HEARTBEAT_IVL/)
+    expect(() => validateConfig({ ZMQ_HEARTBEAT_TIMEOUT: 'x' })).to.throw(/ZMQ_HEARTBEAT_TIMEOUT/)
+    expect(() => validateConfig({ ZMQ_HEARTBEAT_TTL: 1.5 })).to.throw(/ZMQ_HEARTBEAT_TTL/)
+    expect(() => validateConfig({ ZMQ_RECONNECT_IVL_MAX: -5 })).to.throw(/ZMQ_RECONNECT_IVL_MAX/)
+    expect(() => validateConfig({ ZMQ_HEARTBEAT_IVL: 0, ZMQ_RECONNECT_IVL_MAX: 30000 })).to.not.throw()
+  })
+})
