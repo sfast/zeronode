@@ -11,6 +11,7 @@ export { default as Dealer } from './dealer.js'
 export { 
   TIMEOUT_INFINITY,
   ZMQConfigDefaults,
+  DealerHeartbeatDefaults,
   mergeConfig,
   createDealerConfig,
   createRouterConfig,

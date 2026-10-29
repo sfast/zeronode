@@ -12,7 +12,7 @@ import { TransportError, TransportErrorCode } from '../errors.js'
 import { Socket } from './socket.js'
 import { TransportEvent } from '../events.js'
 import { createContext } from './context.js'
-import { mergeConfig } from './config.js'
+import { mergeConfig, DealerHeartbeatDefaults } from './config.js'
 
 let _private = new WeakMap()
 
@@ -59,6 +59,18 @@ export default class DealerSocket extends Socket {
     // Reconnection interval: How often ZeroMQ attempts to reconnect
     socket.reconnectInterval = config.ZMQ_RECONNECT_IVL
     socket.reconnectMaxInterval = config.ZMQ_RECONNECT_IVL_MAX
+
+    // ZMTP heartbeats (on by default): a server that stops answering while
+    // TCP stays up is reported NOT_READY instead of never. Set before connect().
+    const interval = config.ZMQ_HEARTBEAT_IVL ?? DealerHeartbeatDefaults.ZMQ_HEARTBEAT_IVL
+    if (interval > 0) {
+      socket.heartbeatInterval = interval
+      socket.heartbeatTimeout = config.ZMQ_HEARTBEAT_TIMEOUT ??
+        (config.ZMQ_HEARTBEAT_IVL === undefined ? DealerHeartbeatDefaults.ZMQ_HEARTBEAT_TIMEOUT : 3 * interval)
+      if (config.ZMQ_HEARTBEAT_TTL !== undefined) {
+        socket.heartbeatTimeToLive = config.ZMQ_HEARTBEAT_TTL
+      }
+    }
   }
 
   getAddress () {

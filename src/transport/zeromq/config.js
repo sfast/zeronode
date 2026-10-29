@@ -120,6 +120,17 @@ export const ZMQConfigDefaults = {
    */
   ZMQ_RECONNECT_IVL_MAX: 0,
   
+  /**
+   * ZMQ_HEARTBEAT_IVL / ZMQ_HEARTBEAT_TIMEOUT / ZMQ_HEARTBEAT_TTL (ms):
+   * ZMTP heartbeats. Dealer (client) sockets only; see DealerHeartbeatDefaults.
+   * A PING every IVL; no traffic for TIMEOUT after a PING drops the link
+   * (NOT_READY, then ZeroMQ reconnects). This detects a server that stopped
+   * answering while TCP stays up (frozen process, partition), which TCP alone
+   * does not. Peers answer PINGs in libzmq itself (no zeronode support
+   * needed, so older peers are fine). ZMQ_HEARTBEAT_IVL: 0 turns it off.
+   */
+  // ZMQ_HEARTBEAT_IVL / ZMQ_HEARTBEAT_TIMEOUT / ZMQ_HEARTBEAT_TTL: optional
+
   // ============================================================================
   // ROUTER-SPECIFIC OPTIONS (server sockets)
   // ============================================================================
@@ -142,6 +153,15 @@ export const ZMQConfigDefaults = {
    */
   // ZMQ_ROUTER_HANDOVER: true,  // Optional - undefined means true (see RouterSocket)
 }
+
+/**
+ * ZMTP heartbeat defaults of dealer (client) sockets. ZMQ_HEARTBEAT_TIMEOUT
+ * defaults to 3 × ZMQ_HEARTBEAT_IVL when only the interval is given.
+ */
+export const DealerHeartbeatDefaults = Object.freeze({
+  ZMQ_HEARTBEAT_IVL: 5000,
+  ZMQ_HEARTBEAT_TIMEOUT: 15000
+})
 
 /**
  * Merge user configuration with defaults
@@ -242,12 +262,25 @@ export function validateConfig(config) {
     throw new Error(`Invalid ZMQ_RECONNECT_IVL: ${config.ZMQ_RECONNECT_IVL}. Must be > 0`)
   }
 
+  // Validate maximum reconnection interval (0 = no backoff)
+  if (config.ZMQ_RECONNECT_IVL_MAX !== undefined && (typeof config.ZMQ_RECONNECT_IVL_MAX !== 'number' || config.ZMQ_RECONNECT_IVL_MAX < 0)) {
+    throw new Error(`Invalid ZMQ_RECONNECT_IVL_MAX: ${config.ZMQ_RECONNECT_IVL_MAX}. Must be >= 0 (0 = no backoff)`)
+  }
+
+  // Validate ZMTP heartbeat options (ms, 0 = off)
+  for (const key of ['ZMQ_HEARTBEAT_IVL', 'ZMQ_HEARTBEAT_TIMEOUT', 'ZMQ_HEARTBEAT_TTL']) {
+    if (config[key] !== undefined && (!Number.isInteger(config[key]) || config[key] < 0)) {
+      throw new Error(`Invalid ${key}: ${config[key]}. Must be an integer >= 0 (ms)`)
+    }
+  }
+
   return true
 }
 
 export default {
   TIMEOUT_INFINITY,
   ZMQConfigDefaults,
+  DealerHeartbeatDefaults,
   mergeConfig,
   createDealerConfig,
   createRouterConfig,
