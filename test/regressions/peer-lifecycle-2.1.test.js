@@ -296,3 +296,38 @@ describe('2.1 (6): server-side lifecycle bookkeeping', function () {
     }
   })
 })
+
+describe('2.1 (7): reconnect attempts are observable', function () {
+  this.timeout(10000)
+
+  let server
+  let client
+
+  afterEach(async () => {
+    await client?.close().catch(() => {})
+    await server?.close().catch(() => {})
+    client = server = null
+  })
+
+  it('RECONNECT_ATTEMPT { address, interval, peerId } while the server is gone, none after disconnect()', async () => {
+    server = new Node({ id: `ra-srv-${uid()}` })
+    await server.bind('tcp://127.0.0.1:0')
+    const address = server.getAddress()
+    const serverId = server.getId()
+    client = new Node({ id: `ra-cli-${uid()}`, config: { logger: quiet() } })
+    const attempts = []
+    client.on(NodeEvent.RECONNECT_ATTEMPT, (payload) => attempts.push(payload))
+    await client.connect({ address })
+
+    await server.close()
+    server = null
+    await until(() => attempts.length >= 2, 3000, 'reconnect attempts')
+    expect(attempts[0]).to.include({ address, peerId: serverId })
+    expect(attempts[0].interval).to.be.a('number')
+
+    await client.disconnect(address)
+    const seen = attempts.length
+    await wait(400)
+    expect(attempts.length, 'no attempts after disconnect()').to.equal(seen)
+  })
+})
