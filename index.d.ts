@@ -17,16 +17,32 @@ export interface NodeConfig {
   /** Global request timeout in milliseconds (default: 10000) */
   PROTOCOL_REQUEST_TIMEOUT?: number;
   
-  /** Buffer allocation strategy: 'EXACT' or 'POWER_OF_2' */
-  PROTOCOL_BUFFER_STRATEGY?: 'EXACT' | 'POWER_OF_2';
+  /**
+   * Envelope buffer allocation: null (exact, the default) or 'power-of-2'
+   * (BufferStrategy.EXACT / BufferStrategy.POWER_OF_2)
+   */
+  BUFFER_STRATEGY?: null | 'power-of-2';
   
-  /** Client ping interval in milliseconds (default: 10000) */
+  /**
+   * @deprecated Never read: the key that is read is BUFFER_STRATEGY
+   */
+  PROTOCOL_BUFFER_STRATEGY?: null | 'power-of-2';
+  
+  /**
+   * Client ping interval in milliseconds (default: 10000). A server not given
+   * CLIENT_GHOST_TIMEOUT assumes its clients ping at its own PING_INTERVAL.
+   */
+  PING_INTERVAL?: number;
+  
+  /**
+   * @deprecated Never read: the ping interval is PING_INTERVAL
+   */
   CLIENT_PING_INTERVAL?: number;
   
-  /** Server health check interval in milliseconds (default: 30000) */
+  /** Server health check interval in milliseconds (default: 5000) */
   CLIENT_HEALTH_CHECK_INTERVAL?: number;
   
-  /** Client ghost timeout in milliseconds (default: 60000) */
+  /** Client ghost timeout in milliseconds (default: 3 × PING_INTERVAL = 30000) */
   CLIENT_GHOST_TIMEOUT?: number;
   
   /** Enable debug logging (default: false) */
@@ -408,6 +424,19 @@ export enum ProtocolErrorCode {
 }
 
 /**
+ * Context of a ProtocolError rejecting a request
+ */
+export interface ProtocolErrorContext {
+  /**
+   * Whether a failed request reached the peer: `false` — the transport refused
+   * it, no handler ran (safe to send elsewhere); `'unknown'` — it may have been
+   * delivered (peer left, reconnect grace expired). Absent on other errors.
+   */
+  delivered?: false | 'unknown';
+  [key: string]: any;
+}
+
+/**
  * Protocol error class
  */
 export class ProtocolError extends Error {
@@ -415,7 +444,7 @@ export class ProtocolError extends Error {
   protocolId?: string;
   envelopeId?: bigint;
   cause?: Error;
-  context?: any;
+  context?: ProtocolErrorContext;
   
   constructor(options: {
     code: ProtocolErrorCode;
@@ -760,20 +789,23 @@ export default class Node extends EventEmitter {
   /**
    * Send tick to any matching node
    * @param options - Tick options with filter
+   * @returns undefined when a local peer matches (sent at once; errors are
+   *   thrown), otherwise a Promise: resolved once handed to a router, rejected
+   *   (NO_NODES_MATCH_FILTER, PROXY_HOP_LIMIT, PREDICATE_NOT_ROUTABLE) if none
    */
-  tickAny(options: TickAnyOptions): void;
+  tickAny(options: TickAnyOptions): void | Promise<void>;
   
   /**
    * Send tick to any downstream node
    * @param options - Tick options with filter
    */
-  tickDownAny(options: Omit<TickAnyOptions, 'down' | 'up'>): void;
+  tickDownAny(options: Omit<TickAnyOptions, 'down' | 'up'>): void | Promise<void>;
   
   /**
    * Send tick to any upstream node
    * @param options - Tick options with filter
    */
-  tickUpAny(options: Omit<TickAnyOptions, 'down' | 'up'>): void;
+  tickUpAny(options: Omit<TickAnyOptions, 'down' | 'up'>): void | Promise<void>;
   
   /**
    * Send tick to all matching nodes
