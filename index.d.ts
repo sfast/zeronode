@@ -577,10 +577,34 @@ export interface PeerJoinedPayload {
   direction: 'upstream' | 'downstream';
 }
 
+/**
+ * What a PEER_LEFT was observed as. It names the signal that arrived first,
+ * not a proven cause (a server's stop message and the dropped link race).
+ */
+export enum PeerLeftCategory {
+  /** The peer said it stops (reason 'server_left', 'CLIENT_STOP') */
+  GRACEFUL = 'graceful',
+  /** The link or the peer went away ('TRANSPORT_NOT_READY', 'TRANSPORT_FAILED', 'TIMEOUT', 'UNREACHABLE') */
+  LOST = 'lost',
+  /** Another session took its place ('replaced' upstream, 'REPLACED' downstream) */
+  REPLACED = 'replaced',
+  /** This node ended it (disconnect(), close(), unbind(): 'TRANSPORT_NOT_READY', 'closed', 'UNBOUND') */
+  LOCAL = 'local'
+}
+
+/**
+ * Emitted once per session that ends, per direction (only for a joined peer)
+ */
 export interface PeerLeftPayload {
   peerId: string;
   direction: 'upstream' | 'downstream';
+  /**
+   * Raw signal. Upstream: 'server_left', 'TRANSPORT_NOT_READY', 'TRANSPORT_FAILED',
+   * 'closed', 'replaced'. Downstream: 'CLIENT_STOP', 'TIMEOUT', 'UNREACHABLE',
+   * 'REPLACED', 'UNBOUND'.
+   */
   reason?: string;
+  category: 'graceful' | 'lost' | 'replaced' | 'local';
 }
 
 export interface PeerUpdatedPayload {

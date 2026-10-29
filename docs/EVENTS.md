@@ -6,11 +6,18 @@ Zeronode has **5 events**:
 import { Node, NodeEvent } from 'zeronode'
 
 node.on(NodeEvent.PEER_JOINED, ({ peerId, direction, peerOptions }) => {})
-node.on(NodeEvent.PEER_LEFT, ({ peerId, direction, reason }) => {})
+node.on(NodeEvent.PEER_LEFT, ({ peerId, direction, reason, category }) => {})
 node.on(NodeEvent.PEER_UPDATED, ({ peerId, direction, peerOptions }) => {})
 node.on(NodeEvent.ERROR, ({ source, error }) => {})
 node.on(NodeEvent.STOPPED, () => {})
 ```
+
+Peer events are **edge-triggered** (2.1): one `PEER_JOINED` when a session with
+a peer starts, one `PEER_LEFT` when it ends, per direction. A peer may be joined
+both ways (two nodes connected to each other); each direction is a session of
+its own. A re-handshake of a peer that is still joined (e.g. after a transport
+blip the other side never noticed) emits nothing, or `PEER_UPDATED` if its
+options changed.
 
 ---
 
@@ -35,10 +42,18 @@ node.on(NodeEvent.PEER_JOINED, ({ peerId, direction, peerOptions }) => {
 A peer disconnected.
 
 ```javascript
-node.on(NodeEvent.PEER_LEFT, ({ peerId, direction, reason }) => {
+node.on(NodeEvent.PEER_LEFT, ({ peerId, direction, reason, category }) => {
+  // Once per session, for a peer that was joined: the first signal wins
+  // (a server's stop message and the dropped link race), later ones are
+  // not reported.
+  // category (PeerLeftCategory): 'graceful' (the peer said it stops),
+  //   'lost' (the link or the peer went away), 'replaced' (another session
+  //   took its place), 'local' (this node ended it: disconnect(), close(),
+  //   unbind()). It names the observed signal, not a proven cause.
   // reason (downstream): 'CLIENT_STOP', 'TIMEOUT' (no ping),
   //   'UNREACHABLE' (a send found no route: crashed/killed),
-  //   'REPLACED' (a new instance connected with the same id)
+  //   'REPLACED' (a new instance connected with the same id),
+  //   'UNBOUND' (this node's server was unbound or closed)
   // reason (upstream): 'TRANSPORT_NOT_READY', 'TRANSPORT_FAILED',
   //   'server_left', 'closed',
   //   'replaced' (the server at that address answered under a new id while
@@ -54,7 +69,8 @@ node.on(NodeEvent.PEER_LEFT, ({ peerId, direction, reason }) => {
 
 ## PEER_UPDATED
 
-A joined peer changed its options with `setOptions()`.
+A joined peer changed its options with `setOptions()`, or re-handshook with
+different options (e.g. changed while its connection was down).
 
 ```javascript
 node.on(NodeEvent.PEER_UPDATED, ({ peerId, direction, peerOptions }) => {
