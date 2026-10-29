@@ -21,6 +21,7 @@ import { expect } from 'chai'
 import net from 'net'
 import Node, { NodeEvent } from '../../src/index.js'
 import { ServerEvent } from '../../src/protocol/server.js'
+import { ClientEvent } from '../../src/protocol/client.js'
 
 const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms))
@@ -343,7 +344,11 @@ describe('2.1 (8): ZMTP heartbeats detect an unresponsive server', function () {
   afterEach(async () => {
     await client?.close().catch(() => {})
     await server?.close().catch(() => {})
-    if (child && child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+    if (child && child.exitCode === null && child.signalCode === null) {
+      const exited = new Promise(resolve => child.once('exit', resolve))
+      child.kill('SIGKILL')
+      await exited
+    }
     child = client = server = null
   })
 
@@ -351,7 +356,12 @@ describe('2.1 (8): ZMTP heartbeats detect an unresponsive server', function () {
     const { fork } = await import('child_process')
     const { fileURLToPath } = await import('url')
     child = fork(fileURLToPath(SERVER_CHILD), [`hb-srv-${uid()}`, 'x'], { stdio: ['ignore', 'ignore', 'ignore', 'ipc'] })
-    const { address } = await new Promise(resolve => child.once('message', resolve))
+    const { address } = await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('server child did not start')), 5000)
+      child.once('message', (msg) => { clearTimeout(timer); resolve(msg) })
+      child.once('error', (err) => { clearTimeout(timer); reject(err) })
+      child.once('exit', (code, signal) => { clearTimeout(timer); reject(new Error(`server child exited (${code ?? signal})`)) })
+    })
     return address
   }
 
@@ -496,4 +506,123 @@ describe('2.1 (10): reconnect policies are applied to the connection', function 
       }
     })
   }
+})
+
+describe('2.1 review (Codex): teardown from peer-event listeners, direction-aware routing', function () {
+  this.timeout(10000)
+
+  let nodes = []
+  let proxy
+  const track = (node) => { nodes.push(node); return node }
+
+  afterEach(async () => {
+    for (const node of nodes.reverse()) await node.close().catch(() => {})
+    nodes = []
+    await proxy?.close()
+    proxy = null
+  })
+
+  // A second process with the same id takes the session over (REPLACED); the
+  // server's PEER_LEFT listener tears the server down
+  for (const teardown of ['close', 'unbind']) {
+    it(`a REPLACED client does not join again when a PEER_LEFT listener runs ${teardown}()`, async () => {
+      const server = track(new Node({ id: `rv-srv-${uid()}` }))
+      await server.bind('tcp://127.0.0.1:0')
+      const sharedId = `rv-dup-${uid()}`
+      const first = track(new Node({ id: sharedId, config: { logger: quiet(), reconnect: 'disabled' } }))
+      await first.connect({ address: server.getAddress() })
+
+      const events = recorder(server)
+      let stopping
+      server.on(NodeEvent.PEER_LEFT, ({ reason }) => {
+        if (reason === 'REPLACED') stopping = server[teardown]()
+      })
+      const second = track(new Node({ id: sharedId, config: { logger: quiet(), reconnect: 'disabled' } }))
+      second.connect({ address: server.getAddress(), timeout: 1000 }).catch(() => {})
+      await until(() => stopping, 3000, 'REPLACED')
+      await stopping
+      await wait(100)
+
+      expect(events.filter(e => e.startsWith('joined'))).to.deep.equal([])
+      expect(server.getNodesDownstream()).to.deep.equal([])
+    })
+  }
+
+  it('a disconnect() from the PEER_LEFT listener of a re-key is not undone by the new join', async () => {
+    const server = track(new Node({ id: `rk-srv-${uid()}` }))
+    await server.bind('tcp://127.0.0.1:0')
+    const address = server.getAddress()
+    const client = track(new Node({ id: `rk-cli-${uid()}`, config: { logger: quiet() } }))
+    await client.connect({ address })
+    const protocolClient = client._findRoute(server.getId()).target
+
+    const events = recorder(client)
+    let disconnecting
+    client.once(NodeEvent.PEER_LEFT, () => { disconnecting = client.disconnect(address) })
+    // The server at the address answers under a new id while the old one is
+    // still joined: a re-key (PEER_LEFT replaced for the old id)
+    protocolClient.emit(ClientEvent.SERVER_JOINED, { serverId: `rk-new-${uid()}`, serverOptions: {} })
+    await disconnecting
+
+    expect(events).to.deep.equal([`left upstream ${server.getId()} replaced replaced`])
+    expect(client.getNodesUpstream()).to.deep.equal([])
+  })
+
+  it('disabled: a handshake before the policy ends the connection does not rejoin it', async () => {
+    const server = track(new Node({ id: `pg-srv-${uid()}` }))
+    await server.bind('tcp://127.0.0.1:0')
+    proxy = await startProxy(server.getAddress())
+    const client = track(new Node({ id: `pg-cli-${uid()}`, config: { logger: quiet(), reconnect: 'disabled' } }))
+    await client.connect({ address: proxy.address })
+    const protocolClient = client._findRoute(server.getId()).target
+
+    const events = recorder(client)
+    client.once(NodeEvent.PEER_LEFT, () => {
+      // Before the deferred teardown runs, the old client handshakes again
+      protocolClient.emit(ClientEvent.SERVER_JOINED, { serverId: server.getId(), serverOptions: {} })
+    })
+    proxy.drop()
+    await until(() => events.length > 0, 3000, 'PEER_LEFT')
+    await wait(800)
+
+    expect(events.filter(e => e.startsWith('joined')), events.join(' | ')).to.deep.equal([])
+    expect(client.getServerIdByAddress(proxy.address)).to.equal(null)
+  })
+
+  it('requestDownAny / tickDownAny to a peer joined both ways use the downstream route', async () => {
+    const a = track(new Node({ id: `dr-a-${uid()}` }))
+    const b = track(new Node({ id: `dr-b-${uid()}`, config: { logger: quiet() } }))
+    b.onRequest('who', () => 'b')
+    b.onTick('note', () => {})
+    await a.bind('tcp://127.0.0.1:0')
+    await b.bind('tcp://127.0.0.1:0')
+    await a.connect({ address: b.getAddress() })
+    await b.connect({ address: a.getAddress() })
+    await until(() => a.getNodesDownstream().includes(b.getId()), 2000, 'b downstream of a')
+
+    // a's own connection to b (its upstream route, preferred by request({ to }))
+    const { default: Client } = await import('../../src/protocol/client.js')
+    const upstream = a._findRoute(b.getId()).target
+    expect(upstream).to.be.instanceOf(Client)
+    const viaUpstream = []
+    for (const method of ['request', 'tick']) {
+      const original = upstream[method].bind(upstream)
+      upstream[method] = (params) => { viaUpstream.push(method); return original(params) }
+    }
+
+    expect(await a.requestDownAny({ event: 'who', timeout: 2000 })).to.equal('b')
+    a.tickDownAny({ event: 'note' })
+    expect(viaUpstream, 'down-only calls must not use the upstream route').to.deep.equal([])
+    expect(await a.request({ to: b.getId(), event: 'who', timeout: 2000 })).to.equal('b')
+    expect(viaUpstream).to.deep.equal(['request'])
+  })
+
+  it('index.d.ts types RECONNECT_ATTEMPT listeners and the connect() result', async () => {
+    const fs = await import('fs')
+    const { fileURLToPath } = await import('url')
+    const dts = fs.readFileSync(fileURLToPath(new URL('../../index.d.ts', import.meta.url)), 'utf8')
+    expect(dts).to.match(/on\(event: NodeEvent\.RECONNECT_ATTEMPT, listener: \(payload: ReconnectAttemptPayload\) => void\): this;/)
+    expect(dts).to.match(/once\(event: NodeEvent\.RECONNECT_ATTEMPT, listener: \(payload: ReconnectAttemptPayload\) => void\): this;/)
+    expect(dts).to.match(/connect\(options: ConnectOptions\): Promise<\{ id: string; options: Record<string, any> \} \| null>;/)
+  })
 })
