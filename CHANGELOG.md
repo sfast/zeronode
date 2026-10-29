@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+From the PEER_LEFT / reconnectionTimeout analysis (aki doc 15) as refined by
+the Codex plan review (aki doc 16). Regression tests:
+`test/regressions/transport-lifecycle-2.0.17.test.js` (each fails on 2.0.16).
+No wire change.
+
+### Fixed (patch-safe: 2.0.17 candidates)
+- An explicit disconnect reports `NOT_READY` once: `Dealer.close()` after
+  `disconnect()` (what `Client.close()` does) reported it again, so a client
+  closing itself got one more `PEER_LEFT` for its server. Monitor events still
+  queued from the old link are ignored after an explicit disconnect.
+- `unbind()` and `close()` no longer leave downstream peers joined in the Node
+  (they stayed in `getPeers()` and were picked by `requestAny` with no route).
+  Still no events for them, as before. A pending resurrection handshake is
+  forgotten on unbind too.
+- `bind()` after `unbind()` receives again: the receive loop stopped by
+  `unbind()` was never restarted, so a rebound server dropped its first
+  message and received nothing more (clients never rejoined).
+- DEALER transport events carry the endpoint: `READY` / `NOT_READY` are
+  `{ address }`, `RECONNECT_RETRY` is `{ address, interval }` (they carried
+  the zeromq.js event object as `fd` and an undefined `endpoint`).
+- `getServerIdByAddress()` returns the id of a live session only (an online,
+  joined upstream session re-keyed to that client); it returned a server id
+  that had left, also while the transport was back but no handshake had been
+  answered.
+
+### Deprecated
+- `connect({ reconnectionTimeout })` has had no effect since 2.0 (the
+  transport timer it configured was removed; ZeroMQ reconnects without giving
+  up). It is no longer copied into an unread config key, and `connect()` logs
+  a warning once when it is given.
+- `index.d.ts` `NodeConfig.reconnectInterval`, `reconnectMaxInterval`,
+  `heartbeatInterval`, `heartbeatTimeout`, `heartbeatTtl` were never read:
+  marked deprecated. The keys that are read are now typed: `ZMQ_RECONNECT_IVL`,
+  `ZMQ_RECONNECT_IVL_MAX`, `ZMQ_LINGER`, `ZMQ_SNDHWM`, `ZMQ_RCVHWM`,
+  `ZMQ_SNDTIMEO`, `ZMQ_RCVTIMEO`, `ZMQ_ROUTER_MANDATORY`, `ZMQ_ROUTER_HANDOVER`,
+  `DEALER_IO_THREADS`, `ROUTER_IO_THREADS`.
+
+---
+
 ## [2.0.16] - 2026-10-28
 
 Reliability fixes from the 2026-10-28 review. Every fix is a better default:
