@@ -364,7 +364,22 @@ export default class Node extends EventEmitter {
       return Promise.resolve()
     }
     
-    return server.unbind()
+    await server.unbind()
+    // The server forgot its clients: so does the Node, or they would stay
+    // joined (and selected by requestAny) with no route behind them
+    this._forgetDownstreamPeers()
+  }
+
+  /**
+   * Drop the joined state of every downstream peer (the server no longer has
+   * them). Emits nothing, as unbind()/close() always did.
+   * @private
+   */
+  _forgetDownstreamPeers () {
+    const { joinedPeers, peerDirection } = _private.get(this)
+    for (const peerId of Array.from(joinedPeers)) {
+      if (peerDirection.get(peerId) === 'downstream') this._removeJoinedPeer(peerId)
+    }
   }
   
   /**
@@ -2162,6 +2177,7 @@ export default class Node extends EventEmitter {
     })
     clients.clear()
     clientsAddressIndex.clear()
+    this._forgetDownstreamPeers()
     
     // Anything recorded while shutting down, and the sweep timer
     _scope.forwardedTicks.clear()

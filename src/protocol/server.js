@@ -304,10 +304,11 @@ export default class Server extends Protocol {
       this.debug && this.logger?.error('Error sending server stop: ', err)
     }
     
-    // Clear state
+    // Clear state (a resurrection requested before the unbind is void too)
     let _scope = _private.get(this)
     _scope.clientLastSeen.clear()
     _scope.clientInstances.clear()
+    _scope.pendingHandshakes.clear()
     
     // unbind from transport and detach listeners
     await super.unbind()

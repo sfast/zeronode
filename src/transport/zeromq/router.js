@@ -132,6 +132,8 @@ export default class RouterSocket extends Socket {
 
     // Bind sequence: attach listeners BEFORE bind to catch events
     try {
+      // A previous unbind() stopped the receive loop: receive again
+      this.resumeMessageListener()
       this.attachSocketEventListeners()  // ✅ Attach BEFORE bind
      
       await socket.bind(this.getAddress())  // Bind to address

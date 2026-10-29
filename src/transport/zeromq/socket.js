@@ -36,7 +36,8 @@ class Socket extends EventEmitter {
       logger: null,
       online: false,
       isDebugMode: false,
-      shouldStopListening: false
+      shouldStopListening: false,
+      listening: false // the receive loop is running
     }
 
     _private.set(this, _scope)
@@ -125,8 +126,10 @@ class Socket extends EventEmitter {
    * @private
    */
   async startMessageListener () {
+    const _scope = _private.get(this)
+    _scope.listening = true
     try {
-      let { socket } = _private.get(this)
+      let { socket } = _scope
 
       for await (const frames of socket) {
         // Check if we should stop listening (graceful shutdown)
@@ -188,6 +191,23 @@ class Socket extends EventEmitter {
       })
       
       this.emit(TransportEvent.ERROR, transportError)
+    } finally {
+      _scope.listening = false
+    }
+  }
+
+  /**
+   * Receive again after stopMessageListener() (e.g. bind() after unbind()).
+   * The flag is only checked when a message arrives, so the old loop may still
+   * be waiting: clearing the flag lets it carry on; a new loop is started only
+   * if the old one has already ended.
+   * @protected
+   */
+  resumeMessageListener () {
+    const _scope = _private.get(this)
+    _scope.shouldStopListening = false
+    if (!_scope.listening) {
+      this.startMessageListener()
     }
   }
 
