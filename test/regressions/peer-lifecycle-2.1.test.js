@@ -944,3 +944,34 @@ describe('2.1 review (Codex, round 7): a failing later bind, close() vs queued b
     await second.bind(address)
   })
 })
+
+describe('2.1 review (Codex, round 8): bind() after close()', function () {
+  const ipcAddress = () => `ipc://${path.join(os.tmpdir(), `zn-r8-${uid()}.sock`)}`
+
+  it('a Node closed before it ever bound refuses bind() and creates no server', async () => {
+    const address = ipcAddress()
+    const node = new Node({ id: `cn-${uid()}`, config: { logger: quiet() } })
+    await node.close()
+    try {
+      const err = await node.bind(address).then(() => null, (e) => e)
+      expect(err?.code).to.equal('TRANSPORT_BIND_FAILED')
+      expect(err.message).to.match(/closed/)
+      expect(node.getAddress()).to.equal(null)
+    } finally {
+      await node.close().catch(() => {})
+      fs.rmSync(address.slice(6), { force: true })
+    }
+  })
+
+  it('a closed RouterSocket refuses bind() without touching the native socket', async () => {
+    const { Router: RouterSocket } = await import('../../src/transport/zeromq/index.js')
+    const address = ipcAddress()
+    const socket = new RouterSocket({ id: `cr-${uid()}` })
+    await socket.close()
+    const err = await socket.bind(address).then(() => null, (e) => e)
+    expect(err?.code).to.equal('TRANSPORT_BIND_FAILED')
+    expect(err.message).to.match(/closed/)
+    expect(err.cause, 'no native bind attempted').to.equal(undefined)
+    fs.rmSync(address.slice(6), { force: true })
+  })
+})
