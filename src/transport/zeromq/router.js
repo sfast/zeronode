@@ -212,6 +212,8 @@ export default class RouterSocket extends Socket {
     } catch (err) {
       // Ignore "No such endpoint" errors (already unbound)
       if (err.code !== 'ENOENT') {
+        // Still bound: keep receiving
+        this.resumeMessageListener()
         const transportError = new TransportError({
           code: TransportErrorCode.UNBIND_FAILED,
           message: `Failed to unbind from ${bindAddress}`,

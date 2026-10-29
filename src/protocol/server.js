@@ -54,6 +54,7 @@ export default class Server extends Protocol {
       clientInstances: new Map(),   // clientId → instance id from the handshake (restart detection)
       pendingHandshakes: new Map(), // clientId → when a resurrection handshake was requested
       stopping: false,              // unbind()/close() started: no handshake is accepted
+      unbinding: null,              // promise of the unbind() under way
       healthCheckInterval: null,
       options  // ✅ Store node options for handshake responses
     }
@@ -282,6 +283,9 @@ export default class Server extends Protocol {
   
   async bind (bindAddress) {
       let _scope = _private.get(this)
+    // An unbind() still under way (e.g. started by a listener just before
+    // this) finishes first; until then no handshake is accepted
+    if (_scope.unbinding) await _scope.unbinding.catch(() => {})
     _scope.stopping = false
     
     // Check if already bound to this address (idempotent)
@@ -303,6 +307,22 @@ export default class Server extends Protocol {
     // Synchronously, before anything is awaited: no handshake is accepted
     // from now on (also one already being processed when a listener calls this)
     this._stopAccepting()
+
+    const _scope = _private.get(this)
+    const unbinding = this._unbind()
+    _scope.unbinding = unbinding
+    try {
+      await unbinding
+    } finally {
+      if (_scope.unbinding === unbinding) _scope.unbinding = null
+    }
+  }
+
+  /**
+   * unbind() body
+   * @private
+   */
+  async _unbind () {
     this._stopHealthChecks()
     
     // Notify all clients individually with system event before unbind
@@ -331,6 +351,14 @@ export default class Server extends Protocol {
     
     // unbind from transport and detach listeners
     await super.unbind()
+
+    // The transport refused to unbind (it reported the error) and is still
+    // bound and receiving: keep serving (clients re-handshake when asked
+    // after their next ping, as after a resurrection)
+    if (this._getSocket().isOnline()) {
+      _scope.stopping = false
+      this._startHealthChecks()
+    }
   }
   
   /**
@@ -344,6 +372,7 @@ export default class Server extends Protocol {
   async close () {
     this._stopAccepting()
     await this.unbind()
+    this._stopAccepting() // also if the transport refused to unbind
     await super.close() // close underlying transport and cleanup
   }
   
