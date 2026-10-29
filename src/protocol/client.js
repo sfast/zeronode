@@ -35,6 +35,7 @@ export const ClientEvent = {
   SERVER_LEFT: 'client:server_left',   // Server left (shutdown, disconnect, etc.)
   SERVER_JOINED: 'client:server_joined',   // Server joined (handshake complete)
   SERVER_OPTIONS_UPDATED: 'client:server_options_updated', // Joined server changed its options
+  RECONNECTING: 'client:reconnecting', // Transport retrying its connection: { serverId, address, interval }
 }
 
 /**
@@ -144,6 +145,12 @@ export default class Client extends Protocol {
       this._sendClientConnected()
     })
     
+    // Transport retrying its connection: an attempt, not a state change
+    this.on(ProtocolEvent.TRANSPORT_RECONNECTING, ({ address, interval }) => {
+      const { serverId } = _private.get(this)
+      this.emit(ClientEvent.RECONNECTING, { serverId: serverId || null, address, interval })
+    })
+
     // Transport disconnected - stop ping
     this.on(ProtocolEvent.TRANSPORT_NOT_READY, () => {
       let { serverId } = _private.get(this)

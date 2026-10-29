@@ -1,6 +1,6 @@
 # Events Reference
 
-Zeronode has **5 events**:
+Zeronode has **6 events**:
 
 ```javascript
 import { Node, NodeEvent } from 'zeronode'
@@ -10,6 +10,7 @@ node.on(NodeEvent.PEER_LEFT, ({ peerId, direction, reason, category }) => {})
 node.on(NodeEvent.PEER_UPDATED, ({ peerId, direction, peerOptions }) => {})
 node.on(NodeEvent.ERROR, ({ source, error }) => {})
 node.on(NodeEvent.STOPPED, () => {})
+node.on(NodeEvent.RECONNECT_ATTEMPT, ({ address, interval, peerId }) => {})
 ```
 
 Peer events are **edge-triggered** (2.1): one `PEER_JOINED` when a session with
@@ -62,6 +63,23 @@ node.on(NodeEvent.PEER_LEFT, ({ peerId, direction, reason, category }) => {
   // Requests pending on that peer are rejected at once (PEER_LEFT /
   // PEER_UNREACHABLE) instead of waiting for their timeout.
   // Always handle this to clean up resources
+})
+```
+
+---
+
+## RECONNECT_ATTEMPT
+
+The transport is retrying an upstream connection (2.1). Observability only:
+nothing changed state, `PEER_JOINED` / `PEER_LEFT` report that.
+
+```javascript
+node.on(NodeEvent.RECONNECT_ATTEMPT, ({ address, interval, peerId }) => {
+  // address: the address given to connect()
+  // interval: current reconnect interval in ms (ZMQ_RECONNECT_IVL, doubling
+  //   up to ZMQ_RECONNECT_IVL_MAX when that is set)
+  // peerId: the last server seen at that address, or null
+  // Stops after disconnect(address) / close().
 })
 ```
 

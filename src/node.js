@@ -55,7 +55,11 @@ export const NodeEvent = {
   PEER_LEFT: 'node:peer_left',     // Peer disconnected: { peerId, direction, reason, category }
   STOPPED: 'node:stopped',         // Node stopped
   ERROR: 'node:error',             // Node-level error (normalized payload)
-  PEER_UPDATED: 'node:peer_updated' // Joined peer changed its options: { peerId, direction, peerOptions }
+  PEER_UPDATED: 'node:peer_updated', // Joined peer changed its options: { peerId, direction, peerOptions }
+  // An upstream connection is being retried by the transport: { address,
+  // interval, peerId } (peerId: the last server seen there, or null). An
+  // attempt, not a state change: PEER_JOINED / PEER_LEFT report those.
+  RECONNECT_ATTEMPT: 'node:reconnect_attempt'
 }
 
 // What a PEER_LEFT was observed as (`reason` keeps the raw signal). It names
@@ -763,6 +767,11 @@ export default class Node extends EventEmitter {
       const owner = _scope.clients.get(serverId)
       return owner === undefined || owner === client
     }
+
+    // Transform: Client.RECONNECTING → Node.RECONNECT_ATTEMPT (observability)
+    listen(ClientEvent.RECONNECTING, ({ serverId, interval }) => {
+      this.emit(NodeEvent.RECONNECT_ATTEMPT, { address, interval, peerId: serverId })
+    })
 
     // Transform: Client.SERVER_OPTIONS_UPDATED → Node.PEER_UPDATED
     listen(ClientEvent.SERVER_OPTIONS_UPDATED, ({ serverId, serverOptions }) => {

@@ -300,9 +300,12 @@ export enum NodeEvent {
   /** Peer left the network */
   PEER_LEFT = 'node:peer_left',
   
-  /** A joined peer changed its options (setOptions) */
+  /** A joined peer changed its options (setOptions, or a re-handshake with other options) */
   PEER_UPDATED = 'node:peer_updated',
   
+  /** An upstream connection is being retried: ReconnectAttemptPayload (an attempt, not a state change) */
+  RECONNECT_ATTEMPT = 'node:reconnect_attempt',
+
   /** Node stopped */
   STOPPED = 'node:stopped',
   
@@ -332,6 +335,9 @@ export enum ClientEvent {
   /** Joined server changed its options */
   SERVER_OPTIONS_UPDATED = 'client:server_options_updated',
   
+  /** Transport retrying its connection: { serverId: string | null, address, interval } */
+  RECONNECTING = 'client:reconnecting',
+
   /** Client error */
   ERROR = 'client:error'
 }
@@ -611,6 +617,15 @@ export interface PeerUpdatedPayload {
   peerId: string;
   peerOptions: Record<string, any>;
   direction: 'upstream' | 'downstream';
+}
+
+export interface ReconnectAttemptPayload {
+  /** The address given to connect() */
+  address: string;
+  /** Current reconnect interval in ms (ZMQ_RECONNECT_IVL, doubled up to ZMQ_RECONNECT_IVL_MAX) */
+  interval: number;
+  /** The last server seen at that address, or null */
+  peerId: string | null;
 }
 
 export interface NodeErrorPayload {

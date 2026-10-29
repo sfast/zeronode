@@ -15,6 +15,7 @@ export const ProtocolEvent = {
   TRANSPORT_NOT_READY: 'protocol:transport_not_ready', // Transport disconnected/unbound
   TRANSPORT_CLOSED: 'protocol:transport_closed',      // Transport permanently closed
   PEER_UNREACHABLE: 'protocol:peer_unreachable',      // Transport has no route to a peer: { peerId }
+  TRANSPORT_RECONNECTING: 'protocol:transport_reconnecting', // Transport retrying its connection: { address, interval }
   ERROR: 'protocol:error'                             // Protocol-surfaced transport/protocol error
 }
 
@@ -33,6 +34,7 @@ export class LifecycleManager {
     this._onClosed = this._onClosed.bind(this)
     this._onError = this._onError.bind(this)
     this._onSendFailed = this._onSendFailed.bind(this)
+    this._onReconnectRetry = this._onReconnectRetry.bind(this)
   }
   
   // ============================================================================
@@ -72,6 +74,7 @@ export class LifecycleManager {
     this.ctx.socket.on(TransportEvent.CLOSED, this._onClosed)
     this.ctx.socket.on(TransportEvent.ERROR, this._onError)
     this.ctx.socket.on(TransportEvent.SEND_FAILED, this._onSendFailed)
+    this.ctx.socket.on(TransportEvent.RECONNECT_RETRY, this._onReconnectRetry)
   }
   
   /**
@@ -88,6 +91,7 @@ export class LifecycleManager {
       this.ctx.socket.removeAllListeners(TransportEvent.CLOSED)
       this.ctx.socket.removeAllListeners(TransportEvent.ERROR)
       this.ctx.socket.removeAllListeners(TransportEvent.SEND_FAILED)
+      this.ctx.socket.removeAllListeners(TransportEvent.RECONNECT_RETRY)
       
       this.ctx.debug && this.ctx.logger?.debug('[Lifecycle] Detached socket event handlers')
     } catch (err) {
@@ -169,6 +173,15 @@ export class LifecycleManager {
     }
   }
   
+  /**
+   * The transport is retrying its connection (observability only: not a
+   * state change)
+   * @private
+   */
+  _onReconnectRetry({ address, interval } = {}) {
+    this.protocolEmitter.emit(ProtocolEvent.TRANSPORT_RECONNECTING, { address, interval })
+  }
+
   // ============================================================================
   // CLEANUP API
   // ============================================================================
