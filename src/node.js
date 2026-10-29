@@ -46,6 +46,7 @@ import Globals from './globals.js'
 import Server, { ServerEvent } from './protocol/server.js'
 import Client, { ClientEvent } from './protocol/client.js'
 import { ProtocolErrorCode } from './protocol/protocol-errors.js'
+import { TransportError, TransportErrorCode } from './transport/errors.js'
 
 // ============================================================================
 // NODE EVENTS (Orchestration Layer - Public API)
@@ -399,6 +400,15 @@ export default class Node extends EventEmitter {
   async bind (address) {
     const _scope = _private.get(this)
     
+    // A closed node binds nothing (no server is created after close())
+    if (_scope.closed) {
+      throw new TransportError({
+        code: TransportErrorCode.BIND_FAILED,
+        message: `Node '${_scope.id}' is closed: cannot bind to ${address || _scope.bindAddress}`,
+        address: address || _scope.bindAddress
+      })
+    }
+
     // Use cached bind address if no address provided
     if (!address) {
       address = _scope.bindAddress

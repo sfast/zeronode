@@ -117,6 +117,16 @@ export default class RouterSocket extends Socket {
     let _scope = _private.get(this)
     let { socket } = _scope
 
+    // A closed socket cannot bind again (do not reach the native socket)
+    if (socket.closed) {
+      throw new TransportError({
+        code: TransportErrorCode.BIND_FAILED,
+        message: `Router '${this.getId()}' is closed: cannot bind to ${bindAddress}`,
+        transportId: this.getId(),
+        address: bindAddress
+      })
+    }
+
     // Validate: Can't bind if already online
     if (this.isOnline()) {
       throw new TransportError({ 

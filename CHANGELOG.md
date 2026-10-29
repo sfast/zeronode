@@ -91,7 +91,8 @@ patch from the commit before these if they are not wanted yet.
   newer than the latest unbind/close request (a bind that fails changes
   nothing). `close()` refuses later binds and waits for queued ones, so no
   bind is under way when the transport closes; a Node closed before its
-  constructor's bind ran does not bind. If libzmq
+  constructor's bind ran does not bind, and `bind()` on a closed Node (or a
+  closed ZeroMQ router socket) is refused (`TRANSPORT_BIND_FAILED`). If libzmq
   refuses the transport unbind, `unbind()` now rejects
   (`TRANSPORT_UNBIND_FAILED`): the server has told its clients it stops and
   accepts no session, but stays bound; `bind()` at the same address resumes
