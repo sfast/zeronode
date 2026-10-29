@@ -327,6 +327,28 @@ config: {
 }
 ```
 
+#### ZMQ_HEARTBEAT_IVL / ZMQ_HEARTBEAT_TIMEOUT / ZMQ_HEARTBEAT_TTL
+
+**Type:** `number` (milliseconds, integer)  
+**Default:** `5000` / `3 × ZMQ_HEARTBEAT_IVL` (15000) / unset — client sockets only  
+
+ZMTP heartbeats (2.1). A client sends a ZeroMQ PING every `ZMQ_HEARTBEAT_IVL`;
+if nothing arrives for `ZMQ_HEARTBEAT_TIMEOUT` the link is dropped
+(`PEER_LEFT`, category `'lost'`; pending requests then fail after the reconnect
+grace) and ZeroMQ reconnects. This catches a server that stops answering while
+TCP stays up (frozen process, network partition), which the client otherwise
+never notices: its own ping has no answer, and TCP takes hours. libzmq answers
+PINGs itself, so this works with servers on any version (verified against
+2.0.15). `ZMQ_HEARTBEAT_IVL: 0` turns it off. Server sockets keep relying on
+client pings (`CLIENT_GHOST_TIMEOUT`).
+
+```javascript
+config: {
+  ZMQ_HEARTBEAT_IVL: 2000,     // PING every 2s
+  ZMQ_HEARTBEAT_TIMEOUT: 6000  // drop the link after 6s of silence
+}
+```
+
 #### ZMQ_RECONNECT_IVL / ZMQ_RECONNECT_IVL_MAX
 
 **Type:** `number` (milliseconds)  
@@ -339,7 +361,7 @@ default `ZMQ_RECONNECT_IVL_MAX: 0` a client retries every `ZMQ_RECONNECT_IVL`
 larger maximum makes the interval double up to it (fewer attempts against a
 server that is down, but a restarted server may be reached up to that much
 later). These are the keys that are read: `reconnectInterval` /
-`reconnectMaxInterval` (and `heartbeat*`) in older typings have no effect,
+`reconnectMaxInterval` (and `heartbeat*`, see `ZMQ_HEARTBEAT_*`) in older typings have no effect,
 and `connect({ reconnectionTimeout })` has had no effect since 2.0.
 
 ```javascript

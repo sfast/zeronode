@@ -82,6 +82,20 @@ export interface NodeConfig {
   /** Router: a new connection with a connected id takes it over: ZMQ_ROUTER_HANDOVER (default: true) */
   ZMQ_ROUTER_HANDOVER?: boolean;
   
+  /**
+   * ZMTP heartbeat interval of client sockets in ms: ZMQ_HEARTBEAT_IVL
+   * (default: 5000; 0 = off). Detects a server that stops answering while TCP
+   * stays up (frozen process, partition): the link is dropped (PEER_LEFT,
+   * category 'lost') and ZeroMQ reconnects. Server sockets are not affected.
+   */
+  ZMQ_HEARTBEAT_IVL?: number;
+
+  /** ms without traffic after a heartbeat before the link is dropped: ZMQ_HEARTBEAT_TIMEOUT (default: 3 × ZMQ_HEARTBEAT_IVL = 15000) */
+  ZMQ_HEARTBEAT_TIMEOUT?: number;
+
+  /** Heartbeat TTL asked of the server in ms: ZMQ_HEARTBEAT_TTL (default: unset) */
+  ZMQ_HEARTBEAT_TTL?: number;
+
   /** ZeroMQ I/O threads for client sockets (default: 1) */
   DEALER_IO_THREADS?: number;
   
@@ -99,17 +113,17 @@ export interface NodeConfig {
   reconnectMaxInterval?: number;
   
   /**
-   * @deprecated Never read (has no effect): ZMTP heartbeats are not configured by zeronode
+   * @deprecated Never read (has no effect): use ZMQ_HEARTBEAT_IVL
    */
   heartbeatInterval?: number;
   
   /**
-   * @deprecated Never read (has no effect): ZMTP heartbeats are not configured by zeronode
+   * @deprecated Never read (has no effect): use ZMQ_HEARTBEAT_TIMEOUT
    */
   heartbeatTimeout?: number;
   
   /**
-   * @deprecated Never read (has no effect): ZMTP heartbeats are not configured by zeronode
+   * @deprecated Never read (has no effect): use ZMQ_HEARTBEAT_TTL
    */
   heartbeatTtl?: number;
 }
