@@ -56,7 +56,6 @@
     "standard": "standard './src/**/*.js' --verbose | snazzy",
     "format": "standard './src/**/*.js' --fix --verbose | snazzy",
     "snyk-protect": "snyk-protect",
-    "prepare": "npm run snyk-protect",
     "benchmark:zeromq": "node benchmark/zeromq-baseline.js",
     "benchmark:local": "node benchmark/local-baseline.js",
     "benchmark:node": "node benchmark/node-throughput.js",
