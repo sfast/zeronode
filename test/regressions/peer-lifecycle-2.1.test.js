@@ -18,7 +18,10 @@
  */
 
 import { expect } from 'chai'
+import fs from 'fs'
 import net from 'net'
+import os from 'os'
+import path from 'path'
 import Node, { NodeEvent } from '../../src/index.js'
 import { ServerEvent } from '../../src/protocol/server.js'
 import { ClientEvent } from '../../src/protocol/client.js'
@@ -831,5 +834,49 @@ describe('2.1 review (Codex, round 5): bind() after a refused unbind or a failed
     server.onRequest('who', () => 'bound')
     await client.connect(address, 2000)
     expect(await client.request({ event: 'who', timeout: 2000 })).to.equal('bound')
+  })
+})
+
+describe('2.1 review (Codex, round 6): bind() and unbind() overlapping', function () {
+  this.timeout(10000)
+
+  const cleanups = []
+  afterEach(async () => {
+    for (const fn of cleanups.splice(0)) await fn().catch(() => {})
+  })
+
+  const ipcAddress = () => `ipc://${path.join(os.tmpdir(), `zn-r6-${uid()}.sock`)}`
+
+  it('bind(A), unbind(), bind(A) issued together end bound and accepting', async () => {
+    const { default: Server } = await import('../../src/protocol/server.js')
+    const { default: Client } = await import('../../src/protocol/client.js')
+    const address = ipcAddress()
+    const server = new Server({ id: `ov-srv-${uid()}`, config: { logger: quiet() } })
+    const client = new Client({ id: `ov-cli-${uid()}` })
+    cleanups.push(async () => { await client.close(); await server.close(); fs.rmSync(address.slice(6), { force: true }) })
+
+    const results = await Promise.allSettled([server.bind(address), server.unbind(), server.bind(address)])
+    expect(results.map(r => r.status)).to.deep.equal(['fulfilled', 'fulfilled', 'fulfilled'])
+    expect(server._getSocket().isOnline(), 'bound').to.equal(true)
+    expect(server._isAccepting(), 'accepting').to.equal(true)
+
+    server.onRequest('who', () => 'served')
+    await client.connect(address, 2000)
+    expect(await client.request({ event: 'who', timeout: 2000 })).to.equal('served')
+  })
+
+  it('a bind() that fails while an unbind() is queued does not reopen the server', async () => {
+    const zmq = await import('zeromq')
+    const { default: Server } = await import('../../src/protocol/server.js')
+    const squatter = new zmq.Router({ linger: 0 })
+    await squatter.bind('tcp://127.0.0.1:0')
+    const address = squatter.lastEndpoint
+    const server = new Server({ id: `fb-srv-${uid()}`, config: { logger: quiet() } })
+    cleanups.push(async () => { squatter.close(); await server.close() })
+
+    const [bound, unbound] = await Promise.allSettled([server.bind(address), server.unbind()])
+    expect(bound.status, 'address in use').to.equal('rejected')
+    expect(unbound.status).to.equal('fulfilled')
+    expect(server._isAccepting(), 'the unbind was the last request').to.equal(false)
   })
 })
