@@ -80,6 +80,27 @@ named in brackets.
   id wins). A handshake from a new *instance* of a joined id emits
   `PEER_LEFT` (`REPLACED`) then `PEER_JOINED`; a re-handshake of the same
   instance (after a blip) does not.
+- **A server restarting under a new id is routable again (#10)**
+  [d736e0f6 F1]: a node that stays up while its upstream server (e.g. a
+  `Router`) restarts at the same address under a new id used to re-handshake
+  (the DEALER reconnects by itself) without re-keying its connection: the new
+  id was joined but had no route, so `requestAny` ended
+  `NO_NODES_MATCH_FILTER`, `request`/`tick({ to })` `NODE_NOT_FOUND` and
+  `tickAny` a routing miss until the process restarted (2.0.15 too). The
+  connection now moves to the new id before `PEER_JOINED` (the old id gets
+  `PEER_LEFT` `replaced` if it was still joined; `getPeerOptions(oldId)` is
+  `null`); `disconnect(address)` and auto-reconnect use the new id. An id that
+  another connection already holds is never taken over (warning).
+- The auto-reconnect timer no longer reports "Successfully reconnected" and
+  stops for an address whose client has no session; it keeps checking with
+  backoff until the client's own re-handshake ends it (g1).
+- The first `PEER_JOINED` of a `connect()` is emitted once the peer is
+  routable: a synchronous listener can `request({ to: peerId })`. A
+  `connect()` cancelled during its handshake no longer emits
+  `PEER_JOINED`/`PEER_LEFT` (g2).
+- `requestAny`/`tickAny` ignore a caller-supplied `_routing` (internal proxy
+  routing info: it could exclude the caller's own routers or forge the
+  `requestor`) (f2).
 - `MessageDispatcher.offRequest(pattern)` without a handler no longer throws.
 - Reporting a failed tick handler never throws, whatever it threw or
   rejected with (e.g. a `Symbol`); it used to become an unhandled rejection.
@@ -116,6 +137,12 @@ named in brackets.
   now dropped after 30s instead of 60s. The server assumes its clients ping at
   the server's own configured `PING_INTERVAL`.
 - A ROUTER `sendBuffer()` returns the send promise (it returned `true`).
+- `index.d.ts` declares the config keys that are read: `PING_INTERVAL` and
+  `BUFFER_STRATEGY` (`null` | `'power-of-2'`). `CLIENT_PING_INTERVAL` and
+  `PROTOCOL_BUFFER_STRATEGY` were never read; they stay typed, deprecated,
+  and are still ignored. Also typed: `tickAny`/`tickDownAny`/`tickUpAny`
+  return `void | Promise<void>`, `ProtocolError.context.delivered`, and the
+  real health check / ghost defaults (5s / 3 × ping = 30s).
 - Server-side tick handler failures and malformed incoming frames are now
   reported as `NodeEvent.ERROR` (`source: 'server'`) and logged at error
   level, once per occurrence (they used to kill the receive loop silently).
@@ -165,6 +192,11 @@ named in brackets.
   rejected as `PEER_LEFT`.
 - With an infinite `ZMQ_SNDTIMEO` on the router, a peer leaving does not fail
   pending requests early (their sends never settle).
+- A ROUTER **reply** to a live peer whose queue is full (`ZMQ_SNDHWM`) is
+  dropped (`EAGAIN` with the default send timeout 0) and not reported; the
+  requester waits for its own timeout. Requests fail fast in that case
+  (`SEND_FAILED`), replies do not. A positive `ZMQ_SNDTIMEO` makes the router
+  wait for queue space instead.
 - Options propagation does not reach peers on < 2.0.16. Loop protection needs
   every router on >= 2.0.16: an old router is recorded as visited by the new
   ones next to it, but between two or more old routers requests can still
