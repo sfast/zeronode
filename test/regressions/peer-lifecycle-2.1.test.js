@@ -692,3 +692,78 @@ describe('2.1 review (Codex, round 2): unbind() and bind() racing, failed unbind
     }
   })
 })
+
+describe('2.1 review (Codex, round 3): failed unbind recovery', function () {
+  this.timeout(10000)
+
+  let nodes = []
+  const cleanups = []
+  const track = (node) => { nodes.push(node); return node }
+
+  afterEach(async () => {
+    for (const fn of cleanups.splice(0)) await fn().catch(() => {})
+    for (const node of nodes.reverse()) await node.close().catch(() => {})
+    nodes = []
+  })
+
+  const protocolServerPair = async (config = {}) => {
+    const { default: Server } = await import('../../src/protocol/server.js')
+    const server = new Server({ id: `fr-srv-${uid()}`, config: { logger: quiet(), ...config } })
+    await server.bind('tcp://127.0.0.1:0')
+    const address = server.getAddress()
+    const socket = server._getSocket()
+    cleanups.push(async () => { socket.setAddress(address); await server.close() })
+    return { server, address, socket }
+  }
+
+  it('a second unbind() started while a failed one finishes keeps the server refusing handshakes', async () => {
+    const { server, address, socket } = await protocolServerPair()
+    let second
+    server.once(ServerEvent.ERROR, () => {
+      // The first unbind failed; try again with the real endpoint
+      socket.setAddress(address)
+      second = server.unbind()
+    })
+    socket.setAddress('ipc://\u0000')
+    await server.unbind()
+    expect(server._isAccepting(), 'while the second unbind is pending').to.equal(false)
+    await second
+    expect(server._isAccepting(), 'after the second unbind').to.equal(false)
+    expect(socket.isOnline()).to.equal(false)
+  })
+
+  it('clients already joined come back after a failed unbind', async () => {
+    const server = track(new Node({ id: `fr-node-${uid()}`, config: { logger: quiet() } }))
+    server.onRequest('who', () => 'server')
+    await server.bind('tcp://127.0.0.1:0')
+    const client = track(new Node({ id: `fr-cli-${uid()}`, config: { logger: quiet() } }))
+    client.onRequest('who', () => 'client')
+    const clientEvents = recorder(client)
+    await client.connect({ address: server.getAddress() })
+
+    const socket = server._findRoute(client.getId(), { up: false }).target._getSocket()
+    const address = server.getAddress()
+    socket.setAddress('ipc://\u0000')
+    await server.unbind()
+    socket.setAddress(address)
+
+    // The client was told the server stops; the server asks it back
+    await until(() => clientEvents.filter(e => e.startsWith('joined')).length === 2, 5000, 'client rejoined')
+    await until(() => server.getNodesDownstream().includes(client.getId()), 3000, 'server sees the client')
+    expect(await client.request({ to: server.getId(), event: 'who', timeout: 2000 })).to.equal('server')
+    expect(await server.request({ to: client.getId(), event: 'who', timeout: 2000 })).to.equal('client')
+  })
+
+  it('a throwing ServerEvent.ERROR listener does not make a failed unbind() reject; close() still closes', async () => {
+    const { server, address, socket } = await protocolServerPair()
+    server.on(ServerEvent.ERROR, () => { throw new Error('listener bug') })
+    socket.setAddress('ipc://\u0000')
+    await server.unbind()
+    expect(server._isAccepting()).to.equal(true)
+
+    socket.setAddress('ipc://\u0000')
+    await server.close()
+    expect(socket.isOnline(), 'transport closed').to.equal(false)
+    socket.setAddress(address)
+  })
+})
