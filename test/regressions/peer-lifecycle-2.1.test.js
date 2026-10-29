@@ -1,0 +1,298 @@
+/**
+ * Regression: peer lifecycle events are edge-triggered (2.1 candidates).
+ *
+ * From the PEER_LEFT analysis (aki doc 15) as refined by the Codex plan
+ * review (aki doc 16), item 6:
+ * - PEER_JOINED once per transition to joined, PEER_LEFT once per transition
+ *   out of it (per direction); a re-handshake of a joined peer is silent, or
+ *   PEER_UPDATED if its options changed
+ * - PEER_LEFT carries a `category` (graceful / lost / replaced / local); the
+ *   `reason` strings are unchanged
+ * - one peer id may be joined in both directions (two nodes connected to
+ *   each other): each direction has its own state
+ * - server side: CLIENT_STOP from a client that is not joined, and a
+ *   resurrection ping, no longer produce extra CLIENT_LEFT events
+ * - unbind()/close() report PEER_LEFT (UNBOUND, local) for downstream peers
+ *
+ * ZeroMQ transport, port 0.
+ */
+
+import { expect } from 'chai'
+import net from 'net'
+import Node, { NodeEvent } from '../../src/index.js'
+import { ServerEvent } from '../../src/protocol/server.js'
+
+const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms))
+const quiet = () => ({ error () {}, warn () {}, info () {}, debug () {} })
+
+/** Resolve once `check()` is true (polled), reject after `ms` */
+function until (check, ms = 3000, what = 'condition') {
+  return new Promise((resolve, reject) => {
+    const started = Date.now()
+    const poll = setInterval(() => {
+      if (check()) {
+        clearInterval(poll)
+        resolve()
+      } else if (Date.now() - started > ms) {
+        clearInterval(poll)
+        reject(new Error(`timed out waiting for ${what}`))
+      }
+    }, 10)
+  })
+}
+
+/** Record a node's peer events as compact strings */
+function recorder (node) {
+  const events = []
+  node.on(NodeEvent.PEER_JOINED, ({ peerId, direction }) => events.push(`joined ${direction} ${peerId}`))
+  node.on(NodeEvent.PEER_LEFT, ({ peerId, direction, reason, category }) => events.push(`left ${direction} ${peerId} ${reason} ${category}`))
+  node.on(NodeEvent.PEER_UPDATED, ({ peerId, direction }) => events.push(`updated ${direction} ${peerId}`))
+  return events
+}
+
+/** TCP proxy on port 0; drop() simulates a transport blip */
+async function startProxy (target) {
+  const sockets = new Set()
+  const server = net.createServer((inbound) => {
+    const [host, port] = target.replace('tcp://', '').split(':')
+    const outbound = net.connect(Number(port), host)
+    sockets.add(inbound)
+    sockets.add(outbound)
+    inbound.pipe(outbound)
+    outbound.pipe(inbound)
+    const cleanup = () => { inbound.destroy(); outbound.destroy(); sockets.delete(inbound); sockets.delete(outbound) }
+    inbound.on('error', cleanup)
+    outbound.on('error', cleanup)
+    inbound.on('close', cleanup)
+    outbound.on('close', cleanup)
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  return {
+    address: `tcp://127.0.0.1:${server.address().port}`,
+    drop () { for (const s of sockets) s.destroy() },
+    close () { this.drop(); return new Promise(resolve => server.close(resolve)) }
+  }
+}
+
+describe('2.1 (6): peer events are edge-triggered', function () {
+  this.timeout(10000)
+
+  let nodes = []
+  let proxy
+  const track = (node) => { nodes.push(node); return node }
+
+  afterEach(async () => {
+    for (const node of nodes.reverse()) await node.close().catch(() => {})
+    nodes = []
+    await proxy?.close()
+    proxy = null
+  })
+
+  it('a server that stops: one PEER_LEFT on the client, none more at its own close()', async () => {
+    const server = track(new Node({ id: `el-srv-${uid()}` }))
+    await server.bind('tcp://127.0.0.1:0')
+    const client = new Node({ id: `el-cli-${uid()}`, config: { logger: quiet() } })
+    const events = recorder(client)
+    await client.connect({ address: server.getAddress() })
+
+    await server.close()
+    await until(() => events.some(e => e.startsWith('left')), 3000, 'PEER_LEFT')
+    await wait(100)
+    await client.close()
+
+    const left = events.filter(e => e.startsWith('left'))
+    expect(left, events.join(' | ')).to.have.length(1)
+    // Whichever signal arrived first: the server's stop or the dropped link
+    expect(left[0]).to.match(/ (server_left graceful|TRANSPORT_NOT_READY lost)$/)
+  })
+
+  it('a client that closes: one PEER_LEFT on each side (local / graceful)', async () => {
+    const server = track(new Node({ id: `el-srv-${uid()}` }))
+    await server.bind('tcp://127.0.0.1:0')
+    const serverEvents = recorder(server)
+    const client = new Node({ id: `el-cli-${uid()}` })
+    const clientEvents = recorder(client)
+    await client.connect({ address: server.getAddress() })
+
+    await client.close()
+    await until(() => serverEvents.some(e => e.startsWith('left')), 3000, 'server PEER_LEFT')
+
+    expect(clientEvents).to.deep.equal([
+      `joined upstream ${server.getId()}`,
+      `left upstream ${server.getId()} TRANSPORT_NOT_READY local`
+    ])
+    expect(serverEvents).to.deep.equal([
+      `joined downstream ${client.getId()}`,
+      `left downstream ${client.getId()} CLIENT_STOP graceful`
+    ])
+  })
+
+  it('disconnect(address): one PEER_LEFT, category local', async () => {
+    const server = track(new Node({ id: `el-srv-${uid()}` }))
+    await server.bind('tcp://127.0.0.1:0')
+    const client = track(new Node({ id: `el-cli-${uid()}` }))
+    const events = recorder(client)
+    await client.connect({ address: server.getAddress() })
+    await client.disconnect(server.getAddress())
+    expect(events).to.deep.equal([
+      `joined upstream ${server.getId()}`,
+      `left upstream ${server.getId()} TRANSPORT_NOT_READY local`
+    ])
+  })
+
+  it('a transport blip: the server sees no second PEER_JOINED', async () => {
+    const server = track(new Node({ id: `el-srv-${uid()}` }))
+    await server.bind('tcp://127.0.0.1:0')
+    const serverEvents = recorder(server)
+    proxy = await startProxy(server.getAddress())
+    const client = track(new Node({ id: `el-cli-${uid()}`, config: { logger: quiet() } }))
+    const clientEvents = recorder(client)
+    await client.connect({ address: proxy.address })
+
+    proxy.drop()
+    // The client sees the link go and come back (left, then joined again)
+    await until(() => clientEvents.filter(e => e.startsWith('joined')).length === 2, 5000, 'client rejoined')
+    await wait(100)
+    expect(serverEvents).to.deep.equal([`joined downstream ${client.getId()}`])
+    expect(clientEvents.filter(e => e.startsWith('left'))).to.have.length(1)
+  })
+
+  it('a re-handshake with changed options: PEER_UPDATED, not PEER_JOINED', async () => {
+    const server = track(new Node({ id: `el-srv-${uid()}` }))
+    await server.bind('tcp://127.0.0.1:0')
+    const serverEvents = recorder(server)
+    proxy = await startProxy(server.getAddress())
+    const client = track(new Node({ id: `el-cli-${uid()}`, options: { v: 1 }, config: { logger: quiet() } }))
+    await client.connect({ address: proxy.address })
+
+    // Offline: the new options travel with the next handshake only
+    const back = new Promise(resolve => client.once(NodeEvent.PEER_JOINED, resolve))
+    proxy.drop()
+    await until(() => client.getNodesUpstream().length === 0, 3000, 'client offline')
+    await client.setOptions({ v: 2 })
+    await back
+    await until(() => serverEvents.length === 2, 3000, 'server PEER_UPDATED')
+    expect(serverEvents).to.deep.equal([`joined downstream ${client.getId()}`, `updated downstream ${client.getId()}`])
+    expect(server.getPeerOptions(client.getId()).v).to.equal(2)
+  })
+
+  it('unbind(): PEER_LEFT (UNBOUND, local) once per downstream peer', async () => {
+    const server = track(new Node({ id: `el-srv-${uid()}` }))
+    await server.bind('tcp://127.0.0.1:0')
+    const events = recorder(server)
+    const client = track(new Node({ id: `el-cli-${uid()}`, config: { logger: quiet(), reconnect: 'disabled' } }))
+    await client.connect({ address: server.getAddress() })
+    await until(() => events.length === 1, 2000, 'server PEER_JOINED')
+
+    await server.unbind()
+    await wait(100)
+    expect(events).to.deep.equal([
+      `joined downstream ${client.getId()}`,
+      `left downstream ${client.getId()} UNBOUND local`
+    ])
+  })
+
+  it('two nodes connected to each other: each direction has its own session', async () => {
+    const a = track(new Node({ id: `el-a-${uid()}` }))
+    const b = track(new Node({ id: `el-b-${uid()}`, config: { logger: quiet() } }))
+    a.onRequest('who', () => 'a')
+    b.onRequest('who', () => 'b')
+    await a.bind('tcp://127.0.0.1:0')
+    await b.bind('tcp://127.0.0.1:0')
+    await a.connect({ address: b.getAddress() })
+    await b.connect({ address: a.getAddress() })
+    await until(() => a.getNodesDownstream().includes(b.getId()), 2000, 'b downstream of a')
+
+    expect(a.getNodesUpstream()).to.deep.equal([b.getId()])
+    expect(a.getNodesDownstream()).to.deep.equal([b.getId()])
+
+    // b's connection to a ends; a's own connection to b is untouched
+    const events = recorder(a)
+    await b.disconnect(a.getAddress())
+    await until(() => events.length === 1, 2000, 'a PEER_LEFT')
+    expect(events).to.deep.equal([`left downstream ${b.getId()} CLIENT_STOP graceful`])
+    expect(a.getNodesUpstream()).to.deep.equal([b.getId()])
+    expect(await a.request({ to: b.getId(), event: 'who', timeout: 2000 })).to.equal('b')
+  })
+})
+
+describe('2.1 (6): server-side lifecycle bookkeeping', function () {
+  this.timeout(10000)
+
+  let server
+  let client
+
+  afterEach(async () => {
+    await client?.close().catch(() => {})
+    await server?.close().catch(() => {})
+    client = server = null
+  })
+
+  it('a timed-out client that pings again rejoins without a REPLACED', async () => {
+    server = new Node({
+      id: `rs-srv-${uid()}`,
+      config: { logger: quiet(), CLIENT_HEALTH_CHECK_INTERVAL: 50, CLIENT_GHOST_TIMEOUT: 300 }
+    })
+    await server.bind('tcp://127.0.0.1:0')
+    const nodeEvents = recorder(server)
+    client = new Node({ id: `rs-cli-${uid()}`, config: { logger: quiet(), PING_INTERVAL: 1000 } })
+    await client.connect({ address: server.getAddress() })
+
+    // No ping for 1s, ghost after 300ms: TIMEOUT; the next ping resurrects it
+    await until(() => nodeEvents.some(e => / TIMEOUT /.test(e)), 3000, 'TIMEOUT')
+    await until(() => nodeEvents.filter(e => e.startsWith('joined')).length === 2, 4000, 'rejoined after the ping')
+    expect(nodeEvents).to.deep.equal([
+      `joined downstream ${client.getId()}`,
+      `left downstream ${client.getId()} TIMEOUT lost`,
+      `joined downstream ${client.getId()}`
+    ])
+  })
+
+  it('the protocol server: TIMEOUT then a resurrection ping gives no REPLACED', async () => {
+    const { default: Server } = await import('../../src/protocol/server.js')
+    const { default: Client } = await import('../../src/protocol/client.js')
+    const protocolServer = new Server({
+      id: `rp-srv-${uid()}`,
+      config: { CLIENT_HEALTH_CHECK_INTERVAL: 50, CLIENT_GHOST_TIMEOUT: 300 }
+    })
+    const protocolClient = new Client({ id: `rp-cli-${uid()}`, config: { PING_INTERVAL: 1000 } })
+    try {
+      await protocolServer.bind('tcp://127.0.0.1:0')
+      const left = []
+      let joined = 0
+      protocolServer.on(ServerEvent.CLIENT_LEFT, ({ reason }) => left.push(reason))
+      protocolServer.on(ServerEvent.CLIENT_JOINED, () => joined++)
+      await protocolClient.connect(protocolServer.getAddress(), 2000)
+      await until(() => joined === 2, 4000, 'rejoined after the ping')
+      expect(left).to.deep.equal(['TIMEOUT'])
+    } finally {
+      await protocolClient.close().catch(() => {})
+      await protocolServer.close().catch(() => {})
+    }
+  })
+
+  it('CLIENT_STOP from a client that is not joined emits no CLIENT_LEFT', async () => {
+    const { default: Server } = await import('../../src/protocol/server.js')
+    const { default: Client } = await import('../../src/protocol/client.js')
+    const protocolServer = new Server({
+      id: `cs-srv-${uid()}`,
+      config: { CLIENT_HEALTH_CHECK_INTERVAL: 50, CLIENT_GHOST_TIMEOUT: 200 }
+    })
+    const protocolClient = new Client({ id: `cs-cli-${uid()}`, config: { PING_INTERVAL: 60000 } })
+    try {
+      await protocolServer.bind('tcp://127.0.0.1:0')
+      const left = []
+      protocolServer.on(ServerEvent.CLIENT_LEFT, ({ reason }) => left.push(reason))
+      await protocolClient.connect(protocolServer.getAddress(), 2000)
+      await until(() => left.length === 1, 3000, 'TIMEOUT')
+
+      await protocolClient.close()
+      await wait(150)
+      expect(left).to.deep.equal(['TIMEOUT'])
+    } finally {
+      await protocolClient.close().catch(() => {})
+      await protocolServer.close().catch(() => {})
+    }
+  })
+})
