@@ -313,6 +313,12 @@ Send request to any node matching filter (automatic load balancing).
 
 **Returns:** `Promise<any>` - Response data
 
+A request that fails on its way (a `ProtocolError`) says in
+`error.context.delivered` whether it reached the peer: `false` — the transport
+refused it and no handler ran (safe to retry elsewhere; `requestAny` already
+retries another candidate then); `'unknown'` — it may have run (peer left,
+reconnect grace expired). Absent on other errors.
+
 **Example:**
 ```javascript
 const response = await node.requestAny({
@@ -348,7 +354,10 @@ Send one-way message to any node matching filter.
   - `up` (boolean, optional): Include upstream peers (default: true)
   - `metadata` (Object, optional): Additional routing metadata
 
-**Returns:** `void`
+**Returns:** `undefined` when a local peer matches (sent at once; errors are
+thrown), otherwise a `Promise<void>`: resolved once handed to a router, rejected
+(`NO_NODES_MATCH_FILTER`, `PROXY_HOP_LIMIT`, `PREDICATE_NOT_ROUTABLE`) when no
+node or router can take it. `await` covers both.
 
 **Example:**
 ```javascript

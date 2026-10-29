@@ -148,7 +148,7 @@ ZeroNode supports two allocation strategies for envelope buffers:
 ```javascript
 const node = new Node({
   config: {
-    PROTOCOL_BUFFER_STRATEGY: BufferStrategy.EXACT
+    BUFFER_STRATEGY: null  // BufferStrategy.EXACT
   }
 })
 ```
@@ -163,11 +163,9 @@ const node = new Node({
 ### POWER_OF_2
 
 ```javascript
-import { BufferStrategy } from 'zeronode'
-
 const node = new Node({
   config: {
-    PROTOCOL_BUFFER_STRATEGY: BufferStrategy.POWER_OF_2
+    BUFFER_STRATEGY: 'power-of-2'  // BufferStrategy.POWER_OF_2
   }
 })
 ```
@@ -394,14 +392,14 @@ server.onRequest('ping', (envelope, reply) => {
 // High throughput + large messages = POWER_OF_2
 const node = new Node({
   config: {
-    PROTOCOL_BUFFER_STRATEGY: BufferStrategy.POWER_OF_2
+    BUFFER_STRATEGY: 'power-of-2'  // BufferStrategy.POWER_OF_2
   }
 })
 
 // Low memory + small messages = EXACT (default)
 const node = new Node({
   config: {
-    PROTOCOL_BUFFER_STRATEGY: BufferStrategy.EXACT
+    BUFFER_STRATEGY: null  // BufferStrategy.EXACT
   }
 })
 ```

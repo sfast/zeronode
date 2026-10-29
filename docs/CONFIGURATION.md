@@ -258,17 +258,16 @@ const response = await node.request({
 
 #### BUFFER_STRATEGY
 
-**Type:** `string`  
-**Default:** `'msgpack'`  
-**Options:** `'msgpack'`, `'json'`  
+**Type:** `null | 'power-of-2'`  
+**Default:** `null` (exact allocation)  
 
-Message serialization format.
+Envelope buffer allocation (`BufferStrategy.EXACT` / `BufferStrategy.POWER_OF_2`
+in `src/protocol/envelope.js`). Serialization is always msgpack. The key is
+`BUFFER_STRATEGY`; `PROTOCOL_BUFFER_STRATEGY` is not read.
 
 ```javascript
 config: {
-  BUFFER_STRATEGY: 'msgpack'  // Faster, smaller (recommended)
-  // or
-  BUFFER_STRATEGY: 'json'     // Human-readable, debugging
+  BUFFER_STRATEGY: 'power-of-2'  // power-of-2 bucket sizes (less GC churn)
 }
 ```
 

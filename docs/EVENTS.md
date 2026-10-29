@@ -22,6 +22,9 @@ A peer connected.
 node.on(NodeEvent.PEER_JOINED, ({ peerId, direction, peerOptions }) => {
   // direction: 'upstream' (we connected to them) or 'downstream' (they connected to us)
   // peerOptions: peer metadata
+  // The peer is routable when this fires: request({ to: peerId }) works here.
+  // A server that restarts under a new id at a connected address joins under
+  // that id (the old id is gone: getPeerOptions(oldId) === null).
 })
 ```
 
@@ -37,7 +40,9 @@ node.on(NodeEvent.PEER_LEFT, ({ peerId, direction, reason }) => {
   //   'UNREACHABLE' (a send found no route: crashed/killed),
   //   'REPLACED' (a new instance connected with the same id)
   // reason (upstream): 'TRANSPORT_NOT_READY', 'TRANSPORT_FAILED',
-  //   'server_left', 'closed'
+  //   'server_left', 'closed',
+  //   'replaced' (the server at that address answered under a new id while
+  //   the old one was still joined; a PEER_JOINED for the new id follows)
   // Requests pending on that peer are rejected at once (PEER_LEFT /
   // PEER_UNREACHABLE) instead of waiting for their timeout.
   // Always handle this to clean up resources
