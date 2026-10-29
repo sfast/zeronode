@@ -71,7 +71,7 @@ describe('Regression bug 3: crashed peers fail fast', function () {
     expect(err?.code).to.equal(ProtocolErrorCode.PEER_UNREACHABLE)
     expect(Date.now() - started).to.be.below(500)
     expect(server.getNodesDownstream()).to.not.include(peer.id)
-    expect(left).to.deep.equal([{ peerId: peer.id, direction: 'downstream', reason: 'UNREACHABLE' }])
+    expect(left).to.deep.equal([{ peerId: peer.id, direction: 'downstream', reason: 'UNREACHABLE', category: 'lost' }])
   })
 
   it('requestAny for a crashed only provider rejects with NO_NODES_MATCH_FILTER at once', async () => {

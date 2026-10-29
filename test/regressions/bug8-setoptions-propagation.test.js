@@ -154,12 +154,17 @@ describe('Regression bug 8: a re-handshake carries the current options', functio
       await wait(100)
       expect(server.getPeerOptions(client.getId()).__status).to.equal('draining')
 
-      const rejoined = new Promise(resolve => server.once(NodeEvent.PEER_JOINED, resolve))
+      // The server never noticed the blip, so the re-handshake is not a new
+      // join there (2.1: edge-triggered events); the client sees it come back
+      const updated = []
+      server.on(NodeEvent.PEER_UPDATED, (payload) => updated.push(payload))
+      const rejoined = new Promise(resolve => client.once(NodeEvent.PEER_JOINED, resolve))
       proxy.drop()   // the dealer reconnects and handshakes again
-      const { peerOptions } = await rejoined
+      await rejoined
 
-      expect(peerOptions.__status, 'handshake options').to.equal('draining')
-      expect(server.getPeerOptions(client.getId()).__status).to.equal('draining')
+      // The handshake carried the current options: nothing changed on the server
+      expect(server.getPeerOptions(client.getId()).__status, 'handshake options').to.equal('draining')
+      expect(updated, 'no options change seen').to.deep.equal([])
     } finally {
       await client.close().catch(() => {})
       await proxy.close().catch(() => {})
