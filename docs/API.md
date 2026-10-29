@@ -877,6 +877,23 @@ ReconnectPolicy.ON_FAILURE  // 'on_failure' - Only reconnect on unexpected failu
 ReconnectPolicy.DISABLED    // 'disabled' - No automatic reconnection
 ```
 
+What happens to an upstream connection whose session ended (2.1; before, only
+the Node's own retry timer followed the policy while ZeroMQ reconnected the
+connection anyway):
+
+| Policy | Lost (link dropped, server crashed or frozen) | Server stopped gracefully |
+|---|---|---|
+| `always` (default) | reconnects | reconnects (also to a server restarted under a new id) |
+| `on_failure` | reconnects | the connection is ended, as by `disconnect(address)` |
+| `disabled` | the connection is ended | the connection is ended |
+
+"Lost" or "graceful" is the category of the `PEER_LEFT` that ended the session
+(the first signal wins: a stopping server's message and the dropped link race).
+When the connection is ended, requests still pending on it fail with
+`PEER_UNREACHABLE` (`delivered: 'unknown'`); `connect(address)` connects again.
+An initial `connect()` is the same under every policy (ZeroMQ keeps trying
+until the handshake timeout).
+
 **Example:**
 ```javascript
 const node = new Node({
