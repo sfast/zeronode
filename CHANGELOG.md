@@ -223,7 +223,9 @@ named in brackets.
   `127.0.0.1` and `localhost`) is not supported: both connections carry the
   node's id, so at the server the newer one takes over (ROUTER handover). The
   Node keeps routing through the newer one (warning), but the older client
-  stays open, and `disconnect()` of the older address closes the newer one.
+  stays open until the process exits (`close()` does not release it, and a
+  reconnect timer for its address keeps checking), and `disconnect()` of the
+  older address closes the newer one.
 - Repeated handshakes may still emit duplicate `PEER_JOINED`/`PEER_LEFT`
   events (unchanged).
 

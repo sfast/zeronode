@@ -783,12 +783,16 @@ export default class Node extends EventEmitter {
     } catch (err) {
       const { logger } = _private.get(this)
       logger.error(`[Node] A ${event} listener threw:`, err)
-      this.emit(NodeEvent.ERROR, {
-        source: 'node',
-        stage: 'listener',
-        serverId: payload.peerId,
-        error: err
-      })
+      try {
+        this.emit(NodeEvent.ERROR, {
+          source: 'node',
+          stage: 'listener',
+          serverId: payload.peerId,
+          error: err
+        })
+      } catch (errorListenerErr) {
+        logger.error('[Node] A node:error listener threw:', errorListenerErr)
+      }
     }
   }
 
@@ -891,7 +895,7 @@ export default class Node extends EventEmitter {
     if (serverId && joinedPeers.has(serverId) && peerDirection.get(serverId) === 'upstream' &&
         (owner === undefined || owner === client)) {
       this._removeJoinedPeer(serverId)
-      this.emit(NodeEvent.PEER_LEFT, {
+      this._emitPeerEvent(NodeEvent.PEER_LEFT, {
         peerId: serverId,
         direction: 'upstream',
         reason: 'closed'
