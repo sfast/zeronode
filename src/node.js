@@ -1050,15 +1050,16 @@ export default class Node extends EventEmitter {
    * @private
    */
   _hasSession (address) {
-    const { clients, clientsAddressIndex, joinedPeers } = _private.get(this)
+    const { clients, clientsAddressIndex, joinedPeers, peerDirection } = _private.get(this)
     const nodeId = clientsAddressIndex.get(md5(address))
     const client = nodeId !== undefined ? clients.get(nodeId) : undefined
     if (!client || !client.isOnline()) return false
     // The client keeps the old server id while the transport is down, and the
-    // transport may be up again before (or without) a handshake: only a
-    // joined id, re-keyed to this client, is a session
+    // transport may be up again before (or without) a handshake: only an id
+    // joined upstream and re-keyed to this client is a session
     const serverId = client.getServerId()
-    return joinedPeers.has(serverId) && clients.get(serverId) === client
+    return joinedPeers.has(serverId) && peerDirection.get(serverId) === 'upstream' &&
+      clients.get(serverId) === client
   }
 
   /**
@@ -2094,25 +2095,17 @@ export default class Node extends EventEmitter {
   /**
    * Get server ID by connection address
    * @param {string} address - Server address (e.g., 'tcp://127.0.0.1:5000')
-   * @returns {string|null} Server ID or null if not connected
+   * @returns {string|null} Server ID, or null if there is no live session at
+   *   that address (not connected, the server left, or the transport is back
+   *   but the server has not answered the handshake yet)
    */
   getServerIdByAddress (address) {
+    if (!this._hasSession(address)) {
+      return null
+    }
+    
     const { clients, clientsAddressIndex } = _private.get(this)
-    
-    const addressHash = md5(address)
-    if (!clientsAddressIndex.has(addressHash)) {
-      return null
-    }
-    
-    const nodeId = clientsAddressIndex.get(addressHash)
-    const client = clients.get(nodeId)
-    
-    if (!client) {
-      return null
-    }
-    
-    // Return the actual server ID (not the node ID key)
-    return client.getServerId()
+    return clients.get(clientsAddressIndex.get(md5(address))).getServerId()
   }
   
   // ============================================================================
