@@ -880,3 +880,67 @@ describe('2.1 review (Codex, round 6): bind() and unbind() overlapping', functio
     expect(server._isAccepting(), 'the unbind was the last request').to.equal(false)
   })
 })
+
+describe('2.1 review (Codex, round 7): a failing later bind, close() vs queued binds', function () {
+  this.timeout(15000)
+
+  const cleanups = []
+  afterEach(async () => {
+    for (const fn of cleanups.splice(0)) await fn().catch(() => {})
+  })
+
+  const ipcAddress = () => `ipc://${path.join(os.tmpdir(), `zn-r7-${uid()}.sock`)}`
+
+  it('after unbind(), bind(A) then a failing bind(B) leave the server bound at A and accepting', async () => {
+    const { default: Server } = await import('../../src/protocol/server.js')
+    const a = ipcAddress()
+    const b = ipcAddress()
+    const server = new Server({ id: `ab-srv-${uid()}`, config: { logger: quiet() } })
+    cleanups.push(async () => { await server.close(); for (const f of [a, b]) fs.rmSync(f.slice(6), { force: true }) })
+    await server.bind(a)
+    await server.unbind()
+
+    const [first, second] = await Promise.allSettled([server.bind(a), server.bind(b)])
+    expect(first.status).to.equal('fulfilled')
+    expect(second.status).to.equal('rejected')
+    expect(second.reason?.code).to.equal('TRANSPORT_ALREADY_BOUND')
+    expect(server._getSocket().isOnline()).to.equal(true)
+    expect(server._isAccepting(), 'bound at A: accepting').to.equal(true)
+  })
+
+  it('a bind() after close() started is refused and close() still releases the transport', async () => {
+    const { default: Server } = await import('../../src/protocol/server.js')
+    const address = ipcAddress()
+    const server = new Server({ id: `cb-srv-${uid()}`, config: { logger: quiet() } })
+    cleanups.push(async () => { fs.rmSync(address.slice(6), { force: true }) })
+    await server.bind(address)
+
+    const closing = server.close()
+    const late = await server.bind(address).then(() => null, (err) => err)
+    await closing
+    expect(late?.code).to.equal('TRANSPORT_BIND_FAILED')
+    expect(server._getSocket().isOnline()).to.equal(false)
+  })
+
+  it('new Node({ bind }) closed at once: no bind after close, nothing reported, address free', async () => {
+    for (let i = 0; i < 20; i++) {
+      const address = ipcAddress()
+      cleanups.push(async () => { fs.rmSync(address.slice(6), { force: true }) })
+      const node = new Node({ id: `nb-${i}-${uid()}`, bind: address, config: { logger: quiet() } })
+      const errors = []
+      node.on(NodeEvent.ERROR, (payload) => errors.push(payload))
+      node.on('error', () => {})
+      await node.close()
+      await new Promise(resolve => setImmediate(resolve))
+      expect(errors, `iteration ${i}`).to.deep.equal([])
+    }
+    // An address used that way can be bound again
+    const address = ipcAddress()
+    cleanups.push(async () => { fs.rmSync(address.slice(6), { force: true }) })
+    const first = new Node({ id: `nb-a-${uid()}`, bind: address, config: { logger: quiet() } })
+    await first.close()
+    const second = new Node({ id: `nb-b-${uid()}`, config: { logger: quiet() } })
+    cleanups.push(() => second.close())
+    await second.bind(address)
+  })
+})
