@@ -55,8 +55,8 @@ export default class Server extends Protocol {
       clientInstances: new Map(),   // clientId → instance id from the handshake (restart detection)
       pendingHandshakes: new Map(), // clientId → when a resurrection handshake was requested
       stopping: false,              // unbind()/close() started: no handshake is accepted
-      unbinding: null,              // promise of the last unbind() requested (they run one at a time)
-      binding: null,                // { address, promise } of the bind() under way
+      lifecycleQueue: null,         // bind()/unbind() run one at a time, in call order
+      gateRequest: 0,               // counts bind()/unbind()/close() requests: the latest decides the gate
       healthCheckInterval: null,
       options  // ✅ Store node options for handshake responses
     }
@@ -284,25 +284,30 @@ export default class Server extends Protocol {
   // ============================================================================
   
   async bind (bindAddress) {
-      let _scope = _private.get(this)
-    // Unbinds still under way (e.g. started by a listener just before this)
-    // finish first; until then no handshake is accepted
-    while (_scope.unbinding) await _scope.unbinding.catch(() => {})
-    
-    // A bind() to this address is under way (e.g. the Node constructor's):
-    // share it
-    if (_scope.binding && _scope.binding.address === bindAddress) {
-      return _scope.binding.promise
-    }
-    
-    // ✅ Use Protocol's socket (via protected method)
+    const _scope = _private.get(this)
+    const request = ++_scope.gateRequest
+    return this._enqueueLifecycle(() => this._bind(bindAddress, request))
+  }
+
+  /**
+   * bind() body (after earlier bind()/unbind() calls finished). Sessions are
+   * accepted again only if the transport is bound and no later bind()/unbind()
+   * /close() was requested meanwhile (that one decides); a bind that fails
+   * changes nothing.
+   * @private
+   */
+  async _bind (bindAddress, request) {
+    const _scope = _private.get(this)
     const socket = this._getSocket()
+    const latest = () => request === _scope.gateRequest
 
     // Already bound to this address (idempotent). Also how serving resumes
     // after an unbind() the transport refused (still bound there).
     if (socket.isOnline() && this.getAddress() === bindAddress) {
-      _scope.stopping = false
-      this._startHealthChecks()
+      if (latest()) {
+        _scope.stopping = false
+        this._startHealthChecks()
+      }
       return
     }
 
@@ -316,43 +321,39 @@ export default class Server extends Protocol {
         address: this.getAddress()
       })
     }
-
-    _scope.bindAddress = bindAddress
     
-    // Sessions are accepted from the moment the transport is bound; a bind
-    // that fails leaves the server as it was
-    const wasStopping = _scope.stopping
-    _scope.stopping = false
-    const promise = socket.bind(bindAddress).catch((err) => {
-      _scope.stopping = wasStopping
-      throw err
-    })
-    const binding = { address: bindAddress, promise }
-    _scope.binding = binding
-    try {
-      await promise
-    } finally {
-      if (_scope.binding === binding) _scope.binding = null
+    _scope.bindAddress = bindAddress
+    await socket.bind(bindAddress)
+    // Protocol will emit ProtocolEvent.READY when bound. No handshake can be
+    // dispatched before this resumes (it runs in the same turn), so opening
+    // the gate here loses none.
+    if (latest()) {
+      _scope.stopping = false
     }
-    // Protocol will emit ProtocolEvent.READY when bound
   }
   
   async unbind () {
     // Synchronously, before anything is awaited: no handshake is accepted
-    // from now on (also one already being processed when a listener calls this)
+    // from now on (also one already being processed when a listener calls
+    // this), and a bind() still under way does not reopen
     this._stopAccepting()
+    return this._enqueueLifecycle(() => this._unbind())
+  }
 
-    // One at a time: an unbind() requested while one runs (e.g. from its error
-    // listener) runs after it
+  /**
+   * Run bind()/unbind() bodies one at a time, in call order (a failed one does
+   * not stop the next)
+   * @private
+   */
+  async _enqueueLifecycle (body) {
     const _scope = _private.get(this)
-    const previous = _scope.unbinding
-    const unbinding = (previous ? previous.catch(() => {}) : Promise.resolve())
-      .then(() => this._unbind())
-    _scope.unbinding = unbinding
+    const previous = _scope.lifecycleQueue
+    const run = (previous ? previous.catch(() => {}) : Promise.resolve()).then(body)
+    _scope.lifecycleQueue = run
     try {
-      await unbinding
+      return await run
     } finally {
-      if (_scope.unbinding === unbinding) _scope.unbinding = null
+      if (_scope.lifecycleQueue === run) _scope.lifecycleQueue = null
     }
   }
 
@@ -410,7 +411,9 @@ export default class Server extends Protocol {
    * @protected
    */
   _stopAccepting () {
-    _private.get(this).stopping = true
+    const _scope = _private.get(this)
+    _scope.stopping = true
+    _scope.gateRequest++
   }
 
   /**

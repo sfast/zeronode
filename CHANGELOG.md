@@ -86,7 +86,9 @@ patch from the commit before these if they are not wanted yet.
   when a `PEER_LEFT` / `PEER_JOINED` listener starts it), and a client this
   node is ending (`disconnect()`, reconnect policy) joins nothing: listeners
   can tear down from inside peer events without the session coming back.
-  `unbind()` calls run one at a time and `bind()` waits for them. If libzmq
+  `bind()` and `unbind()` calls run one at a time in call order, and the last
+  one requested decides whether sessions are accepted (a bind that fails
+  changes nothing). If libzmq
   refuses the transport unbind, `unbind()` now rejects
   (`TRANSPORT_UNBIND_FAILED`): the server has told its clients it stops and
   accepts no session, but stays bound; `bind()` at the same address resumes
