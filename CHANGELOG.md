@@ -195,8 +195,9 @@ named in brackets.
 - A ROUTER **reply** to a live peer whose queue is full (`ZMQ_SNDHWM`) is
   dropped (`EAGAIN` with the default send timeout 0) and not reported; the
   requester waits for its own timeout. Requests fail fast in that case
-  (`SEND_FAILED`), replies do not. A positive `ZMQ_SNDTIMEO` makes the router
-  wait for queue space instead.
+  (`SEND_FAILED`), replies do not. `ZMQ_SNDTIMEO` is configurable: a positive
+  value makes the router wait up to that long for queue space first (but see
+  the infinite-timeout note above).
 - Options propagation does not reach peers on < 2.0.16. Loop protection needs
   every router on >= 2.0.16: an old router is recorded as visited by the new
   ones next to it, but between two or more old routers requests can still
