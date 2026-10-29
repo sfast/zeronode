@@ -800,7 +800,7 @@ export default class Node extends EventEmitter {
    * Connect to remote server
    * @param options - Connection options
    */
-  connect(options: ConnectOptions): Promise<void>;
+  connect(options: ConnectOptions): Promise<{ id: string; options: Record<string, any> } | null>;
   
   /**
    * Disconnect from remote server
@@ -941,6 +941,7 @@ export default class Node extends EventEmitter {
   on(event: NodeEvent.PEER_JOINED, listener: (payload: PeerJoinedPayload) => void): this;
   on(event: NodeEvent.PEER_LEFT, listener: (payload: PeerLeftPayload) => void): this;
   on(event: NodeEvent.PEER_UPDATED, listener: (payload: PeerUpdatedPayload) => void): this;
+  on(event: NodeEvent.RECONNECT_ATTEMPT, listener: (payload: ReconnectAttemptPayload) => void): this;
   on(event: NodeEvent.STOPPED, listener: () => void): this;
   on(event: NodeEvent.ERROR, listener: (payload: NodeErrorPayload) => void): this;
   on(event: string | symbol, listener: (...args: any[]) => void): this;
@@ -948,6 +949,7 @@ export default class Node extends EventEmitter {
   once(event: NodeEvent.PEER_JOINED, listener: (payload: PeerJoinedPayload) => void): this;
   once(event: NodeEvent.PEER_LEFT, listener: (payload: PeerLeftPayload) => void): this;
   once(event: NodeEvent.PEER_UPDATED, listener: (payload: PeerUpdatedPayload) => void): this;
+  once(event: NodeEvent.RECONNECT_ATTEMPT, listener: (payload: ReconnectAttemptPayload) => void): this;
   once(event: NodeEvent.STOPPED, listener: () => void): this;
   once(event: NodeEvent.ERROR, listener: (payload: NodeErrorPayload) => void): this;
   once(event: string | symbol, listener: (...args: any[]) => void): this;

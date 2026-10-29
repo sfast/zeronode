@@ -212,7 +212,10 @@ Connect to a remote node.
   - `timeout` (number, optional): Connection timeout in milliseconds
   - `reconnectionTimeout` (number, optional): **Deprecated, has no effect** since 2.0 (ZeroMQ reconnects without giving up); a warning is logged once
 
-**Returns:** `Promise<Object>` - Remote node info `{ id, options }`
+**Returns:** `Promise<Object | null>` - Remote node info `{ id, options }`. For an
+address that is already connected it resolves at once: with the info if that
+connection has a live session, `null` while its server is gone (ZeroMQ may
+still be reconnecting it)
 
 **Example:**
 ```javascript
