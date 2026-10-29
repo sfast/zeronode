@@ -52,7 +52,7 @@ export default class Server extends Protocol {
       bindAddress: null,
       clientLastSeen: new Map(),    // clientId → timestamp (for health checks)
       clientInstances: new Map(),   // clientId → instance id from the handshake (restart detection)
-      pendingHandshakes: new Set(), // clientIds awaiting resurrection handshake
+      pendingHandshakes: new Map(), // clientId → when a resurrection handshake was requested
       healthCheckInterval: null,
       options  // ✅ Store node options for handshake responses
     }
@@ -190,37 +190,35 @@ export default class Server extends Protocol {
       
       const clientId = envelope.owner
       
-      // 🔥 FIX: Detect resurrection (client was timed out but is now pinging again)
-      const wasTimedOut = !clientLastSeen.has(clientId)
+      // A joined client: just note it is alive
+      if (clientLastSeen.has(clientId)) {
+        clientLastSeen.set(clientId, Date.now())
+        return
+      }
       
-      // Update last seen timestamp
-      clientLastSeen.set(clientId, Date.now())
+      // 🔥 Resurrection: a client that timed out is pinging again. It is not
+      // joined until it handshakes again (marking it seen here made the later
+      // handshake look like a new instance: a spurious REPLACED)
+      const config = this.getConfig()
+      const logger = config.logger
       
-      // 🔥 FIX: If client was previously timed out, request fresh handshake
-      if (wasTimedOut) {
-        const config = this.getConfig()
-        const logger = config.logger
+      // Ask once per ping interval at most (an unanswered request is repeated)
+      const requestedAt = pendingHandshakes.get(clientId)
+      if (requestedAt === undefined || Date.now() - requestedAt >= resolvePingInterval(config)) {
+        pendingHandshakes.set(clientId, Date.now())
         
-        // Check if we already requested handshake for this client
-        if (!pendingHandshakes.has(clientId)) {
-          // Mark as pending to avoid multiple requests
-          pendingHandshakes.add(clientId)
-          
-          if (logger) {
-            logger.warn(`[Server] Client '${clientId}' resurrected after timeout, requesting fresh handshake`)
-          }
-          
-          // Request client to resend handshake with full options
-          this._sendSystemTick({
-            to: clientId,
-            event: ProtocolSystemEvent.REQUEST_HANDSHAKE,
-            data: null
-          })
-        } else {
-          if (logger) {
-            logger.debug(`[Server] Client '${clientId}' resurrection handshake already requested, waiting...`)
-          }
+        if (logger) {
+          logger.warn(`[Server] Client '${clientId}' resurrected after timeout, requesting fresh handshake`)
         }
+
+        // Request client to resend handshake with full options
+        this._sendSystemTick({
+          to: clientId,
+          event: ProtocolSystemEvent.REQUEST_HANDSHAKE,
+          data: null
+        })
+      } else if (logger) {
+        logger.debug(`[Server] Client '${clientId}' resurrection handshake already requested, waiting...`)
       }
     })
     
@@ -246,9 +244,15 @@ export default class Server extends Protocol {
     // ============================================================================
     this.onTick(ProtocolSystemEvent.CLIENT_STOP, (envelope) => {
       let { clientLastSeen, clientInstances } = _private.get(this)
+      const { pendingHandshakes } = _private.get(this)
       
       const clientId = envelope.owner
       
+      // A client that is not joined (it timed out, or never handshook) has
+      // no session to end
+      pendingHandshakes.delete(clientId)
+      if (!clientLastSeen.has(clientId)) return
+
       // Remove client data (this IS the state change - client is now "left")
       clientLastSeen.delete(clientId)
       clientInstances.delete(clientId)
@@ -427,8 +431,14 @@ export default class Server extends Protocol {
   
   _checkClientHealth (ghostThreshold) {
     let { clientLastSeen, clientInstances } = _private.get(this)
+    const { pendingHandshakes } = _private.get(this)
     const now = Date.now()
     
+    // A resurrection request nobody answered (the client stopped pinging)
+    pendingHandshakes.forEach((requestedAt, clientId) => {
+      if (now - requestedAt > ghostThreshold) pendingHandshakes.delete(clientId)
+    })
+
     clientLastSeen.forEach((lastSeen, clientId) => {
       const timeSinceLastSeen = now - lastSeen
       
