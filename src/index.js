@@ -5,7 +5,7 @@
 
 // Core classes
 import Node from './node.js'
-import { NodeEvent, ReconnectPolicy } from './node.js'
+import { NodeEvent, ReconnectPolicy, PeerLeftCategory } from './node.js'
 import { NodeError, NodeErrorCode, assertValidAddress } from './node-errors.js'
 import Router from './router.js'
 
@@ -48,6 +48,9 @@ export {
   // Reconnect policy
   ReconnectPolicy,     // Auto-reconnect configuration
   
+  // PEER_LEFT payload `category`
+  PeerLeftCategory,
+
   // Errors (by layer)
   NodeError,
   NodeErrorCode,
