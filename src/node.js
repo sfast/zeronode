@@ -154,6 +154,7 @@ export default class Node extends EventEmitter {
       connectionTargets: new Map(), // address → { peerId, attempts, timer, timeout }
       peerIdToAddress: new Map(),   // peerId → address
       pendingConnects: new Map(),   // address → { client, cancelled, promise } (handshake in progress)
+      endingConnections: new Map(), // address → promise of a teardown the reconnect policy started
       closed: false,                // set by close(); connect() rejects afterwards
       forwardedTicks: new Map(),    // tickId → record of a proxied tick this node forwarded
       forwardedTickSweep: null      // interval dropping expired forwardedTicks
@@ -340,11 +341,14 @@ export default class Node extends EventEmitter {
   /**
    * A session with a peer ended. PEER_LEFT only if it was joined in this
    * direction (the first signal wins); state is removed before the event.
+   * `beforeEmit` runs after the state change and before the event (so that
+   * what it sets up is visible to PEER_LEFT listeners).
    * @private
    * @returns {boolean} whether the peer was joined
    */
-  _peerLeft (peerId, direction, reason, category) {
+  _peerLeft (peerId, direction, reason, category, beforeEmit) {
     if (!this._removeJoinedPeer(peerId, direction)) return false
+    if (beforeEmit) beforeEmit()
     this._emitPeerEvent(NodeEvent.PEER_LEFT, { peerId, direction, reason, category })
     return true
   }
@@ -511,12 +515,21 @@ export default class Node extends EventEmitter {
   async connect ({ address, timeout, reconnectionTimeout } = {}) {
     assertValidAddress(address)
     
-    const { pendingConnects, closed } = _private.get(this)
+    const _scope = _private.get(this)
+    const { pendingConnects, endingConnections } = _scope
     
-    if (closed) {
+    if (_scope.closed) {
       throw connectCancelledError(address, 'node is closed')
     }
     
+    // The reconnect policy is ending the old connection to this address:
+    // connect once it is gone (it would otherwise look already connected)
+    const ending = endingConnections.get(address)
+    if (ending) {
+      await ending
+      if (_scope.closed) throw connectCancelledError(address, 'node is closed')
+    }
+
     // A connect to this address is already waiting for its handshake: share it
     // (two clients for one address would leak the second). The joining caller's
     // timeout still applies to its own wait; it cannot extend the shared attempt.
@@ -555,11 +568,13 @@ export default class Node extends EventEmitter {
       
       logger.info(`[Node] Already connected to ${address}`)
       
-      const serverId = client.getServerId()
-      if (!serverId) {
+      // Peer info only for a live session: the client keeps the id of a
+      // server that left (its DEALER may still be reconnecting)
+      if (!this._hasSession(address)) {
         return null
       }
       
+      const serverId = client.getServerId()
       return {
         id: serverId,
         options: _scope.peers.upstream.get(serverId) || {}
@@ -787,8 +802,9 @@ export default class Node extends EventEmitter {
     // Transform: Client.NOT_READY → Node.PEER_LEFT (transport lost readiness)
     listen(ClientEvent.NOT_READY, ({ serverId, reason }) => {
       if (!ownsSession(serverId)) return
-      this._peerLeft(serverId, 'upstream', reason || 'not_ready',
-        locallyEndedClients.has(client) ? PeerLeftCategory.LOCAL : PeerLeftCategory.LOST)
+      const category = locallyEndedClients.has(client) ? PeerLeftCategory.LOCAL : PeerLeftCategory.LOST
+      this._peerLeft(serverId, 'upstream', reason || 'not_ready', category,
+        () => this._applyReconnectPolicy(client, address, category))
     })
     
     // Transform: Client.CLOSED → Node.PEER_LEFT (transport permanently closed)
@@ -800,8 +816,53 @@ export default class Node extends EventEmitter {
     // Transform: Client.SERVER_LEFT → Node.PEER_LEFT (server shutdown/stopped)
     listen(ClientEvent.SERVER_LEFT, ({ serverId }) => {
       if (!ownsSession(serverId)) return
-      this._peerLeft(serverId, 'upstream', 'server_left', PeerLeftCategory.GRACEFUL)
+      this._peerLeft(serverId, 'upstream', 'server_left', PeerLeftCategory.GRACEFUL,
+        () => this._applyReconnectPolicy(client, address, PeerLeftCategory.GRACEFUL))
     })
+  }
+
+  /**
+   * An upstream session ended (`category` of its PEER_LEFT). ZeroMQ would
+   * reconnect the client by itself whatever the policy; where the policy says
+   * not to (DISABLED: any loss; ON_FAILURE: a graceful stop), the connection
+   * is ended as disconnect(address) would. Sessions this node ended itself,
+   * or that a re-handshake replaced, are left alone.
+   * @private
+   */
+  _applyReconnectPolicy (client, address, category) {
+    const _scope = _private.get(this)
+    if (category === PeerLeftCategory.LOCAL || category === PeerLeftCategory.REPLACED) return
+
+    const { reconnect } = _scope
+    const keep = reconnect === ReconnectPolicy.ALWAYS ||
+      (reconnect === ReconnectPolicy.ON_FAILURE && category === PeerLeftCategory.LOST)
+    if (keep) return
+
+    // Runs after the PEER_LEFT listeners, outside the transport's event
+    // dispatch. Registered now, before PEER_LEFT is emitted, so a connect()
+    // to this address (even from a PEER_LEFT listener) waits for the old
+    // connection to be gone.
+    const { endingConnections } = _scope
+    const ending = new Promise(resolve => setImmediate(resolve)).then(() => {
+      if (_scope.closed || discardedClients.has(client)) return
+      const nodeId = _scope.clientsAddressIndex.get(md5(address))
+      if (nodeId === undefined || _scope.clients.get(nodeId) !== client) return
+      if (this._hasSession(address)) return
+
+      _scope.logger.info(`[Node] Not reconnecting to ${address} (reconnect: ${reconnect}, ${category})`)
+      // What is still pending on that server will not be answered (a graceful
+      // stop already rejected it with PEER_LEFT)
+      client._rejectAllPendingRequests({
+        code: ProtocolErrorCode.PEER_UNREACHABLE,
+        message: `Server at ${address} is gone and reconnect is '${reconnect}'`
+      })
+      return this.disconnect(address)
+    }).catch((err) => {
+      _scope.logger.warn(`[Node] Failed to end the connection to ${address}: ${err.message}`)
+    }).finally(() => {
+      if (endingConnections.get(address) === ending) endingConnections.delete(address)
+    })
+    endingConnections.set(address, ending)
   }
 
   /**
