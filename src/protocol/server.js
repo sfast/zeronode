@@ -54,7 +54,8 @@ export default class Server extends Protocol {
       clientInstances: new Map(),   // clientId → instance id from the handshake (restart detection)
       pendingHandshakes: new Map(), // clientId → when a resurrection handshake was requested
       stopping: false,              // unbind()/close() started: no handshake is accepted
-      unbinding: null,              // promise of the unbind() under way
+      unbinding: null,              // promise of the last unbind() requested (they run one at a time)
+      stopGeneration: 0,            // counts unbind()/close() requests
       healthCheckInterval: null,
       options  // ✅ Store node options for handshake responses
     }
@@ -283,9 +284,9 @@ export default class Server extends Protocol {
   
   async bind (bindAddress) {
       let _scope = _private.get(this)
-    // An unbind() still under way (e.g. started by a listener just before
-    // this) finishes first; until then no handshake is accepted
-    if (_scope.unbinding) await _scope.unbinding.catch(() => {})
+    // Unbinds still under way (e.g. started by a listener just before this)
+    // finish first; until then no handshake is accepted
+    while (_scope.unbinding) await _scope.unbinding.catch(() => {})
     _scope.stopping = false
     
     // Check if already bound to this address (idempotent)
@@ -308,8 +309,13 @@ export default class Server extends Protocol {
     // from now on (also one already being processed when a listener calls this)
     this._stopAccepting()
 
+    // One at a time: an unbind() requested while one runs (e.g. from its error
+    // listener) runs after it
     const _scope = _private.get(this)
-    const unbinding = this._unbind()
+    const generation = _scope.stopGeneration
+    const previous = _scope.unbinding
+    const unbinding = (previous ? previous.catch(() => {}) : Promise.resolve())
+      .then(() => this._unbind(generation))
     _scope.unbinding = unbinding
     try {
       await unbinding
@@ -319,12 +325,15 @@ export default class Server extends Protocol {
   }
 
   /**
-   * unbind() body
+   * unbind() body. `generation`: the stop request it serves
    * @private
    */
-  async _unbind () {
+  async _unbind (generation) {
     this._stopHealthChecks()
     
+    // The clients told to stop (asked back if the unbind fails)
+    const stoppedClients = Array.from(_private.get(this).clientLastSeen.keys())
+
     // Notify all clients individually with system event before unbind
     try {
       let { clientLastSeen } = _private.get(this)
@@ -353,11 +362,20 @@ export default class Server extends Protocol {
     await super.unbind()
 
     // The transport refused to unbind (it reported the error) and is still
-    // bound and receiving: keep serving (clients re-handshake when asked
-    // after their next ping, as after a resurrection)
-    if (this._getSocket().isOnline()) {
+    // bound and receiving: keep serving, unless a newer unbind()/close() was
+    // requested meanwhile. The clients told to stop are asked to handshake
+    // again (they stopped pinging, so nothing else would bring them back).
+    if (this._getSocket().isOnline() && _scope.stopGeneration === generation) {
       _scope.stopping = false
       this._startHealthChecks()
+      for (const clientId of stoppedClients) {
+        try {
+          _scope.pendingHandshakes.set(clientId, Date.now())
+          this._sendSystemTick({ to: clientId, event: ProtocolSystemEvent.REQUEST_HANDSHAKE, data: null })
+        } catch (err) {
+          this.debug && this.logger?.error(`Error asking '${clientId}' to handshake again: `, err)
+        }
+      }
     }
   }
   
@@ -366,14 +384,29 @@ export default class Server extends Protocol {
    * @protected
    */
   _stopAccepting () {
-    _private.get(this).stopping = true
+    const _scope = _private.get(this)
+    _scope.stopping = true
+    _scope.stopGeneration++
+  }
+
+  /**
+   * Whether handshakes are accepted (false once unbind()/close() started)
+   * @protected
+   */
+  _isAccepting () {
+    return !_private.get(this).stopping
   }
 
   async close () {
     this._stopAccepting()
-    await this.unbind()
-    this._stopAccepting() // also if the transport refused to unbind
-    await super.close() // close underlying transport and cleanup
+    try {
+      await this.unbind()
+    } finally {
+      // Also if the transport refused to unbind, or unbind() rejected
+      this._stopAccepting()
+      this._stopHealthChecks()
+      await super.close() // close underlying transport and cleanup
+    }
   }
   
   getAddress () {

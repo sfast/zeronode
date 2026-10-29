@@ -7,7 +7,7 @@
  */
 import * as zmq from 'zeromq'
 
-import { TransportError, TransportErrorCode } from '../errors.js'
+import { TransportError, TransportErrorCode, describeError } from '../errors.js'
 import { Socket } from './socket.js'
 import { TransportEvent } from '../events.js'
 import { createContext } from './context.js'
@@ -222,7 +222,13 @@ export default class RouterSocket extends Socket {
           cause: err
         })
         this.debug && this.logger.error(`Emitted '${TransportEvent.ERROR}' on socket '${this.getId()}'`, transportError)
-        this.emit(TransportEvent.ERROR, transportError)
+        // A throwing error listener must not turn this into a rejected unbind
+        // (callers would skip their recovery / close)
+        try {
+          this.emit(TransportEvent.ERROR, transportError)
+        } catch (emitErr) {
+          this.logger?.error(`[Router] Error listener failed: ${describeError(emitErr)}`)
+        }
         return
       }
     }
