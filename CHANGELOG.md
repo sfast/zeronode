@@ -86,6 +86,8 @@ patch from the commit before these if they are not wanted yet.
   when a `PEER_LEFT` / `PEER_JOINED` listener starts it), and a client this
   node is ending (`disconnect()`, reconnect policy) joins nothing: listeners
   can tear down from inside peer events without the session coming back.
+  A `bind()` racing an `unbind()` waits for it; a transport unbind that
+  libzmq refuses leaves the server serving.
 - `requestAny` / `tickAny` / `tickAll` with `down` / `up` send through a
   connection of the selected direction (a peer joined both ways was reached
   through the other one).
