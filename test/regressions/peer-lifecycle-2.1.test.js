@@ -664,7 +664,7 @@ describe('2.1 review (Codex, round 2): unbind() and bind() racing, failed unbind
     expect(afterListener.filter(e => e.startsWith('joined')), afterListener.join(' | ')).to.deep.equal([])
   })
 
-  it('a failed transport unbind leaves the server receiving and accepting sessions', async () => {
+  it('a failed transport unbind rejects; bind() at the same address resumes serving', async () => {
     const { default: Server } = await import('../../src/protocol/server.js')
     const { default: Client } = await import('../../src/protocol/client.js')
     const server = new Server({ id: `fu-srv-${uid()}`, config: { logger: quiet() } })
@@ -677,11 +677,14 @@ describe('2.1 review (Codex, round 2): unbind() and bind() racing, failed unbind
     try {
       // libzmq refuses to unbind this endpoint (EINVAL): the transport stays bound
       socket.setAddress('ipc://\u0000')
-      await server.unbind()
+      const failed = await server.unbind().then(() => null, (err) => err)
+      expect(failed?.code).to.equal('TRANSPORT_UNBIND_FAILED')
       expect(errors.map(e => e.code)).to.deep.equal(['TRANSPORT_UNBIND_FAILED'])
+      expect(server._isAccepting(), 'stopped serving').to.equal(false)
       socket.setAddress(address)
 
-      // Still a working server: a new client handshakes and gets answers
+      // bind() at that address resumes: a new client handshakes and gets answers
+      await server.bind(address)
       server.onRequest('who', () => 'still here')
       await client.connect(address, 2000)
       expect(await client.request({ event: 'who', timeout: 2000 })).to.equal('still here')
@@ -725,14 +728,15 @@ describe('2.1 review (Codex, round 3): failed unbind recovery', function () {
       second = server.unbind()
     })
     socket.setAddress('ipc://\u0000')
-    await server.unbind()
+    const failed = await server.unbind().then(() => null, (err) => err)
+    expect(failed?.code).to.equal('TRANSPORT_UNBIND_FAILED')
     expect(server._isAccepting(), 'while the second unbind is pending').to.equal(false)
     await second
     expect(server._isAccepting(), 'after the second unbind').to.equal(false)
     expect(socket.isOnline()).to.equal(false)
   })
 
-  it('clients already joined come back after a failed unbind', async () => {
+  it('clients already joined come back once a failed unbind is resumed with bind()', async () => {
     const server = track(new Node({ id: `fr-node-${uid()}`, config: { logger: quiet() } }))
     server.onRequest('who', () => 'server')
     await server.bind('tcp://127.0.0.1:0')
@@ -744,22 +748,26 @@ describe('2.1 review (Codex, round 3): failed unbind recovery', function () {
     const socket = server._findRoute(client.getId(), { up: false }).target._getSocket()
     const address = server.getAddress()
     socket.setAddress('ipc://\u0000')
-    await server.unbind()
+    const failed = await server.unbind().then(() => null, (err) => err)
+    expect(failed?.code).to.equal('TRANSPORT_UNBIND_FAILED')
     socket.setAddress(address)
+    await server.bind(address)
 
-    // The client was told the server stops; the server asks it back
+    // The client was told the server stops, but its link never dropped: its
+    // reconnect timer asks for a session again
     await until(() => clientEvents.filter(e => e.startsWith('joined')).length === 2, 5000, 'client rejoined')
     await until(() => server.getNodesDownstream().includes(client.getId()), 3000, 'server sees the client')
     expect(await client.request({ to: server.getId(), event: 'who', timeout: 2000 })).to.equal('server')
     expect(await server.request({ to: client.getId(), event: 'who', timeout: 2000 })).to.equal('client')
   })
 
-  it('a throwing ServerEvent.ERROR listener does not make a failed unbind() reject; close() still closes', async () => {
+  it('a throwing ServerEvent.ERROR listener: unbind() still reports UNBIND_FAILED; close() still closes', async () => {
     const { server, address, socket } = await protocolServerPair()
     server.on(ServerEvent.ERROR, () => { throw new Error('listener bug') })
     socket.setAddress('ipc://\u0000')
-    await server.unbind()
-    expect(server._isAccepting()).to.equal(true)
+    const failed = await server.unbind().then(() => null, (err) => err)
+    expect(failed?.code).to.equal('TRANSPORT_UNBIND_FAILED')
+    expect(server._isAccepting()).to.equal(false)
 
     socket.setAddress('ipc://\u0000')
     await server.close()
