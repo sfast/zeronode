@@ -691,6 +691,13 @@ export default class Node extends EventEmitter {
     
     const addressHash = md5(address)
     
+    // This node is ending that connection: from now on (also from a listener
+    // running further up this stack) it must not join again
+    const indexedId = clientsAddressIndex.get(addressHash)
+    if (indexedId !== undefined && clients.has(indexedId)) {
+      locallyEndedClients.add(clients.get(indexedId))
+    }
+
     // Forget the reconnect target BEFORE disconnecting: the client emits
     // NOT_READY/CLOSED while going down, and the reconnect listener must not
     // find the address and bring the connection back. Done even when not
@@ -755,9 +762,10 @@ export default class Node extends EventEmitter {
     
     // Transform: Client.SERVER_JOINED → Node.PEER_JOINED (handshake complete, peer identified)
     listen(ClientEvent.SERVER_JOINED, ({ serverId, serverOptions }) => {
-      // A late handshake after close(), or of a client already let go, must
-      // not repopulate anything
-      if (_scope.closed || discardedClients.has(client)) return
+      // A late handshake after close(), or of a client already let go or
+      // being ended by this node (disconnect(), reconnect policy), must not
+      // repopulate anything
+      if (_scope.closed || discardedClients.has(client) || locallyEndedClients.has(client)) return
 
       // First handshake: this fires before `await client.connect()` resumes.
       // connect() registers the client and announces the peer then, so that
@@ -772,7 +780,7 @@ export default class Node extends EventEmitter {
       // this address may have restarted under a new id
       if (!this._rekeyClient(client, address, serverId)) return
       // A PEER_LEFT listener of the old id may have disconnected or closed
-      if (_scope.closed || discardedClients.has(client)) return
+      if (_scope.closed || discardedClients.has(client) || locallyEndedClients.has(client)) return
 
       this._announceUpstreamPeer(serverId, serverOptions)
     })
@@ -840,16 +848,17 @@ export default class Node extends EventEmitter {
       (reconnect === ReconnectPolicy.ON_FAILURE && category === PeerLeftCategory.LOST)
     if (keep) return
 
-    // Runs after the PEER_LEFT listeners, outside the transport's event
-    // dispatch. Registered now, before PEER_LEFT is emitted, so a connect()
-    // to this address (even from a PEER_LEFT listener) waits for the old
-    // connection to be gone.
+    // Decided now, before PEER_LEFT is emitted: the client joins nothing any
+    // more (a handshake arriving before the teardown runs is ignored), and a
+    // connect() to this address (even from a PEER_LEFT listener) waits for
+    // the old connection to be gone. The teardown runs after the listeners,
+    // outside the transport's event dispatch.
+    locallyEndedClients.add(client)
     const { endingConnections } = _scope
     const ending = new Promise(resolve => setImmediate(resolve)).then(() => {
       if (_scope.closed || discardedClients.has(client)) return
       const nodeId = _scope.clientsAddressIndex.get(md5(address))
       if (nodeId === undefined || _scope.clients.get(nodeId) !== client) return
-      if (this._hasSession(address)) return
 
       _scope.logger.info(`[Node] Not reconnecting to ${address} (reconnect: ${reconnect}, ${category})`)
       // What is still pending on that server will not be answered (a graceful
