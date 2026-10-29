@@ -18,7 +18,7 @@
 import { expect } from 'chai'
 import os from 'os'
 import path from 'path'
-import Node, { Router, NodeEvent, NodeErrorCode } from '../../src/index.js'
+import Node, { Router, NodeEvent } from '../../src/index.js'
 
 const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 const ipcAddress = () => `ipc://${path.join(os.tmpdir(), `zn-bug10-${uid()}.sock`)}`
@@ -95,86 +95,90 @@ describe('Regression bug 10: a router restarting under a new id is re-keyed', fu
     await joined
   }
 
-  it('routes through each new router after restarts (requestAny and request({to}))', async () => {
-    const address = ipcAddress()
+  // The DEALER re-handshakes by itself, so this holds without Node-level
+  // reconnects too (no reconnect target, no id → address mapping)
+  for (const reconnect of ['always', 'disabled']) {
+    it(`routes through each new router after restarts (requestAny and request({to}), reconnect: ${reconnect})`, async () => {
+      const address = ipcAddress()
 
-    const r1 = startRouter('r1')
-    await r1.bind(address)
+      const r1 = startRouter('r1')
+      await r1.bind(address)
 
-    const requester = track(new Node({ id: `bug10-req-${uid()}` }))
-    const provider = track(new Node({ id: `bug10-svc-${uid()}`, options: { service: 'target' } }))
-    provider.onRequest('who', () => 'provider')
+      const requester = track(new Node({ id: `bug10-req-${uid()}`, config: { reconnect } }))
+      const provider = track(new Node({ id: `bug10-svc-${uid()}`, options: { service: 'target' } }))
+      provider.onRequest('who', () => 'provider')
 
-    // Upstream events seen by the requester, and whether a synchronous
-    // PEER_JOINED listener could route to the peer at once (g2 on re-key)
-    const events = []
-    const syncRoutes = []
-    requester.on(NodeEvent.PEER_JOINED, ({ peerId, direction }) => {
-      if (direction !== 'upstream') return
-      events.push(`joined ${peerId}`)
-      syncRoutes.push(requester.request({ to: peerId, event: 'whoami', timeout: 2000 })
-        .then(id => ({ peerId, id }), err => ({ peerId, code: err.code })))
+      // Upstream events seen by the requester, and whether a synchronous
+      // PEER_JOINED listener could route to the peer at once (g2 on re-key)
+      const events = []
+      const syncRoutes = []
+      requester.on(NodeEvent.PEER_JOINED, ({ peerId, direction }) => {
+        if (direction !== 'upstream') return
+        events.push(`joined ${peerId}`)
+        syncRoutes.push(requester.request({ to: peerId, event: 'whoami', timeout: 2000 })
+          .then(id => ({ peerId, id }), err => ({ peerId, code: err.code })))
+      })
+      requester.on(NodeEvent.PEER_LEFT, ({ peerId, direction }) => {
+        if (direction === 'upstream') events.push(`left ${peerId}`)
+      })
+
+      await requester.connect({ address })
+      await provider.connect({ address })
+
+      const ask = () => requester.requestAny({ event: 'who', filter: { service: 'target' }, timeout: 2000 })
+      expect(await ask()).to.equal('provider')
+
+      const assertCurrent = async (current, old) => {
+        expect(requester.getNodesUpstream(), 'upstream peers').to.deep.equal([current.getId()])
+        expect(requester.getServerIdByAddress(address), 'id at the address').to.equal(current.getId())
+        if (old) expect(requester.getPeerOptions(old.getId()), 'old router options').to.equal(null)
+        expect(await ask(), 'requestAny through the current router').to.equal('provider')
+        expect(await requester.request({ to: current.getId(), event: 'whoami', timeout: 2000 }), 'request({to})')
+          .to.equal(current.getId())
+      }
+      await assertCurrent(r1)
+
+      // Restart twice, each time under a new id at the same address
+      const routerIds = [r1.getId()]
+      let previous = r1
+      for (const name of ['r2', 'r3']) {
+        const left = waitUntil([requester], [NodeEvent.PEER_LEFT],
+          () => !requester.getNodesUpstream().includes(previous.getId()), 5000, `${previous.getId()} left`)
+        await previous.close()
+        await left
+
+        const next = startRouter(name)
+        await bindAndWaitJoined(next, address, requester, provider)
+        await assertCurrent(next, previous)
+        routerIds.push(next.getId())
+        previous = next
+      }
+
+      // joined R1 → left R1 → joined R2 → left R2 → joined R3 (a duplicate
+      // PEER_LEFT is tolerated: SERVER_LEFT and NOT_READY both report it)
+      const deduped = events.filter((e, i) => e !== events[i - 1])
+      const [r1Id, r2Id, r3Id] = routerIds
+      expect(deduped).to.deep.equal([
+        `joined ${r1Id}`, `left ${r1Id}`,
+        `joined ${r2Id}`, `left ${r2Id}`,
+        `joined ${r3Id}`
+      ])
+
+      // Each PEER_JOINED listener could route to its peer synchronously
+      expect(await Promise.all(syncRoutes)).to.deep.equal([
+        { peerId: r1Id, id: r1Id },
+        { peerId: r2Id, id: r2Id },
+        { peerId: r3Id, id: r3Id }
+      ])
+
+      // disconnect() still forgets the (re-keyed) address entirely
+      await requester.disconnect(address)
+      expect(requester.getNodesUpstream()).to.deep.equal([])
+      expect(requester.getServerIdByAddress(address)).to.equal(null)
+      await requester.connect({ address })
+      expect(await ask()).to.equal('provider')
     })
-    requester.on(NodeEvent.PEER_LEFT, ({ peerId, direction }) => {
-      if (direction === 'upstream') events.push(`left ${peerId}`)
-    })
-
-    await requester.connect({ address })
-    await provider.connect({ address })
-
-    const ask = () => requester.requestAny({ event: 'who', filter: { service: 'target' }, timeout: 2000 })
-    expect(await ask()).to.equal('provider')
-
-    const assertCurrent = async (current, old) => {
-      expect(requester.getNodesUpstream(), 'upstream peers').to.deep.equal([current.getId()])
-      expect(requester.getServerIdByAddress(address), 'id at the address').to.equal(current.getId())
-      if (old) expect(requester.getPeerOptions(old.getId()), 'old router options').to.equal(null)
-      expect(await ask(), 'requestAny through the current router').to.equal('provider')
-      expect(await requester.request({ to: current.getId(), event: 'whoami', timeout: 2000 }), 'request({to})')
-        .to.equal(current.getId())
-    }
-    await assertCurrent(r1)
-
-    // Restart twice, each time under a new id at the same address
-    const routerIds = [r1.getId()]
-    let previous = r1
-    for (const name of ['r2', 'r3']) {
-      const left = waitUntil([requester], [NodeEvent.PEER_LEFT],
-        () => !requester.getNodesUpstream().includes(previous.getId()), 5000, `${previous.getId()} left`)
-      await previous.close()
-      await left
-
-      const next = startRouter(name)
-      await bindAndWaitJoined(next, address, requester, provider)
-      await assertCurrent(next, previous)
-      routerIds.push(next.getId())
-      previous = next
-    }
-
-    // joined R1 → left R1 → joined R2 → left R2 → joined R3 (a duplicate
-    // PEER_LEFT is tolerated: SERVER_LEFT and NOT_READY both report it)
-    const deduped = events.filter((e, i) => e !== events[i - 1])
-    const [r1Id, r2Id, r3Id] = routerIds
-    expect(deduped).to.deep.equal([
-      `joined ${r1Id}`, `left ${r1Id}`,
-      `joined ${r2Id}`, `left ${r2Id}`,
-      `joined ${r3Id}`
-    ])
-
-    // Each PEER_JOINED listener could route to its peer synchronously
-    expect(await Promise.all(syncRoutes)).to.deep.equal([
-      { peerId: r1Id, id: r1Id },
-      { peerId: r2Id, id: r2Id },
-      { peerId: r3Id, id: r3Id }
-    ])
-
-    // disconnect() still forgets the (re-keyed) address entirely
-    await requester.disconnect(address)
-    expect(requester.getNodesUpstream()).to.deep.equal([])
-    expect(requester.getServerIdByAddress(address)).to.equal(null)
-    await requester.connect({ address })
-    expect(await ask()).to.equal('provider')
-  })
+  }
 
   it('a re-handshake after close() does not repopulate the node', async () => {
     const address = ipcAddress()
