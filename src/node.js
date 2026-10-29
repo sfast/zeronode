@@ -1367,15 +1367,15 @@ export default class Node extends EventEmitter {
    * @private
    * @returns {{ type: 'server'|'client', target: Server|Client, targetId?: string } | null}
    */
-  _findRoute (nodeId) {
+  _findRoute (nodeId, { up = true, down = true } = {}) {
     const { server, clients, peers } = _private.get(this)
     
     // ✅ Only joined peers are routable (Node's joined state is the source of
-    // truth). A peer joined both ways is reached through our own connection
-    // to it first.
+    // truth), in the allowed directions. A peer joined both ways is reached
+    // through our own connection to it first.
     
     // We connected TO this server
-    if (peers.upstream.has(nodeId) && clients.has(nodeId)) {
+    if (up && peers.upstream.has(nodeId) && clients.has(nodeId)) {
       return {
         type: 'client',
         target: clients.get(nodeId)
@@ -1383,7 +1383,7 @@ export default class Node extends EventEmitter {
     }
 
     // Client connected TO our server
-    if (peers.downstream.has(nodeId) && server && server.isOnline()) {
+    if (down && peers.downstream.has(nodeId) && server && server.isOnline()) {
       return {
         type: 'server',
         target: server,
@@ -1442,8 +1442,14 @@ export default class Node extends EventEmitter {
    * Send request to specific node
    */
   async request ({ to, event, data, metadata, timeout } = {}) {
-    const route = this._findRoute(to)
-    
+    return this._requestVia(this._findRoute(to), to, { event, data, metadata, timeout })
+  }
+
+  /**
+   * Send a request along a route from _findRoute (NODE_NOT_FOUND if none)
+   * @private
+   */
+  async _requestVia (route, to, { event, data, metadata, timeout }) {
     if (!route) {
       throw new NodeError({
         code: NodeErrorCode.NODE_NOT_FOUND,
@@ -1466,8 +1472,14 @@ export default class Node extends EventEmitter {
    * Send tick to specific node
    */
   tick ({ to, event, data, metadata } = {}) {
-    const route = this._findRoute(to)
-    
+    return this._tickVia(this._findRoute(to), to, { event, data, metadata })
+  }
+
+  /**
+   * Send a tick along a route from _findRoute (throws NODE_NOT_FOUND if none)
+   * @private
+   */
+  _tickVia (route, to, { event, data, metadata }) {
     if (!route) {
       throw new NodeError({
         code: NodeErrorCode.NODE_NOT_FOUND,
@@ -1514,14 +1526,18 @@ export default class Node extends EventEmitter {
     
     if (filteredNodes.length > 0) {
       const targetNode = this._selectNode(filteredNodes, event)
-      return this.request({ to: targetNode, event, data, timeout }).catch((err) => {
+      // Only through a connection of an allowed direction (a peer joined both
+      // ways was selected for one of them)
+      const route = this._findRoute(targetNode, { up, down })
+      const routeDirection = route?.type === 'client' ? 'upstream' : 'downstream'
+      return this._requestVia(route, targetNode, { event, data, timeout }).catch((err) => {
         // The chosen peer turned out to be gone (crashed) and the transport
         // refused this very message (delivered === false): it never reached a
         // handler, so another peer may take it. A request that may have been
-        // delivered is never retried (at-most-once). The dead peer has been
+        // delivered is never retried (at-most-once). That session has been
         // removed, so this terminates.
         if (err?.code === ProtocolErrorCode.PEER_UNREACHABLE && err.context?.delivered === false &&
-            !this._isJoinedPeer(targetNode)) {
+            !this._isJoinedPeer(targetNode, routeDirection)) {
           return this._requestAny({ event, data, timeout, filter, down, up }, routing)
         }
         throw err
@@ -1774,7 +1790,7 @@ export default class Node extends EventEmitter {
     
     if (filteredNodes.length > 0) {
       const targetNode = this._selectNode(filteredNodes, event)
-      return this.tick({ to: targetNode, event, data })
+      return this._tickVia(this._findRoute(targetNode, { up, down }), targetNode, { event, data })
     }
     
     // ============================================================================
@@ -2087,7 +2103,7 @@ export default class Node extends EventEmitter {
     })
     
     const promises = filteredNodes.map(nodeId => {
-      return this.tick({ to: nodeId, event, data })
+      return this._tickVia(this._findRoute(nodeId, { up, down }), nodeId, { event, data })
     })
     
     return Promise.all(promises)
