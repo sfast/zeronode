@@ -651,7 +651,7 @@ describe('2.1 review (Codex, round 2): unbind() and bind() racing, failed unbind
     let afterListener
     server.on(NodeEvent.PEER_LEFT, ({ reason }) => {
       if (reason !== 'REPLACED') return
-      server.unbind()
+      server.unbind().catch(() => {}) // its outcome is not what this test checks
       rebinding = server.bind(address) // not awaited: the unbind is still running
       // What the handshake being processed does right after this listener
       setImmediate(() => { afterListener = events.slice() })
@@ -773,5 +773,63 @@ describe('2.1 review (Codex, round 3): failed unbind recovery', function () {
     await server.close()
     expect(socket.isOnline(), 'transport closed').to.equal(false)
     socket.setAddress(address)
+  })
+})
+
+describe('2.1 review (Codex, round 5): bind() after a refused unbind or a failed bind', function () {
+  this.timeout(10000)
+
+  const cleanups = []
+  afterEach(async () => {
+    for (const fn of cleanups.splice(0)) await fn().catch(() => {})
+  })
+
+  it('bind() to another address while still bound after a refused unbind is refused and keeps the server stopped', async () => {
+    const { default: Server } = await import('../../src/protocol/server.js')
+    const server = new Server({ id: `rb-srv-${uid()}`, config: { logger: quiet() } })
+    await server.bind('tcp://127.0.0.1:0')
+    const address = server.getAddress()
+    const socket = server._getSocket()
+    cleanups.push(async () => { socket.setAddress(address); await server.close() })
+
+    socket.setAddress('ipc://\u0000')
+    const failed = await server.unbind().then(() => null, (err) => err)
+    expect(failed?.code).to.equal('TRANSPORT_UNBIND_FAILED')
+    socket.setAddress(address)
+
+    const refused = await server.bind('tcp://127.0.0.1:0').then(() => null, (err) => err)
+    expect(refused, 'bind() elsewhere while still bound').to.be.an('error')
+    expect(server._isAccepting(), 'still not accepting').to.equal(false)
+  })
+
+  it('bind() retried after a failed bind really binds', async () => {
+    const zmq = await import('zeromq')
+    const { default: Server } = await import('../../src/protocol/server.js')
+    const { default: Client } = await import('../../src/protocol/client.js')
+    // Someone else holds the port first
+    const squatter = new zmq.Router({ linger: 0 })
+    await squatter.bind('tcp://127.0.0.1:0')
+    const address = squatter.lastEndpoint
+    const server = new Server({ id: `rt-srv-${uid()}`, config: { logger: quiet() } })
+    const client = new Client({ id: `rt-cli-${uid()}` })
+    cleanups.push(async () => { squatter.close(); await client.close(); await server.close() })
+
+    const first = await server.bind(address).then(() => null, (err) => err)
+    expect(first, 'address in use').to.be.an('error')
+    squatter.close()
+
+    // libzmq releases the port asynchronously: retry until it is free (before
+    // the fix the retry resolved at once without binding)
+    const started = Date.now()
+    for (;;) {
+      const err = await server.bind(address).then(() => null, (e) => e)
+      if (!err) break
+      if (Date.now() - started > 3000) throw err
+      await wait(50)
+    }
+    expect(server._getSocket().isOnline(), 'bound after the retry').to.equal(true)
+    server.onRequest('who', () => 'bound')
+    await client.connect(address, 2000)
+    expect(await client.request({ event: 'who', timeout: 2000 })).to.equal('bound')
   })
 })
