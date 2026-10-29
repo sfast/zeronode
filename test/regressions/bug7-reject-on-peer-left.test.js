@@ -107,7 +107,9 @@ describe('Regression bug 7: client grace policy', function () {
     server.onRequest('slow', () => wait(replyAfterMs).then(() => 'late reply'))
     await server.bind('tcp://127.0.0.1:0')
     proxy = await startProxy(server.getAddress())
-    client = new Node({ id: `bug7-zcli-${uid()}`, config: { reconnect: 'disabled' } })
+    // reconnect: always, so ZeroMQ's reconnect brings the session back (2.1:
+    // 'disabled' really ends the connection on a loss)
+    client = new Node({ id: `bug7-zcli-${uid()}`, config: { reconnect: 'always' } })
     await client.connect({ address: proxy.address })
   }
 
@@ -217,7 +219,7 @@ describe('Regression bug 7: a request already delivered is never retried elsewhe
     const s1 = await spawnServer(`bug7-s1-${uid()}`, executions)
     const s2 = await spawnServer(`bug7-s2-${uid()}`, executions)
 
-    client = new Node({ id: `bug7-dup-${uid()}`, config: { reconnect: 'disabled' } })
+    client = new Node({ id: `bug7-dup-${uid()}`, config: { reconnect: 'always' } })
     await client.connect({ address: s1.address })
     await client.connect({ address: s2.address })
 

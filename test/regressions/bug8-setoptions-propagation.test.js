@@ -146,7 +146,7 @@ describe('Regression bug 8: a re-handshake carries the current options', functio
     const server = new Node({ id: `bug8-zsrv-${uid()}` })
     await server.bind('tcp://127.0.0.1:0')
     const proxy = await startProxy(server.getAddress())
-    const client = new Node({ id: `bug8-zcli-${uid()}`, options: { __status: 'started' }, config: { reconnect: 'disabled' } })
+    const client = new Node({ id: `bug8-zcli-${uid()}`, options: { __status: 'started' }, config: { reconnect: 'always' } })
 
     try {
       await client.connect({ address: proxy.address })

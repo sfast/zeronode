@@ -95,7 +95,7 @@ describe('Regression bug 10: a router restarting under a new id is re-keyed', fu
   }
 
   /** Bind `router` and wait until both nodes joined it and `requester` sees it */
-  const bindAndWaitJoined = async (router, address, requester, provider) => {
+  const bindAndWaitJoined = async (router, address, requester, provider, afterBind = async () => {}) => {
     const both = () => {
       const downstream = router.getNodesDownstream()
       return downstream.includes(requester.getId()) && downstream.includes(provider.getId()) &&
@@ -103,11 +103,13 @@ describe('Regression bug 10: a router restarting under a new id is re-keyed', fu
     }
     const joined = waitUntil([router, requester], [NodeEvent.PEER_JOINED], both, 8000, `both nodes joined ${router.getId()}`)
     await router.bind(address)
+    await afterBind()
     await joined
   }
 
-  // The DEALER re-handshakes by itself, so this holds without Node-level
-  // reconnects too (no reconnect target, no id → address mapping)
+  // With 'always' the DEALER re-handshakes by itself; with 'disabled' (no
+  // reconnect target, no id → address mapping) the connection ends when the
+  // router goes and the requester connects again itself (2.1)
   for (const reconnect of ['always', 'disabled']) {
     it(`routes through each new router after restarts (requestAny and request({to}), reconnect: ${reconnect})`, async () => {
       const address = ipcAddress()
@@ -159,7 +161,10 @@ describe('Regression bug 10: a router restarting under a new id is re-keyed', fu
         await left
 
         const next = startRouter(name)
-        await bindAndWaitJoined(next, address, requester, provider)
+        // 'disabled' ends the connection when the router goes (2.1): the
+        // requester connects again itself; with 'always' ZeroMQ does it
+        await bindAndWaitJoined(next, address, requester, provider,
+          reconnect === 'disabled' ? () => requester.connect({ address }) : undefined)
         await assertCurrent(next, previous)
         routerIds.push(next.getId())
         previous = next
