@@ -406,3 +406,94 @@ describe('2.1 (8): ZMTP heartbeats detect an unresponsive server', function () {
     expect(() => validateConfig({ ZMQ_HEARTBEAT_IVL: 0, ZMQ_RECONNECT_IVL_MAX: 30000 })).to.not.throw()
   })
 })
+
+describe('2.1 (10): reconnect policies are applied to the connection', function () {
+  this.timeout(10000)
+
+  let nodes = []
+  let proxy
+  const track = (node) => { nodes.push(node); return node }
+
+  afterEach(async () => {
+    for (const node of nodes.reverse()) await node.close().catch(() => {})
+    nodes = []
+    await proxy?.close()
+    proxy = null
+  })
+
+  /** A server at a fixed address that can be replaced by a new one there */
+  const serverAt = async (address) => {
+    const server = track(new Node({ id: `rp-srv-${uid()}` }))
+    server.onRequest('who', () => server.getId())
+    await server.bind(address || 'tcp://127.0.0.1:0')
+    return server
+  }
+
+  for (const [policy, rejoinsAfterBlip] of [['always', true], ['on_failure', true], ['disabled', false]]) {
+    it(`${policy}: after a transport blip the client ${rejoinsAfterBlip ? 'rejoins' : 'stays disconnected'}`, async () => {
+      const server = await serverAt()
+      proxy = await startProxy(server.getAddress())
+      const client = track(new Node({ id: `rp-cli-${uid()}`, config: { logger: quiet(), reconnect: policy } }))
+      const events = recorder(client)
+      await client.connect({ address: proxy.address })
+
+      proxy.drop()
+      await until(() => events.some(e => e.startsWith('left')), 3000, 'PEER_LEFT')
+      if (rejoinsAfterBlip) {
+        await until(() => client.getNodesUpstream().length === 1, 3000, 'rejoined')
+      } else {
+        await wait(800) // several ZeroMQ reconnect intervals
+        expect(client.getNodesUpstream()).to.deep.equal([])
+        expect(client.getServerIdByAddress(proxy.address)).to.equal(null)
+        // An explicit connect() works again
+        await client.connect({ address: proxy.address })
+        expect(await client.request({ to: server.getId(), event: 'who', timeout: 2000 })).to.equal(server.getId())
+      }
+      expect(events.filter(e => e.startsWith('left')), 'one PEER_LEFT').to.have.length(1)
+    })
+  }
+
+  it('disabled: a connect() from the PEER_LEFT listener waits for the old connection to end', async () => {
+    const first = await serverAt()
+    const address = first.getAddress()
+    const client = track(new Node({ id: `rp-cli-${uid()}`, config: { logger: quiet(), reconnect: 'disabled' } }))
+    await client.connect({ address })
+
+    let reconnecting
+    client.once(NodeEvent.PEER_LEFT, () => {
+      // Synchronously, before the policy has ended the old connection
+      reconnecting = client.connect({ address, timeout: 3000 })
+    })
+    await first.close()
+    await until(() => reconnecting, 3000, 'PEER_LEFT')
+    const second = await serverAt(address)
+    const info = await reconnecting
+    expect(info?.id).to.equal(second.getId())
+    expect(await client.request({ to: second.getId(), event: 'who', timeout: 2000 })).to.equal(second.getId())
+  })
+
+  for (const [policy, rejoinsAfterStop] of [['always', true], ['on_failure', false], ['disabled', false]]) {
+    it(`${policy}: after the server stops gracefully the client ${rejoinsAfterStop ? 'rejoins the next server' : 'stays disconnected'}`, async () => {
+      const first = await serverAt()
+      const address = first.getAddress()
+      const client = track(new Node({ id: `rp-cli-${uid()}`, config: { logger: quiet(), reconnect: policy } }))
+      const events = recorder(client)
+      await client.connect({ address })
+
+      await first.close()
+      await until(() => events.some(e => e.startsWith('left')), 3000, 'PEER_LEFT')
+      // The stop message and the dropped link race: the policy follows what
+      // was observed first (graceful vs lost)
+      const graceful = events.find(e => e.startsWith('left')).endsWith(' graceful')
+      const second = await serverAt(address)
+      const expectRejoin = rejoinsAfterStop || (policy === 'on_failure' && !graceful)
+      if (expectRejoin) {
+        await until(() => client.getNodesUpstream().includes(second.getId()), 3000, 'rejoined the next server')
+      } else {
+        await wait(800)
+        expect(client.getNodesUpstream()).to.deep.equal([])
+        expect(client.getServerIdByAddress(address)).to.equal(null)
+      }
+    })
+  }
+})
