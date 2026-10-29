@@ -121,6 +121,14 @@ named in brackets.
   level, once per occurrence (they used to kill the receive loop silently).
   A misbehaving peer can therefore produce many error events/log lines.
 
+### Dependencies
+- `underscore` 1.13.8 and `uuid` 13.0.2 (security fixes); `zeromq` 6.8.0
+  (libzmq 4.3.5); `msgpack-lite` 0.1.27 (encoding verified byte-identical to
+  0.1.26). `npm audit --omit=dev`: 0 vulnerabilities.
+- Dev: mocha 12, chai 6, c8 12, snyk 1.1308; removed unused `seneca`,
+  `js-yaml`, `cross-env`. Running the test suite needs Node `^20.19 || >=22.12`
+  (mocha 12); the library still supports Node >= 18.
+
 ### Wire (all additive; older peers ignore it)
 - New system ticks `_system:options_update` and `_system:proxy_tick_miss`.
 - Handshake metadata `instance` (client instance id).
