@@ -90,7 +90,10 @@ patch from the commit before these if they are not wanted yet.
   refuses the transport unbind, `unbind()` now rejects
   (`TRANSPORT_UNBIND_FAILED`): the server has told its clients it stops and
   accepts no session, but stays bound; `bind()` at the same address resumes
-  serving, `close()` always releases the transport.
+  serving, `close()` always releases the transport; `bind()` to another
+  address while still bound is refused (`TRANSPORT_ALREADY_BOUND`) and changes
+  nothing. A `bind()` retried after a failed one (e.g. address in use) really
+  binds (it returned at once without binding).
 - A client whose link to its server stayed up while the session ended (the
   server said it stops without dropping the link, or an ack was lost) asks
   for a session again from its reconnect timer (`reconnect: 'always'`);

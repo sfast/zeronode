@@ -56,6 +56,7 @@ export default class Server extends Protocol {
       pendingHandshakes: new Map(), // clientId → when a resurrection handshake was requested
       stopping: false,              // unbind()/close() started: no handshake is accepted
       unbinding: null,              // promise of the last unbind() requested (they run one at a time)
+      binding: null,                // { address, promise } of the bind() under way
       healthCheckInterval: null,
       options  // ✅ Store node options for handshake responses
     }
@@ -287,22 +288,52 @@ export default class Server extends Protocol {
     // Unbinds still under way (e.g. started by a listener just before this)
     // finish first; until then no handshake is accepted
     while (_scope.unbinding) await _scope.unbinding.catch(() => {})
-    _scope.stopping = false
     
-    // Check if already bound to this address (idempotent). Also how serving
-    // resumes after an unbind() the transport refused (still bound there).
-    const currentAddress = this.getAddress()
-    if (currentAddress === bindAddress) {
-      if (this._getSocket().isOnline()) this._startHealthChecks()
-      return // Already bound to this address
+    // A bind() to this address is under way (e.g. the Node constructor's):
+    // share it
+    if (_scope.binding && _scope.binding.address === bindAddress) {
+      return _scope.binding.promise
     }
-    
-    _scope.bindAddress = bindAddress
     
     // ✅ Use Protocol's socket (via protected method)
     const socket = this._getSocket()
+
+    // Already bound to this address (idempotent). Also how serving resumes
+    // after an unbind() the transport refused (still bound there).
+    if (socket.isOnline() && this.getAddress() === bindAddress) {
+      _scope.stopping = false
+      this._startHealthChecks()
+      return
+    }
+
+    // Still bound elsewhere (an unbind() the transport refused): refused, and
+    // the server stays as it is (not accepting)
+    if (socket.isOnline()) {
+      throw new TransportError({
+        code: TransportErrorCode.ALREADY_BOUND,
+        message: `Server '${this.getId()}' is still bound to ${this.getAddress()}: unbind() or close() it before binding to ${bindAddress}`,
+        transportId: this.getId(),
+        address: this.getAddress()
+      })
+    }
+
+    _scope.bindAddress = bindAddress
     
-    await socket.bind(bindAddress)
+    // Sessions are accepted from the moment the transport is bound; a bind
+    // that fails leaves the server as it was
+    const wasStopping = _scope.stopping
+    _scope.stopping = false
+    const promise = socket.bind(bindAddress).catch((err) => {
+      _scope.stopping = wasStopping
+      throw err
+    })
+    const binding = { address: bindAddress, promise }
+    _scope.binding = binding
+    try {
+      await promise
+    } finally {
+      if (_scope.binding === binding) _scope.binding = null
+    }
     // Protocol will emit ProtocolEvent.READY when bound
   }
   
