@@ -46,6 +46,59 @@ No wire change.
   `ZMQ_SNDTIMEO`, `ZMQ_RCVTIMEO`, `ZMQ_ROUTER_MANDATORY`, `ZMQ_ROUTER_HANDOVER`,
   `DEALER_IO_THREADS`, `ROUTER_IO_THREADS`.
 
+### Changed (behaviour: 2.1 candidates)
+Regression tests: `test/regressions/peer-lifecycle-2.1.test.js`. Cut a 2.0.17
+patch from the commit before these if they are not wanted yet.
+- **Peer events are edge-triggered**: `PEER_JOINED` once when a session
+  starts, `PEER_LEFT` once when it ends, per direction; later signals for the
+  same session are not reported (a graceful server stop gave a client up to
+  five `PEER_LEFT`, its own `close()` three). A re-handshake of a joined peer
+  (e.g. after a blip the other side never noticed) emits nothing, or
+  `PEER_UPDATED` if its options changed. **Consumers that count these events
+  or wait for a second `reason` see fewer events.**
+- `PEER_LEFT` carries `category`: `graceful`, `lost`, `replaced` or `local`
+  (`PeerLeftCategory`). `reason` strings are unchanged; the category names the
+  signal that arrived first, not a proven cause.
+- Peer state is kept per direction: two nodes connected to each other have
+  two sessions (one ending no longer drops the other). Routing to such a peer
+  prefers this node's own connection to it.
+- `unbind()` / `close()` emit `PEER_LEFT` (`reason: 'UNBOUND'`, `local`) for
+  each downstream peer.
+- Server: `CLIENT_STOP` from a client that is not joined no longer emits
+  `CLIENT_LEFT`; a ping from a timed-out client asks it to handshake (again
+  after a ping interval if unanswered) without marking it joined, so its
+  re-handshake is no longer reported as `REPLACED`.
+- **Reconnect policies apply to the connection**: `disabled` ends an upstream
+  connection when its session is lost or the server stops; `on_failure` when
+  the server stops gracefully (`always` is unchanged). Before, only the
+  Node's retry timer followed the policy and ZeroMQ reconnected anyway.
+  Pending requests then fail with `PEER_UNREACHABLE`. **If you relied on
+  `disabled` still reconnecting, use `always`.**
+- **ZMTP heartbeats on client sockets by default** (`ZMQ_HEARTBEAT_IVL` 5000,
+  `ZMQ_HEARTBEAT_TIMEOUT` 15000; `ZMQ_HEARTBEAT_IVL: 0` turns them off): a
+  server that stops answering while TCP stays up (frozen, partitioned) is
+  reported `PEER_LEFT` (`lost`) instead of never. Answered by libzmq itself,
+  so servers on any version work (verified against 2.0.15). Server sockets
+  are unchanged.
+- `connect()` on an address that is still connected returns peer info only
+  for a live session (`null` while the server is gone).
+
+### Added (2.1 candidates)
+- `NodeEvent.RECONNECT_ATTEMPT` `{ address, interval, peerId }`
+  (`ClientEvent.RECONNECTING`, `ProtocolEvent.TRANSPORT_RECONNECTING`): the
+  transport retrying an upstream connection; observability only.
+- `PeerLeftCategory`; typed `ZMQ_HEARTBEAT_IVL` / `_TIMEOUT` / `_TTL`;
+  `ZMQ_RECONNECT_IVL_MAX` is validated (its default stays 0).
+
+### Not done (designs in the task notes)
+- A "suspect" state before `PEER_LEFT` for short blips, and a finite
+  reconnect deadline (a new option, not `reconnectionTimeout`): both need a
+  per-address session generation first.
+- Server-side disconnect detection via `ZMQ_ROUTER_NOTIFY` (draft): needs a
+  per-option capability check and a model of ROUTER handover first.
+- `READY` on the ZMTP `handshake` event instead of TCP `connect`.
+- Router-side ZMTP heartbeats, and a different `ZMQ_RECONNECT_IVL_MAX` default.
+
 ---
 
 ## [2.0.16] - 2026-10-28
