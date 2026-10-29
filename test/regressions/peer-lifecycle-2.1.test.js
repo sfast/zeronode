@@ -626,3 +626,69 @@ describe('2.1 review (Codex): teardown from peer-event listeners, direction-awar
     expect(dts).to.match(/connect\(options: ConnectOptions\): Promise<\{ id: string; options: Record<string, any> \} \| null>;/)
   })
 })
+
+describe('2.1 review (Codex, round 2): unbind() and bind() racing, failed unbind', function () {
+  this.timeout(10000)
+
+  let nodes = []
+  const track = (node) => { nodes.push(node); return node }
+
+  afterEach(async () => {
+    for (const node of nodes.reverse()) await node.close().catch(() => {})
+    nodes = []
+  })
+
+  it('bind() from a PEER_LEFT listener does not reopen a server that is still unbinding', async () => {
+    const server = track(new Node({ id: `ub-srv-${uid()}` }))
+    await server.bind('tcp://127.0.0.1:0')
+    const address = server.getAddress()
+    const sharedId = `ub-dup-${uid()}`
+    const first = track(new Node({ id: sharedId, config: { logger: quiet(), reconnect: 'disabled' } }))
+    await first.connect({ address })
+
+    const events = recorder(server)
+    let rebinding
+    let afterListener
+    server.on(NodeEvent.PEER_LEFT, ({ reason }) => {
+      if (reason !== 'REPLACED') return
+      server.unbind()
+      rebinding = server.bind(address) // not awaited: the unbind is still running
+      // What the handshake being processed does right after this listener
+      setImmediate(() => { afterListener = events.slice() })
+    })
+    const second = track(new Node({ id: sharedId, config: { logger: quiet(), reconnect: 'disabled' } }))
+    second.connect({ address, timeout: 1000 }).catch(() => {})
+    await until(() => afterListener, 3000, 'REPLACED handled')
+    await rebinding
+
+    expect(afterListener.filter(e => e.startsWith('joined')), afterListener.join(' | ')).to.deep.equal([])
+  })
+
+  it('a failed transport unbind leaves the server receiving and accepting sessions', async () => {
+    const { default: Server } = await import('../../src/protocol/server.js')
+    const { default: Client } = await import('../../src/protocol/client.js')
+    const server = new Server({ id: `fu-srv-${uid()}`, config: { logger: quiet() } })
+    const client = new Client({ id: `fu-cli-${uid()}` })
+    await server.bind('tcp://127.0.0.1:0')
+    const address = server.getAddress()
+    const socket = server._getSocket()
+    const errors = []
+    server.on(ServerEvent.ERROR, (err) => errors.push(err))
+    try {
+      // libzmq refuses to unbind this endpoint (EINVAL): the transport stays bound
+      socket.setAddress('ipc://\u0000')
+      await server.unbind()
+      expect(errors.map(e => e.code)).to.deep.equal(['TRANSPORT_UNBIND_FAILED'])
+      socket.setAddress(address)
+
+      // Still a working server: a new client handshakes and gets answers
+      server.onRequest('who', () => 'still here')
+      await client.connect(address, 2000)
+      expect(await client.request({ event: 'who', timeout: 2000 })).to.equal('still here')
+    } finally {
+      await client.close().catch(() => {})
+      socket.setAddress(address)
+      await server.close().catch(() => {})
+    }
+  })
+})
