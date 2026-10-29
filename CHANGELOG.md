@@ -82,12 +82,20 @@ patch from the commit before these if they are not wanted yet.
   are unchanged.
 - `connect()` on an address that is still connected returns peer info only
   for a live session (`null` while the server is gone).
+- A server accepts no handshake once `unbind()` / `close()` has started (also
+  when a `PEER_LEFT` / `PEER_JOINED` listener starts it), and a client this
+  node is ending (`disconnect()`, reconnect policy) joins nothing: listeners
+  can tear down from inside peer events without the session coming back.
+- `requestAny` / `tickAny` / `tickAll` with `down` / `up` send through a
+  connection of the selected direction (a peer joined both ways was reached
+  through the other one).
 
 ### Added (2.1 candidates)
 - `NodeEvent.RECONNECT_ATTEMPT` `{ address, interval, peerId }`
   (`ClientEvent.RECONNECTING`, `ProtocolEvent.TRANSPORT_RECONNECTING`): the
   transport retrying an upstream connection; observability only.
-- `PeerLeftCategory`; typed `ZMQ_HEARTBEAT_IVL` / `_TIMEOUT` / `_TTL`;
+- `PeerLeftCategory`; typed `ZMQ_HEARTBEAT_IVL` / `_TIMEOUT` / `_TTL`, the
+  `RECONNECT_ATTEMPT` listener overloads and `connect()`'s result;
   `ZMQ_RECONNECT_IVL_MAX` is validated (its default stays 0).
 
 ### Not done (designs in the task notes)
