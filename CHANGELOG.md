@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [2.1.0-rc.1] - 2026-10-30
 
 From the PEER_LEFT / reconnectionTimeout analysis (aki doc 15) as refined by
 the Codex plan review (aki doc 16). Regression tests:
