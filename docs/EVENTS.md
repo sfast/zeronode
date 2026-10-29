@@ -42,7 +42,8 @@ node.on(NodeEvent.PEER_LEFT, ({ peerId, direction, reason }) => {
   // reason (upstream): 'TRANSPORT_NOT_READY', 'TRANSPORT_FAILED',
   //   'server_left', 'closed',
   //   'replaced' (the server at that address answered under a new id while
-  //   the old one was still joined; a PEER_JOINED for the new id follows)
+  //   the old one was still joined; a PEER_JOINED for the new id follows).
+  //   Note the case: upstream 'replaced', downstream 'REPLACED'.
   // Requests pending on that peer are rejected at once (PEER_LEFT /
   // PEER_UNREACHABLE) instead of waiting for their timeout.
   // Always handle this to clean up resources

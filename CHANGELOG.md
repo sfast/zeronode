@@ -89,15 +89,20 @@ named in brackets.
   `tickAny` a routing miss until the process restarted (2.0.15 too). The
   connection now moves to the new id before `PEER_JOINED` (the old id gets
   `PEER_LEFT` `replaced` if it was still joined; `getPeerOptions(oldId)` is
-  `null`); `disconnect(address)` and auto-reconnect use the new id. An id that
-  another connection already holds is never taken over (warning).
+  `null`); `disconnect(address)` and auto-reconnect use the new id. A re-key
+  never takes over an id another connection already holds (warning).
 - The auto-reconnect timer no longer reports "Successfully reconnected" and
-  stops for an address whose client has no session; it keeps checking with
-  backoff until the client's own re-handshake ends it (g1).
+  stops for an address whose client has no session (no joined server id,
+  e.g. the transport is up again but nothing answered the handshake); it
+  keeps checking with backoff (up to every 30s, one info log line each) until
+  the client's own re-handshake ends it (g1).
 - The first `PEER_JOINED` of a `connect()` is emitted once the peer is
   routable: a synchronous listener can `request({ to: peerId })`. A
   `connect()` cancelled during its handshake no longer emits
-  `PEER_JOINED`/`PEER_LEFT` (g2).
+  `PEER_JOINED`/`PEER_LEFT` (g2). A `PEER_JOINED` listener that throws there
+  is reported as `NodeEvent.ERROR` (`source: 'node'`, `stage: 'listener'`)
+  and `connect()` still resolves (it used to end in a handshake timeout with
+  the peer half registered).
 - `requestAny`/`tickAny` ignore a caller-supplied `_routing` (internal proxy
   routing info: it could exclude the caller's own routers or forge the
   `requestor`) (f2).
@@ -214,6 +219,11 @@ named in brackets.
   match misses coming back; above ~1k proxied ticks/s per node a slow miss can
   find its record evicted and the tick is dropped.
 - `tickAny`/`tickAll` take no `metadata`.
+- One Node connecting to the same server through two addresses (e.g.
+  `127.0.0.1` and `localhost`) is not supported: both connections carry the
+  node's id, so at the server the newer one takes over (ROUTER handover). The
+  Node keeps routing through the newer one (warning), but the older client
+  stays open, and `disconnect()` of the older address closes the newer one.
 - Repeated handshakes may still emit duplicate `PEER_JOINED`/`PEER_LEFT`
   events (unchanged).
 
