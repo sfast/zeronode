@@ -125,6 +125,12 @@ named in brackets.
 - `underscore` 1.13.8 and `uuid` 13.0.2 (security fixes); `zeromq` 6.8.0
   (libzmq 4.3.5); `msgpack-lite` 0.1.27 (encoding verified byte-identical to
   0.1.26). `npm audit --omit=dev`: 0 vulnerabilities.
+- Removed unused runtime dependencies `bluebird`, `lokijs`, `nats` and `uuid`
+  (nothing in zeronode imports them). If your code imported one of them
+  without declaring it, add it to your own `package.json`.
+- Removed `preinstall.sh`: installing zeronode no longer tries to install
+  `libzmq` with `sudo apt-get` / `yum` / `brew`. zeromq 6 ships its own
+  prebuilt binary.
 - Dev: mocha 12, chai 6, c8 12, snyk 1.1308; removed unused `seneca`,
   `js-yaml`, `cross-env`. Running the test suite needs Node `^20.19 || >=22.12`
   (mocha 12); the library still supports Node >= 18.
