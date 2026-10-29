@@ -210,7 +210,7 @@ Connect to a remote node.
 - `options` (Object)
   - `address` (string): Remote address (e.g., `'tcp://127.0.0.1:5000'`)
   - `timeout` (number, optional): Connection timeout in milliseconds
-  - `reconnectionTimeout` (number, optional): Reconnection timeout
+  - `reconnectionTimeout` (number, optional): **Deprecated, has no effect** since 2.0 (ZeroMQ reconnects without giving up); a warning is logged once
 
 **Returns:** `Promise<Object>` - Remote node info `{ id, options }`
 
@@ -807,7 +807,7 @@ Get the peer ID of a server at a specific address.
 **Parameters:**
 - `address` (string): Server address
 
-**Returns:** `string | null` - Peer ID or null if not found
+**Returns:** `string | null` - Peer ID of the live session at that address, or `null` if there is none (not connected, the server left, or the transport is back but the server has not answered the handshake yet)
 
 **Example:**
 ```javascript

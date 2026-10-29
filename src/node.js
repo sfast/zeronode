@@ -456,7 +456,7 @@ export default class Node extends EventEmitter {
    * @param {Object} params
    * @param {string} params.address - Remote address (tcp://...)
    * @param {number} [params.timeout] - Connection timeout
-   * @param {number} [params.reconnectionTimeout] - Reconnection timeout
+   * @param {number} [params.reconnectionTimeout] - Deprecated, has no effect
    * @returns {Promise<Object>} Remote node info
    */
   async connect ({ address, timeout, reconnectionTimeout } = {}) {
@@ -517,19 +517,19 @@ export default class Node extends EventEmitter {
       }
     }
     
-    // Prepare client config
-    let clientConfig = config
-    if (reconnectionTimeout !== undefined) {
-      clientConfig = Object.assign({}, config, { 
-        RECONNECTION_TIMEOUT: reconnectionTimeout 
-      })
+    // reconnectionTimeout has had no effect since 2.0 (the transport timer it
+    // configured was removed; ZeroMQ reconnects without giving up). Say so
+    // once instead of silently passing it on.
+    if (reconnectionTimeout !== undefined && !_scope.warnedReconnectionTimeout) {
+      _scope.warnedReconnectionTimeout = true
+      logger.warn('[Node] connect({ reconnectionTimeout }) has no effect: ZeroMQ reconnects without giving up (deprecated, ignored)')
     }
     
     // Create client with node identity
     const client = new Client({ 
       id,              // ✅ Client uses Node's ID
       options,         // ✅ Node's options for handshake
-      config: clientConfig 
+      config
     })
     
     // Apply all registered handlers to client

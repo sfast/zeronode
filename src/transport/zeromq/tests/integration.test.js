@@ -19,12 +19,9 @@
  */
 
 import { expect } from 'chai'
-import { Dealer as DealerSocket, Router as RouterSocket, TIMEOUT_INFINITY } from '../index.js'
+import { Dealer as DealerSocket, Router as RouterSocket } from '../index.js'
 import { TransportEvent } from '../../events.js'
 import { wait, waitForReady, waitForNotReady, getAvailablePort, TestTimeouts } from './helpers.js'
-
-// Alias for backward compatibility
-const Timeouts = { INFINITY: TIMEOUT_INFINITY }
 
 describe('Dealer ↔ Router Integration', () => {
   
@@ -42,8 +39,7 @@ describe('Dealer ↔ Router Integration', () => {
       
       router = new RouterSocket({ id: 'router-basic' })
       dealer = new DealerSocket({ 
-        id: 'dealer-basic',
-        config: { RECONNECTION_TIMEOUT: TIMEOUT_INFINITY }
+        id: 'dealer-basic'
       })
       
       await router.bind(routerAddress)
@@ -185,7 +181,6 @@ describe('Dealer ↔ Router Integration', () => {
       const dealer = new DealerSocket({ 
         id: 'dealer-unbind',
         config: {
-          RECONNECTION_TIMEOUT: TIMEOUT_INFINITY,
           ZMQ_RECONNECT_IVL: 100
         }
       })
@@ -233,8 +228,7 @@ describe('Dealer ↔ Router Integration', () => {
       const dealer = new DealerSocket({ 
         id: 'dealer-reconnect',
         config: {
-          ZMQ_RECONNECT_IVL: 50,  // Retry every 50ms
-          RECONNECTION_TIMEOUT: TIMEOUT_INFINITY
+          ZMQ_RECONNECT_IVL: 50  // Retry every 50ms
         }
       })
       
@@ -279,8 +273,7 @@ describe('Dealer ↔ Router Integration', () => {
       const dealer = new DealerSocket({ 
         id: 'resilient-dealer',
         config: {
-          ZMQ_RECONNECT_IVL: 50,
-          RECONNECTION_TIMEOUT: TIMEOUT_INFINITY
+          ZMQ_RECONNECT_IVL: 50
         }
       })
       
@@ -339,8 +332,7 @@ describe('Dealer ↔ Router Integration', () => {
       const dealer = new DealerSocket({ 
         id: 'dealer-patient',
         config: {
-          ZMQ_RECONNECT_IVL: 100,
-          RECONNECTION_TIMEOUT: TIMEOUT_INFINITY
+          ZMQ_RECONNECT_IVL: 100
         }
       })
       
@@ -364,7 +356,7 @@ describe('Dealer ↔ Router Integration', () => {
       await router.close()
     })
 
-    it('should reconnect indefinitely when RECONNECTION_TIMEOUT = -1', async function() {
+    it('reconnects indefinitely (ZeroMQ has no give-up timer)', async function() {
       this.timeout(8000)
       
       const routerAddress = 'tcp://127.0.0.1:6006'
@@ -374,8 +366,7 @@ describe('Dealer ↔ Router Integration', () => {
       const dealer = new DealerSocket({ 
         id: 'dealer-infinite',
         config: {
-          ZMQ_RECONNECT_IVL: 50,
-          RECONNECTION_TIMEOUT: TIMEOUT_INFINITY
+          ZMQ_RECONNECT_IVL: 50
         }
       })
       
@@ -459,16 +450,13 @@ describe('Dealer ↔ Router Integration', () => {
 
     it('should handle multiple dealers connecting', async () => {
       const dealer1 = new DealerSocket({ 
-        id: 'dealer-1',
-        config: { RECONNECTION_TIMEOUT: Timeouts.INFINITY }
+        id: 'dealer-1'
       })
       const dealer2 = new DealerSocket({ 
-        id: 'dealer-2',
-        config: { RECONNECTION_TIMEOUT: Timeouts.INFINITY }
+        id: 'dealer-2'
       })
       const dealer3 = new DealerSocket({ 
-        id: 'dealer-3',
-        config: { RECONNECTION_TIMEOUT: Timeouts.INFINITY }
+        id: 'dealer-3'
       })
       
       await Promise.all([
@@ -496,12 +484,10 @@ describe('Dealer ↔ Router Integration', () => {
 
     it('should route messages to correct dealer', async () => {
       const dealer1 = new DealerSocket({ 
-        id: 'dealer-A',
-        config: { RECONNECTION_TIMEOUT: Timeouts.INFINITY }
+        id: 'dealer-A'
       })
       const dealer2 = new DealerSocket({ 
-        id: 'dealer-B',
-        config: { RECONNECTION_TIMEOUT: Timeouts.INFINITY }
+        id: 'dealer-B'
       })
       
       await dealer1.connect(routerAddress)
@@ -560,8 +546,7 @@ describe('Dealer ↔ Router Integration', () => {
       const dealer = new DealerSocket({ 
         id: 'dealer-state',
         config: {
-          ZMQ_RECONNECT_IVL: 50,
-          RECONNECTION_TIMEOUT: TIMEOUT_INFINITY
+          ZMQ_RECONNECT_IVL: 50
         }
       })
       
@@ -598,8 +583,7 @@ describe('Dealer ↔ Router Integration', () => {
       const dealer = new DealerSocket({ 
         id: 'dealer-send',
         config: {
-          ZMQ_RECONNECT_IVL: 50,
-          RECONNECTION_TIMEOUT: TIMEOUT_INFINITY
+          ZMQ_RECONNECT_IVL: 50
         }
       })
       
@@ -654,8 +638,7 @@ describe('Dealer ↔ Router Integration', () => {
       const dealer = new DealerSocket({ 
         id: 'dealer-events',
         config: {
-          ZMQ_RECONNECT_IVL: 50,
-          RECONNECTION_TIMEOUT: TIMEOUT_INFINITY
+          ZMQ_RECONNECT_IVL: 50
         }
       })
       
@@ -712,7 +695,6 @@ describe('Dealer ↔ Router Integration', () => {
       const dealer = new DealerSocket({ 
         id: 'dealer-close',
         config: {
-          RECONNECTION_TIMEOUT: 1000,
           ZMQ_RECONNECT_IVL: 100
         }
       })
@@ -748,8 +730,7 @@ describe('Dealer ↔ Router Integration', () => {
     it('should cleanup resources on close', async () => {
       const router = new RouterSocket({ id: 'cleanup-router' })
       const dealer = new DealerSocket({ 
-        id: 'cleanup-dealer',
-        config: { RECONNECTION_TIMEOUT: Timeouts.INFINITY }
+        id: 'cleanup-dealer'
       })
       
       await router.bind('tcp://127.0.0.1:6012')
@@ -817,7 +798,6 @@ describe('Dealer ↔ Router Integration', () => {
       const dealer = new DealerSocket({ 
         id: 'stress-dealer',
         config: { 
-          RECONNECTION_TIMEOUT: TIMEOUT_INFINITY,
           ZMQ_SNDHWM: 10000,
           ZMQ_RCVHWM: 10000
         }

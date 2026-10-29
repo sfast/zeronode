@@ -51,19 +51,66 @@ export interface NodeConfig {
   /** Custom logger instance */
   logger?: any;
   
-  /** ZeroMQ reconnection interval in milliseconds */
+  /** ZeroMQ (dealer) reconnect interval in ms: ZMQ_RECONNECT_IVL (default: 100) */
+  ZMQ_RECONNECT_IVL?: number;
+  
+  /**
+   * ZeroMQ (dealer) maximum reconnect interval in ms: ZMQ_RECONNECT_IVL_MAX.
+   * 0 (the default) = no backoff, retry every ZMQ_RECONNECT_IVL; greater than
+   * it = the interval doubles on each attempt up to this value
+   */
+  ZMQ_RECONNECT_IVL_MAX?: number;
+  
+  /** ms unsent messages linger after close: ZMQ_LINGER (default: 0) */
+  ZMQ_LINGER?: number;
+  
+  /** Max queued outgoing messages per peer: ZMQ_SNDHWM (default: 10000) */
+  ZMQ_SNDHWM?: number;
+  
+  /** Max queued incoming messages: ZMQ_RCVHWM (default: 10000) */
+  ZMQ_RCVHWM?: number;
+  
+  /** Send timeout in ms: ZMQ_SNDTIMEO (router default: 0; dealer: ZeroMQ default) */
+  ZMQ_SNDTIMEO?: number;
+  
+  /** Receive timeout in ms: ZMQ_RCVTIMEO (default: ZeroMQ default) */
+  ZMQ_RCVTIMEO?: number;
+  
+  /** Router: a send to an unknown peer fails (EHOSTUNREACH): ZMQ_ROUTER_MANDATORY (default: true) */
+  ZMQ_ROUTER_MANDATORY?: boolean;
+  
+  /** Router: a new connection with a connected id takes it over: ZMQ_ROUTER_HANDOVER (default: true) */
+  ZMQ_ROUTER_HANDOVER?: boolean;
+  
+  /** ZeroMQ I/O threads for client sockets (default: 1) */
+  DEALER_IO_THREADS?: number;
+  
+  /** ZeroMQ I/O threads for server sockets (default: 2) */
+  ROUTER_IO_THREADS?: number;
+  
+  /**
+   * @deprecated Never read (has no effect): the reconnect interval is ZMQ_RECONNECT_IVL
+   */
   reconnectInterval?: number;
   
-  /** ZeroMQ maximum reconnection interval in milliseconds */
+  /**
+   * @deprecated Never read (has no effect): the maximum reconnect interval is ZMQ_RECONNECT_IVL_MAX
+   */
   reconnectMaxInterval?: number;
   
-  /** ZeroMQ heartbeat interval in milliseconds */
+  /**
+   * @deprecated Never read (has no effect): ZMTP heartbeats are not configured by zeronode
+   */
   heartbeatInterval?: number;
   
-  /** ZeroMQ heartbeat timeout in milliseconds */
+  /**
+   * @deprecated Never read (has no effect): ZMTP heartbeats are not configured by zeronode
+   */
   heartbeatTimeout?: number;
   
-  /** ZeroMQ heartbeat TTL in milliseconds */
+  /**
+   * @deprecated Never read (has no effect): ZMTP heartbeats are not configured by zeronode
+   */
   heartbeatTtl?: number;
 }
 
@@ -171,7 +218,10 @@ export interface ConnectOptions {
   /** Connection timeout in milliseconds (optional) */
   timeout?: number;
   
-  /** Reconnection timeout in milliseconds (optional) */
+  /**
+   * @deprecated Has no effect since 2.0 (ZeroMQ reconnects without giving up);
+   * connect() logs a warning once when it is given
+   */
   reconnectionTimeout?: number;
 }
 

@@ -333,7 +333,14 @@ config: {
 **Default:** `100` / `0` (no max)  
 **Range:** `10` - `60000`  
 
-Reconnection interval and maximum interval (exponential backoff).
+Reconnection interval and maximum interval (exponential backoff). With the
+default `ZMQ_RECONNECT_IVL_MAX: 0` a client retries every `ZMQ_RECONNECT_IVL`
+(100ms) for as long as the server is unreachable; it never gives up. A
+larger maximum makes the interval double up to it (fewer attempts against a
+server that is down, but a restarted server may be reached up to that much
+later). These are the keys that are read: `reconnectInterval` /
+`reconnectMaxInterval` (and `heartbeat*`) in older typings have no effect,
+and `connect({ reconnectionTimeout })` has had no effect since 2.0.
 
 ```javascript
 config: {
