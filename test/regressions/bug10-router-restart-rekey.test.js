@@ -16,12 +16,23 @@
  */
 
 import { expect } from 'chai'
+import fs from 'fs'
 import os from 'os'
 import path from 'path'
+import * as zmq from 'zeromq'
 import Node, { Router, NodeEvent } from '../../src/index.js'
 
 const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-const ipcAddress = () => `ipc://${path.join(os.tmpdir(), `zn-bug10-${uid()}.sock`)}`
+const ipcFiles = []
+const ipcAddress = () => {
+  const file = path.join(os.tmpdir(), `zn-bug10-${uid()}.sock`)
+  ipcFiles.push(file)
+  return `ipc://${file}`
+}
+
+after(() => {
+  for (const file of ipcFiles.splice(0)) fs.rmSync(file, { force: true })
+})
 
 /** Resolve once `check()` is true, re-checking on every `event` of `emitters` */
 function waitUntil (emitters, events, check, ms = 5000, what = 'condition') {
@@ -247,6 +258,30 @@ describe('Regression bug 10 (g1): the reconnect timer verifies the session', fun
     await pollUntil(() => logger.lines.slice(from).some(l => /Reconnecting to .* \(attempt 1\)/.test(l.text)),
       3000, 'a fresh reconnect schedule')
   })
+
+  it('a transport that is up again without a handshake is not a session', async () => {
+    const address = ipcAddress()
+    const r1 = track(new Router({ id: `bug10-g1s-r1-${uid()}` }))
+    await r1.bind(address)
+
+    const logger = recordingLogger()
+    const requester = track(new Node({ id: `bug10-g1s-req-${uid()}`, config: { logger } }))
+    await requester.connect({ address })
+    await r1.close()
+
+    // Something at the address accepts the DEALER but never answers the
+    // handshake: the client's transport is up and it still knows the old id
+    const silent = new zmq.Router({ linger: 0 })
+    try {
+      await silent.bind(address)
+      const verdict = (l) => /Successfully reconnected|no session yet/.test(l.text)
+      await pollUntil(() => logger.lines.some(verdict), 5000, 'the first reconnect timer')
+      expect(logger.lines.filter(verdict).map(l => l.text)[0]).to.match(/no session yet/)
+      expect(requester.getNodesUpstream()).to.deep.equal([])
+    } finally {
+      silent.close()
+    }
+  })
 })
 
 describe('Regression bug 10 (g2): the first PEER_JOINED is routable', function () {
@@ -279,6 +314,55 @@ describe('Regression bug 10 (g2): the first PEER_JOINED is routable', function (
     await client.connect({ address: server.getAddress() })
 
     expect(await fromListener).to.deep.equal({ value: 'server' })
+  })
+
+  it('a throwing PEER_JOINED listener does not fail connect() (reported as NodeEvent.ERROR)', async () => {
+    server = new Node({ id: `bug10-g2t-srv-${uid()}` })
+    server.onRequest('who', () => 'server')
+    await server.bind('tcp://127.0.0.1:0')
+
+    client = new Node({ id: `bug10-g2t-cli-${uid()}`, config: { logger: recordingLogger() } })
+    const errors = []
+    client.on(NodeEvent.ERROR, (payload) => errors.push(payload))
+    client.once(NodeEvent.PEER_JOINED, () => { throw new Error('listener bug') })
+
+    const info = await client.connect({ address: server.getAddress() })
+    expect(info.id).to.equal(server.getId())
+    expect(errors.map(e => e.error?.message)).to.deep.equal(['listener bug'])
+    expect(await client.request({ to: server.getId(), event: 'who', timeout: 2000 })).to.equal('server')
+  })
+})
+
+describe('Regression bug 10: one server reached at two addresses (id collision at connect)', function () {
+  this.timeout(10000)
+
+  let server
+  let client
+
+  afterEach(async () => {
+    await client?.close().catch(() => {})
+    await server?.close().catch(() => {})
+    client = server = null
+  })
+
+  it('the newer connection is used, with a warning (two connections are not supported)', async () => {
+    server = new Node({ id: `bug10-alias-srv-${uid()}` })
+    server.onRequest('who', () => 'server')
+    await server.bind('tcp://127.0.0.1:0')
+    const first = server.getAddress()
+    const alias = first.replace('127.0.0.1', 'localhost')
+
+    const logger = recordingLogger()
+    client = new Node({ id: `bug10-alias-cli-${uid()}`, config: { logger } })
+    await client.connect({ address: first })
+    const info = await client.connect({ address: alias, timeout: 2000 })
+    expect(info.id).to.equal(server.getId())
+    expect(logger.lines.some(l => l.level === 'warn' && /already connected through another address/.test(l.text))).to.equal(true)
+
+    // At the server the newer connection took this node's id over; it is the
+    // one routed through, and the older one's events do not end its session
+    expect(client.getNodesUpstream()).to.deep.equal([server.getId()])
+    expect(await client.request({ to: server.getId(), event: 'who', timeout: 2000 })).to.equal('server')
   })
 })
 

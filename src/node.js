@@ -551,7 +551,17 @@ export default class Node extends EventEmitter {
     const serverId = client.getServerId()
     
     const remoteNodeId = serverId
-    
+
+    // Already connected to this server through another address (an alias of
+    // it). Both connections carry this node's id, so at the server the newer
+    // one has taken over (ROUTER handover) and the older one no longer gets
+    // anything: the newer one is kept, as before (not supported, see the
+    // CHANGELOG). The older client's events no longer end this session.
+    const holder = clients.get(remoteNodeId)
+    if (holder !== undefined && holder !== client) {
+      logger.warn(`[Node] ${address} answers as '${remoteNodeId}', already connected through another address; the newer connection replaces the older one (not supported)`)
+    }
+
     logger.info(`[Node] Connected: ${id} → ${remoteNodeId} (${address})`)
     
     // Store client by remote node's ID; later handshakes of this client
@@ -685,13 +695,23 @@ export default class Node extends EventEmitter {
       this._announceUpstreamPeer(serverId, serverOptions)
     })
     
+    // The session behind `serverId` is this client's, unless another client
+    // holds that id (only after an id collision when re-keying): then this
+    // client's events must not end the other connection's session
+    const ownsSession = (serverId) => {
+      const owner = _scope.clients.get(serverId)
+      return owner === undefined || owner === client
+    }
+
     // Transform: Client.SERVER_OPTIONS_UPDATED → Node.PEER_UPDATED
     listen(ClientEvent.SERVER_OPTIONS_UPDATED, ({ serverId, serverOptions }) => {
+      if (!ownsSession(serverId)) return
       this._updatePeerOptions(serverId, serverOptions, 'upstream')
     })
     
     // Transform: Client.NOT_READY → Node.PEER_LEFT (transport lost readiness)
     listen(ClientEvent.NOT_READY, ({ serverId, reason }) => {
+      if (!ownsSession(serverId)) return
       // ✅ Track LEFT state in Node (single operation)
       this._removeJoinedPeer(serverId)
       
@@ -705,6 +725,7 @@ export default class Node extends EventEmitter {
     
     // Transform: Client.CLOSED → Node.PEER_LEFT (transport permanently closed)
     listen(ClientEvent.CLOSED, ({ serverId }) => {
+      if (!ownsSession(serverId)) return
       // ✅ Track LEFT state in Node (single operation)
       this._removeJoinedPeer(serverId)
       
@@ -720,6 +741,7 @@ export default class Node extends EventEmitter {
     
     // Transform: Client.SERVER_LEFT → Node.PEER_LEFT (server shutdown/stopped)
     listen(ClientEvent.SERVER_LEFT, ({ serverId }) => {
+      if (!ownsSession(serverId)) return
       // ✅ Track LEFT state in Node (single operation)
       this._removeJoinedPeer(serverId)
       
@@ -742,11 +764,32 @@ export default class Node extends EventEmitter {
     // ✅ Track JOINED state in Node (single operation)
     this._addJoinedPeer(serverId, serverOptions, 'upstream')
 
-    this.emit(NodeEvent.PEER_JOINED, {
+    this._emitPeerEvent(NodeEvent.PEER_JOINED, {
       peerId: serverId,
       direction: 'upstream', // We connected TO this server
       peerOptions: serverOptions || {}
     })
+  }
+
+  /**
+   * Emit a peer event from inside connect()/a re-key: a listener that throws
+   * is reported (NodeEvent.ERROR) instead of failing a connect() that has
+   * already registered the peer, or leaving a re-key half done
+   * @private
+   */
+  _emitPeerEvent (event, payload) {
+    try {
+      this.emit(event, payload)
+    } catch (err) {
+      const { logger } = _private.get(this)
+      logger.error(`[Node] A ${event} listener threw:`, err)
+      this.emit(NodeEvent.ERROR, {
+        source: 'node',
+        stage: 'listener',
+        serverId: payload.peerId,
+        error: err
+      })
+    }
   }
 
   /**
@@ -776,7 +819,7 @@ export default class Node extends EventEmitter {
       // Its id → address mapping is gone, so this schedules no reconnect.
       if (joinedPeers.has(oldId) && peerDirection.get(oldId) === 'upstream') {
         this._removeJoinedPeer(oldId)
-        this.emit(NodeEvent.PEER_LEFT, { peerId: oldId, direction: 'upstream', reason: 'replaced' })
+        this._emitPeerEvent(NodeEvent.PEER_LEFT, { peerId: oldId, direction: 'upstream', reason: 'replaced' })
       }
     }
 
@@ -988,10 +1031,15 @@ export default class Node extends EventEmitter {
    * @private
    */
   _hasSession (address) {
-    const { clients, clientsAddressIndex } = _private.get(this)
+    const { clients, clientsAddressIndex, joinedPeers } = _private.get(this)
     const nodeId = clientsAddressIndex.get(md5(address))
     const client = nodeId !== undefined ? clients.get(nodeId) : undefined
-    return !!client && client.isOnline()
+    if (!client || !client.isOnline()) return false
+    // The client keeps the old server id while the transport is down, and the
+    // transport may be up again before (or without) a handshake: only a
+    // joined id, re-keyed to this client, is a session
+    const serverId = client.getServerId()
+    return joinedPeers.has(serverId) && clients.get(serverId) === client
   }
 
   /**
