@@ -1341,7 +1341,17 @@ export default class Node extends EventEmitter {
   /**
    * Send request to any matching node
    */
-  async requestAny ({ event, data, timeout, filter, down = true, up = true, _routing } = {}) {
+  async requestAny ({ event, data, timeout, filter, down = true, up = true } = {}) {
+    // Routing info is internal: a caller's `_routing` is not taken
+    return this._requestAny({ event, data, timeout, filter, down, up })
+  }
+
+  /**
+   * requestAny, with the routing info of a proxy request being forwarded
+   * (`routing` is set by a Router only; undefined for a local call)
+   * @private
+   */
+  async _requestAny ({ event, data, timeout, filter, down = true, up = true }, routing) {
     // Extract options and predicate from filter if wrapped
     const filterOptions = filter?.options || (filter?.predicate ? undefined : filter)
     const filterPredicate = filter?.predicate
@@ -1366,7 +1376,7 @@ export default class Node extends EventEmitter {
         // removed, so this terminates.
         if (err?.code === ProtocolErrorCode.PEER_UNREACHABLE && err.context?.delivered === false &&
             !this._isJoinedPeer(targetNode)) {
-          return this.requestAny({ event, data, timeout, filter, down, up, _routing })
+          return this._requestAny({ event, data, timeout, filter, down, up }, routing)
         }
         throw err
       })
@@ -1386,8 +1396,8 @@ export default class Node extends EventEmitter {
       return Promise.reject(error)
     }
     
-    // Proxy path bookkeeping (_routing is set when a Router forwards a proxy request)
-    const hop = this._prepareProxyHop(_routing)
+    // Proxy path bookkeeping (routing is set when a Router forwards a proxy request)
+    const hop = this._prepareProxyHop(routing)
     if (hop.error) {
       return Promise.reject(hop.error)
     }
@@ -1591,7 +1601,17 @@ export default class Node extends EventEmitter {
   /**
    * Send tick to any matching node
    */
-  tickAny ({ event, data, filter, down = true, up = true, _routing } = {}) {
+  tickAny ({ event, data, filter, down = true, up = true } = {}) {
+    // Routing info is internal: a caller's `_routing` is not taken
+    return this._tickAny({ event, data, filter, down, up })
+  }
+
+  /**
+   * tickAny, with the routing info of a proxy tick being placed
+   * (`routing` is set by a Router or a returned miss; undefined for a local call)
+   * @private
+   */
+  _tickAny ({ event, data, filter, down = true, up = true }, routing) {
     // Extract options and predicate from filter if wrapped
     const filterOptions = filter?.options || (filter?.predicate ? undefined : filter)
     const filterPredicate = filter?.predicate
@@ -1626,8 +1646,8 @@ export default class Node extends EventEmitter {
       return Promise.reject(error)
     }
     
-    // Proxy path bookkeeping (_routing is set when a Router forwards a proxy tick)
-    const hop = this._prepareProxyHop(_routing)
+    // Proxy path bookkeeping (routing is set when a Router forwards a proxy tick)
+    const hop = this._prepareProxyHop(routing)
     if (hop.error) {
       return Promise.reject(hop.error)
     }
@@ -1661,7 +1681,7 @@ export default class Node extends EventEmitter {
         filter: filterOptions,
         down,
         up,
-        routing: _routing,
+        routing,
         // This node's own exploration, kept in full (the forwarded list is capped)
         visited: Array.from(hop.visited),
         forwards
@@ -1698,7 +1718,7 @@ export default class Node extends EventEmitter {
       const tryNext = () => {
         if (!this._takeForwardedTick(tickId, routerNode)) return
         this._routeProxyTick({ event, data, filter, down, up }, {
-          ...(_routing || {}),
+          ...(routing || {}),
           visited: Array.from(hop.visited),
           unexplored: Array.from(hop.unexplored),
           forwards
@@ -1731,7 +1751,7 @@ export default class Node extends EventEmitter {
   _routeProxyTick ({ event, data, filter, down, up }, routing) {
     let result
     try {
-      result = this.tickAny({ event, data, filter, down, up, _routing: routing })
+      result = this._tickAny({ event, data, filter, down, up }, routing)
     } catch (err) {
       result = Promise.reject(err)
     }

@@ -129,15 +129,14 @@ export class Router extends Node {
       }
       
       // Router performs requestAny on its own network
-      const result = await this.requestAny({
+      const result = await this._requestAny({
         event,
         data,
         filter,
         down: down !== undefined ? down : true,
         up: up !== undefined ? up : true,
-        timeout: innerTimeout,
-        _routing: hop
-      })
+        timeout: innerTimeout
+      }, hop)
       
       if (scope.enableStats) {
         scope.stats.successfulRoutes++
