@@ -188,6 +188,8 @@ export default class Node extends EventEmitter {
       
       // Bind in background (Node should be fully initialized when used)
       setImmediate(() => {
+        // close() already ran: nothing to bind
+        if (_scope.closed) return
         this.bind(bind).catch(err => {
           _scope.logger.error(`[Node] Failed to bind server to ${bind}:`, err)
           this.emit('error', err)
@@ -2235,7 +2237,7 @@ export default class Node extends EventEmitter {
     // connect() rejects from now on (also one already past its handshake),
     // and the server accepts no handshake any more
     _scope.closed = true
-    server?._stopAccepting()
+    server?._beginClose()
     
     // Proxied ticks forwarded earlier can no longer be continued
     _scope.forwardedTicks.clear()

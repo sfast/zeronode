@@ -56,7 +56,10 @@ export default class Server extends Protocol {
       pendingHandshakes: new Map(), // clientId → when a resurrection handshake was requested
       stopping: false,              // unbind()/close() started: no handshake is accepted
       lifecycleQueue: null,         // bind()/unbind() run one at a time, in call order
-      gateRequest: 0,               // counts bind()/unbind()/close() requests: the latest decides the gate
+      gateRequest: 0,               // counts bind()/unbind()/close() requests
+      lastStopRequest: 0,           // request number of the latest unbind()/close()
+      lastBoundRequest: 0,          // request number of the latest bind() that succeeded
+      closing: false,               // close() started: no bind() any more
       healthCheckInterval: null,
       options  // ✅ Store node options for handshake responses
     }
@@ -285,29 +288,25 @@ export default class Server extends Protocol {
   
   async bind (bindAddress) {
     const _scope = _private.get(this)
+    if (_scope.closing) throw this._closedError(bindAddress)
     const request = ++_scope.gateRequest
     return this._enqueueLifecycle(() => this._bind(bindAddress, request))
   }
 
   /**
-   * bind() body (after earlier bind()/unbind() calls finished). Sessions are
-   * accepted again only if the transport is bound and no later bind()/unbind()
-   * /close() was requested meanwhile (that one decides); a bind that fails
-   * changes nothing.
+   * bind() body (after earlier bind()/unbind() calls finished)
    * @private
    */
   async _bind (bindAddress, request) {
     const _scope = _private.get(this)
     const socket = this._getSocket()
-    const latest = () => request === _scope.gateRequest
+    if (_scope.closing) throw this._closedError(bindAddress)
 
     // Already bound to this address (idempotent). Also how serving resumes
     // after an unbind() the transport refused (still bound there).
     if (socket.isOnline() && this.getAddress() === bindAddress) {
-      if (latest()) {
-        _scope.stopping = false
-        this._startHealthChecks()
-      }
+      _scope.lastBoundRequest = request
+      this._updateGate()
       return
     }
 
@@ -327,9 +326,34 @@ export default class Server extends Protocol {
     // Protocol will emit ProtocolEvent.READY when bound. No handshake can be
     // dispatched before this resumes (it runs in the same turn), so opening
     // the gate here loses none.
-    if (latest()) {
-      _scope.stopping = false
-    }
+    _scope.lastBoundRequest = request
+    this._updateGate()
+  }
+
+  /**
+   * Sessions are accepted exactly while the transport is bound, the latest
+   * successful bind() is newer than the latest unbind()/close() request, and
+   * close() has not started. A bind() that fails changes nothing.
+   * @private
+   */
+  _updateGate () {
+    const _scope = _private.get(this)
+    const open = !_scope.closing && this._getSocket().isOnline() &&
+      _scope.lastBoundRequest > _scope.lastStopRequest
+    _scope.stopping = !open
+    if (open) this._startHealthChecks()
+  }
+
+  /**
+   * @private
+   */
+  _closedError (bindAddress) {
+    return new TransportError({
+      code: TransportErrorCode.BIND_FAILED,
+      message: `Server '${this.getId()}' is closed: cannot bind to ${bindAddress}`,
+      transportId: this.getId(),
+      address: bindAddress
+    })
   }
   
   async unbind () {
@@ -413,7 +437,16 @@ export default class Server extends Protocol {
   _stopAccepting () {
     const _scope = _private.get(this)
     _scope.stopping = true
-    _scope.gateRequest++
+    _scope.lastStopRequest = ++_scope.gateRequest
+  }
+
+  /**
+   * close() started: no bind() any more (also one already queued), no session
+   * @protected
+   */
+  _beginClose () {
+    _private.get(this).closing = true
+    this._stopAccepting()
   }
 
   /**
@@ -425,7 +458,10 @@ export default class Server extends Protocol {
   }
 
   async close () {
-    this._stopAccepting()
+    // Binds requested from now on are refused; the unbind below runs after
+    // everything queued before it, so no bind is under way when the transport
+    // is closed
+    this._beginClose()
     try {
       await this.unbind()
     } catch (err) {

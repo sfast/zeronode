@@ -137,6 +137,12 @@ export default class RouterSocket extends Socket {
       this.attachSocketEventListeners()  // ✅ Attach BEFORE bind
      
       await socket.bind(this.getAddress())  // Bind to address
+
+      // Closed while binding (close() does not wait for a bind): do not touch
+      // the closed native socket (lastEndpoint reads a socket option)
+      if (socket.closed) {
+        throw new Error('socket closed during bind')
+      }
       
       // ✅ Get actual bound address (important when using port 0)
       // ZeroMQ lastEndpoint returns the actual address after binding
