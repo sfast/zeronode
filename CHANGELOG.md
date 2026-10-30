@@ -7,6 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.1.0-rc.2] - 2026-10-30
+
+Fixes from a Codex (gpt-6-astra) review of everything since feature/pingfix
+(b00e31e, 2.0.15) up to 2.1.0-rc.1 (aki docs 18, 19). Regression tests: the
+"2.1.0-rc.2" block of `test/regressions/peer-lifecycle-2.1.test.js` and the
+updated alias case in `bug10-router-restart-rekey.test.js` (each fails on
+2.1.0-rc.1). No wire change.
+
+### Fixed
+- **A restarted pre-2.0.16 client is announced again.** Clients older than
+  2.0.16 send no instance id, so a restart under the same id and options
+  cannot be told from a transport blip; 2.1.0-rc.1 then suppressed its
+  `PEER_JOINED` (edge-triggered events), and applications initializing per-peer
+  state on `PEER_JOINED` never did so for the new process. A re-handshake is
+  now treated as the same session only when the same instance id proves it;
+  every handshake of an older client is announced, as in 2.0.15
+  (`ServerEvent.CLIENT_JOINED` carries `sameSession`).
+- **RegExp handlers with the `g` or `y` flag no longer skip messages.** Such
+  a pattern keeps state between matches (`lastIndex`), so since the 2.0.16
+  receive-loop isolation a tick handler saw only every other matching tick
+  (requests were affected before). Handlers are registered under an
+  equivalent RegExp without those flags; `offTick` / `offRequest` with the
+  original pattern still work.
+- **A receive timeout no longer ends reception.** With `ZMQ_RCVTIMEO` set, a
+  socket idle past it stopped receiving for good (pre-existing). The receive
+  loop now receives again while the socket is open.
+- **One server reached through two addresses:** the newer connection now
+  replaces the older one, which is closed silently (no `CLIENT_STOP`, which
+  would end the shared session) and whose address and reconnect target are
+  forgotten; no peer events (the peer stays joined). Before, the older client
+  stayed open, kept retrying, was not released by `close()`, and
+  `disconnect()` of the older address closed the newer connection.
+- `unbind()` rejects the requests still pending on its downstream clients
+  (`PEER_LEFT`) instead of leaving them to their timeout.
+- A dealer reused after `disconnect()` no longer accumulates monitor
+  listeners (the zeromq.js observer has no `removeAllListeners()`), which
+  duplicated `READY` and handshakes on each reconnect.
+- `Client.close({ notify: false })` closes without telling the server.
+
+### Docs / typings
+- CONFIGURATION.md: real health-check / ghost defaults (5 s, 3 × `PING_INTERVAL`);
+  the real option names `ZMQ_SNDHWM` / `ZMQ_RCVHWM` (default 10000) and
+  `ZMQ_SNDTIMEO` / `ZMQ_RCVTIMEO` (the documented `ZMQ_SEND_HWM`,
+  `ZMQ_RECV_HWM`, `ZMQ_SEND_TIMEOUT`, `ZMQ_RECV_TIMEOUT` were never read).
+- API.md: `requestAny` retries another peer only for `PEER_UNREACHABLE` with
+  `delivered: false`; `filter: { predicate }` (no top-level `predicate`); no
+  `metadata` on `requestAny` / `tickAny` / `tickAll`; the non-existent
+  `requestAll()` removed; `tickAll` reaches directly connected peers only.
+- EVENTS.md: when pending requests fail after `PEER_LEFT` (at once, or after the
+  2 s reconnect grace for a dropped link); `NodeEvent.ERROR` source `'node'`.
+- index.d.ts: deprecated `PROTOCOL_BUFFER_STRATEGY` accepts its old values
+  again (`'EXACT'` / `'POWER_OF_2'`, a compile break in 2.1.0-rc.1);
+  `bind(address?)` resolves with the bound address; `disconnect()` resolves
+  `true`; `unbind()` documents `TRANSPORT_UNBIND_FAILED`.
+
+---
+
 ## [2.1.0-rc.1] - 2026-10-30
 
 From the PEER_LEFT / reconnectionTimeout analysis (aki doc 15) as refined by
@@ -292,6 +349,12 @@ named in brackets.
   (mocha 12); the library still supports Node >= 18.
 
 ### Wire (all additive; older peers ignore it)
+Older peers have no built-in handler for the new system ticks, but an
+application's catch-all tick handler on an older peer (e.g. a RegExp matching
+every event) can see `_system:options_update` / `_system:proxy_tick_miss`.
+Handshakes from clients older than 2.0.16 carry no instance id: a restart of
+such a client under the same id cannot be detected (since 2.1.0-rc.2 each of
+its handshakes is announced as `PEER_JOINED`).
 - New system ticks `_system:options_update` and `_system:proxy_tick_miss`.
 - Handshake metadata `instance` (client instance id).
 - `metadata.routing` on proxied messages: `path`, `visited`, `budget`
@@ -340,12 +403,10 @@ named in brackets.
   find its record evicted and the tick is dropped.
 - `tickAny`/`tickAll` take no `metadata`.
 - One Node connecting to the same server through two addresses (e.g.
-  `127.0.0.1` and `localhost`) is not supported: both connections carry the
-  node's id, so at the server the newer one takes over (ROUTER handover). The
-  Node keeps routing through the newer one (warning), but the older client
-  stays open until the process exits (`close()` does not release it, and a
-  reconnect timer for its address keeps checking), and `disconnect()` of the
-  older address closes the newer one.
+  `127.0.0.1` and `localhost`): both connections carry the node's id, so at
+  the server the newer one takes over (ROUTER handover). Since 2.1.0-rc.2 the
+  newer connection replaces the older one (closed silently, its address
+  forgotten); keep one address per server anyway.
 - Repeated handshakes may still emit duplicate `PEER_JOINED`/`PEER_LEFT`
   events (unchanged).
 
