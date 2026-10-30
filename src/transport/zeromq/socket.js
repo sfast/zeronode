@@ -132,57 +132,28 @@ class Socket extends EventEmitter {
     try {
       let { socket } = _scope
 
-      for await (const frames of socket) {
-        // Check if we should stop listening (graceful shutdown)
-        // Note: Must check _private on each iteration, not cache it
-        let { shouldStopListening } = _private.get(this)
-        if (shouldStopListening) {
-          // Released before the iterator is closed (that is awaited): a
-          // resumeMessageListener() meanwhile starts a new loop
-          if (_scope.loop === loop) _scope.loop = null
-          break
-        }
-        
-        // Router sockets receive: [sender, '', buffer] (3 frames)
-        // Dealer sockets receive: ['', buffer] (2 frames)
-        
-        let sender, buffer
-        
-        if (frames.length === 3) {
-          // Router socket format
-          [sender, , buffer] = frames
-        } else if (frames.length === 2) {
-          // Dealer socket format
-          [, buffer] = frames
-          sender = null
-        } else {
-          // Unexpected message format - emit error but continue processing
-          const transportError = new TransportError({
-            code: TransportErrorCode.RECEIVE_FAILED,
-            message: `Unexpected message format: received ${frames.length} frames, expected 2 (Dealer) or 3 (Router)`,
-            transportId: this.getId(),
-            context: { frameCount: frames.length, expectedFormats: ['Dealer: 2 frames', 'Router: 3 frames'] }
-          })
-          this.emit(TransportEvent.ERROR, transportError)
-          
-          // Skip this malformed message and continue
-          continue
-        }
-        
-        // Pure transport: forward ALL messages to protocol layer.
-        // Listeners run synchronously: a throw here must not end the loop,
-        // otherwise the socket never receives again.
+      // A receive that times out (ZMQ_RCVTIMEO) on an open socket throws
+      // EAGAIN and ends the iteration: receive again. A closed socket ends the
+      // iteration without an error.
+      for (;;) {
         try {
-          this.emit(TransportEvent.MESSAGE, { buffer, sender })
+          await this._receiveFrames(socket, loop)
+          return
         } catch (err) {
-          this._emitMessageHandlerError(err)
+          if (err.code === 'EAGAIN' && !socket.closed && !_private.get(this).shouldStopListening &&
+              _scope.loop === loop) {
+            // Yield first: with ZMQ_RCVTIMEO 0 every receive fails at once
+            await new Promise(resolve => setImmediate(resolve))
+            continue
+          }
+          throw err
         }
       }
     } catch (err) {
       // Socket closed or error occurred
       // EAGAIN: Socket closed normally (expected during shutdown)
       if (err.code === 'EAGAIN') {
-        this.debug && this.logger?.warn(`Socket message listener error: ${err.message} - EAGAIN expected during shutdown`) 
+        this.debug && this.logger?.warn(`Socket message listener error: ${err.message} - EAGAIN expected during shutdown`)
         return  // Normal closure, nothing to report
       }
       
@@ -197,6 +168,61 @@ class Socket extends EventEmitter {
       this.emit(TransportEvent.ERROR, transportError)
     } finally {
       if (_scope.loop === loop) _scope.loop = null
+    }
+  }
+
+  /**
+   * One pass over the socket's incoming messages (ends when the socket is
+   * closed, the listener is stopped, or a receive fails)
+   * @private
+   */
+  async _receiveFrames (socket, loop) {
+    const _scope = _private.get(this)
+    for await (const frames of socket) {
+      // Check if we should stop listening (graceful shutdown)
+      // Note: Must check _private on each iteration, not cache it
+      let { shouldStopListening } = _private.get(this)
+      if (shouldStopListening) {
+        // Released before the iterator is closed (that is awaited): a
+        // resumeMessageListener() meanwhile starts a new loop
+        if (_scope.loop === loop) _scope.loop = null
+        break
+      }
+
+      // Router sockets receive: [sender, '', buffer] (3 frames)
+      // Dealer sockets receive: ['', buffer] (2 frames)
+
+      let sender, buffer
+
+      if (frames.length === 3) {
+        // Router socket format
+        [sender, , buffer] = frames
+      } else if (frames.length === 2) {
+        // Dealer socket format
+        [, buffer] = frames
+        sender = null
+      } else {
+        // Unexpected message format - emit error but continue processing
+        const transportError = new TransportError({
+          code: TransportErrorCode.RECEIVE_FAILED,
+          message: `Unexpected message format: received ${frames.length} frames, expected 2 (Dealer) or 3 (Router)`,
+          transportId: this.getId(),
+          context: { frameCount: frames.length, expectedFormats: ['Dealer: 2 frames', 'Router: 3 frames'] }
+        })
+        this.emit(TransportEvent.ERROR, transportError)
+
+        // Skip this malformed message and continue
+        continue
+      }
+
+      // Pure transport: forward ALL messages to protocol layer.
+      // Listeners run synchronously: a throw here must not end the loop,
+      // otherwise the socket never receives again.
+      try {
+        this.emit(TransportEvent.MESSAGE, { buffer, sender })
+      } catch (err) {
+        this._emitMessageHandlerError(err)
+      }
     }
   }
 
