@@ -1036,12 +1036,48 @@ describe('2.1.0-rc.2 (Codex full-range review of b00e31e..880fb05)', function ()
     for (let i = 0; i < 3; i++) {
       expect(await client.request({ to: server.getId(), event: 'ask', timeout: 2000 })).to.equal('answer')
     }
-    // offTick with the same RegExp still removes the handler
+  })
+
+  it('M2: flagged and unflagged patterns stay distinct registrations; sticky keeps its meaning', async () => {
+    const server = track(new Node({ id: `m2b-srv-${uid()}` }))
+    await server.bind('tcp://127.0.0.1:0')
+    const seen = []
+    server.onTick(/^job$/, (e) => seen.push(`plain ${e.data}`))
+    server.onTick(/^job$/g, (e) => seen.push(`g ${e.data}`))
+    // sticky: must match from index 0, so 'otherjob' is NOT a match
+    server.onTick(/job/y, (e) => seen.push(`y ${e.event}`))
+    const client = track(new Node({ id: `m2b-cli-${uid()}` }))
+    await client.connect({ address: server.getAddress() })
+
+    client.tick({ to: server.getId(), event: 'job', data: 1 })
+    client.tick({ to: server.getId(), event: 'otherjob', data: 1 })
+    await until(() => seen.length === 3, 3000, 'first ticks')
+    expect(seen).to.have.members(['plain 1', 'g 1', 'y job'])
+
+    // Removing the g registration leaves the plain one (and the sticky one)
     server.offTick(/^job$/g)
-    server.offTick(/^job$/y)
-    client.tick({ to: server.getId(), event: 'job', data: 5 })
-    await wait(150)
-    expect(ticks).to.have.length(8)
+    client.tick({ to: server.getId(), event: 'job', data: 2 })
+    await until(() => seen.length === 5, 3000, 'after offTick')
+    expect(seen.slice(3)).to.have.members(['plain 2', 'y job'])
+
+    // The Node's registry agrees: a client connecting later gets the same handlers
+    const late = track(new Node({ id: `m2b-late-${uid()}` }))
+    await late.connect({ address: server.getAddress() })
+    late.tick({ to: server.getId(), event: 'job', data: 3 })
+    await until(() => seen.length === 7, 3000, 'late client tick')
+    expect(seen.slice(5)).to.have.members(['plain 3', 'y job'])
+  })
+
+  it('M3: ZMQ_RCVTIMEO 0 does not spin: the receive loop idles between empty receives', async () => {
+    const { Router: RouterSocket } = await import('../../src/transport/zeromq/index.js')
+    const socket = new RouterSocket({ id: `rt0-${uid()}`, config: { ZMQ_RCVTIMEO: 0 } })
+    closers.push(() => socket.close())
+    await socket.bind('tcp://127.0.0.1:0')
+    const start = process.cpuUsage()
+    await wait(500)
+    const used = process.cpuUsage(start)
+    // Spinning on setImmediate would burn most of the 500 ms of CPU; idling keeps it low
+    expect((used.user + used.system) / 1000, 'cpu ms in 500 ms idle').to.be.below(150)
   })
 
   it('M3: with ZMQ_RCVTIMEO set, a socket idle past it keeps receiving', async () => {
