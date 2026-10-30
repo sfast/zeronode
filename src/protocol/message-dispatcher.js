@@ -199,7 +199,7 @@ export class MessageDispatcher {
    * @param {Function} handler - Handler function (envelope, reply) or (envelope, reply, next)
    */
   onRequest(pattern, handler) {
-    this.requestEmitter.on(pattern, handler)
+    this.requestEmitter.on(statelessPattern(pattern), handler)
     
     this.ctx.debug && this.ctx.logger?.debug(
       `[MessageDispatcher] Registered request handler for pattern: ${pattern}`
@@ -214,6 +214,7 @@ export class MessageDispatcher {
    * @param {Function} [handler] - Handler to remove (optional)
    */
   offRequest(pattern, handler) {
+    pattern = statelessPattern(pattern)
     if (handler) {
       this.requestEmitter.off(pattern, handler)
     } else {
@@ -233,7 +234,7 @@ export class MessageDispatcher {
    * @param {Function} handler - Handler function (envelope)
    */
   onTick(pattern, handler) {
-    this.tickEmitter.on(pattern, handler)
+    this.tickEmitter.on(statelessPattern(pattern), handler)
     
     this.ctx.debug && this.ctx.logger?.debug(
       `[MessageDispatcher] Registered tick handler for pattern: ${pattern}`
@@ -248,6 +249,7 @@ export class MessageDispatcher {
    * @param {Function} [handler] - Handler to remove (optional)
    */
   offTick(pattern, handler) {
+    pattern = statelessPattern(pattern)
     if (handler) {
       this.tickEmitter.off(pattern, handler)
     } else {
@@ -293,3 +295,15 @@ export class MessageDispatcher {
   }
 }
 
+/**
+ * A RegExp with the g or y flag keeps state between test() calls (lastIndex):
+ * matched for every message, it would match only every other one. Handlers are
+ * registered (and unregistered) under an equivalent RegExp without those flags;
+ * the pattern emitter keys patterns by their string form, so off*() with the
+ * original pattern finds them.
+ * @private
+ */
+function statelessPattern (pattern) {
+  if (!(pattern instanceof RegExp) || !/[gy]/.test(pattern.flags)) return pattern
+  return new RegExp(pattern.source, pattern.flags.replace(/[gy]/g, ''))
+}
