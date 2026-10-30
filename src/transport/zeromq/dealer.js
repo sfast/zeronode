@@ -43,7 +43,10 @@ export default class DealerSocket extends Socket {
       // Set by disconnect() before it reports NOT_READY, cleared by connect():
       // close() after disconnect() must not report it again, and monitor
       // events still queued from the old link are ignored
-      disconnected: false
+      disconnected: false,
+      // [type, handler] added to socket.events (removed one by one: the
+      // zeromq.js observer has off() but no removeAllListeners())
+      monitorHandlers: []
     }
 
     _private.set(this, _scope)
@@ -201,12 +204,16 @@ export default class DealerSocket extends Socket {
 
     if (socket.events) {
       _scope.eventsAttached = true
+      const on = (type, handler) => {
+        socket.events.on(type, handler)
+        _scope.monitorHandlers.push([type, handler])
+      }
 
       // zeromq.js passes one event object: { type, address[, interval] }.
       // Events still queued after an explicit disconnect() are ignored.
 
       // Map ZeroMQ connect → TransportEvent.READY
-      socket.events.on('connect', ({ address }) => {
+      on('connect', ({ address }) => {
         if (_scope.disconnected) return
         this.setOnline()
         this.debug && this.logger.info(`Emitted '${TransportEvent.READY}' on socket '${this.getId()}'`)
@@ -214,7 +221,7 @@ export default class DealerSocket extends Socket {
       })
       
       // Map ZeroMQ disconnect → TransportEvent.NOT_READY
-      socket.events.on('disconnect', ({ address }) => {
+      on('disconnect', ({ address }) => {
         if (_scope.disconnected) return
         this.setOffline()
         this.debug && this.logger.info(`Emitted '${TransportEvent.NOT_READY}' on socket '${this.getId()}'`)
@@ -222,12 +229,26 @@ export default class DealerSocket extends Socket {
         this.emit(TransportEvent.NOT_READY, { address })
       })
 
-      socket.events.on('connect:retry', ({ address, interval }) => {
+      on('connect:retry', ({ address, interval }) => {
         if (_scope.disconnected) return
         this.debug && this.logger.info(`Emitted '${TransportEvent.RECONNECT_RETRY}' on socket '${this.getId()}'`)
         this.emit(TransportEvent.RECONNECT_RETRY, { address, interval })
       })
     }
+  }
+
+  /**
+   * Remove the monitor handlers this dealer added (a reused dealer would
+   * otherwise add another set on every connect())
+   */
+  detachSocketEventListeners () {
+    const _scope = _private.get(this)
+    const { socket } = _scope
+    const handlers = _scope.monitorHandlers.splice(0)
+    if (socket && !socket.closed && socket.events && typeof socket.events.off === 'function') {
+      for (const [type, handler] of handlers) socket.events.off(type, handler)
+    }
+    super.detachSocketEventListeners()
   }
 
   // ZeroMQ Dealer-specific: message format (no routing info needed)
