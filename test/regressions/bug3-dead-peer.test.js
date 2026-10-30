@@ -44,6 +44,14 @@ describe('Regression bug 3: crashed peers fail fast', function () {
     await wait(200)
   }
 
+  /** Resolve once `check()` is true (polled), reject after `ms` */
+  const until = (check, ms, what) => new Promise((resolve, reject) => {
+    const started = Date.now()
+    const poll = setInterval(() => {
+      if (check()) { clearInterval(poll); resolve() } else if (Date.now() - started > ms) { clearInterval(poll); reject(new Error(`timed out waiting for ${what}`)) }
+    }, 20)
+  })
+
   beforeEach(async () => {
     server = new Node({ id: `bug3-srv-${uid()}` })
     await server.bind('tcp://127.0.0.1:0')
@@ -93,6 +101,9 @@ describe('Regression bug 3: crashed peers fail fast', function () {
     for (let i = 0; i < 6; i++) {
       expect(await server.requestAny({ event: 'who', filter: { service: 'y' }, timeout: 2000 })).to.equal(live.id)
     }
+    // The first requestAny that picked the dead peer found it unreachable and
+    // started its eviction (PEER_LEFT UNREACHABLE); that lands a moment later
+    await until(() => !server.getNodesDownstream().includes(dead.id), 2000, 'the crashed peer to be evicted')
     expect(server.getNodesDownstream()).to.deep.equal([live.id])
   })
 })

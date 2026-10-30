@@ -662,14 +662,18 @@ describe('2.1 review (Codex, round 2): unbind() and bind() racing, failed unbind
     server.on(NodeEvent.PEER_LEFT, ({ reason }) => {
       if (reason !== 'REPLACED') return
       server.unbind().catch(() => {}) // its outcome is not what this test checks
-      rebinding = server.bind(address) // not awaited: the unbind is still running
+      // Not awaited: the unbind is still running. libzmq releases the port
+      // asynchronously after unbind, so this bind may find it still held
+      // (EADDRINUSE); that is not what this test checks either
+      rebinding = server.bind(address).then(() => null, (err) => err)
       // What the handshake being processed does right after this listener
       setImmediate(() => { afterListener = events.slice() })
     })
     const second = track(new Node({ id: sharedId, config: { logger: quiet(), reconnect: 'disabled' } }))
     second.connect({ address, timeout: 1000 }).catch(() => {})
     await until(() => afterListener, 3000, 'REPLACED handled')
-    await rebinding
+    const rebindError = await rebinding
+    if (rebindError) expect(rebindError.cause?.code ?? rebindError.code, rebindError.message).to.equal('EADDRINUSE')
 
     expect(afterListener.filter(e => e.startsWith('joined')), afterListener.join(' | ')).to.deep.equal([])
   })
@@ -1151,8 +1155,14 @@ describe('2.1.0-rc.2: a server and its clients closing at the same time do not a
       { stdio: ['ignore', 'ignore', 'pipe', 'ipc'] })
     let stderr = ''
     child.stderr.on('data', (chunk) => { stderr += chunk })
-    const [code, signal] = await new Promise(resolve => child.once('exit', (c, s) => resolve([c, s])))
-    expect(signal, `child killed by ${signal}: ${stderr.slice(0, 300)}`).to.equal(null)
+    // A hung native operation must not outlive the test: kill the child
+    // ourselves well inside mocha's timeout and fail with what it printed
+    const exited = new Promise(resolve => child.once('exit', (c, s) => resolve([c, s])))
+    const watchdog = setTimeout(() => { if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL') }, 45000)
+    const [code, signal] = await exited
+    clearTimeout(watchdog)
+    child.stderr.destroy()
+    expect(signal, `child killed by ${signal} (SIGKILL = hung past 45 s): ${stderr.slice(0, 300)}`).to.equal(null)
     expect(code, `child exit ${code}: ${stderr.slice(0, 300)}`).to.equal(0)
   })
 })

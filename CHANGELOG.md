@@ -48,19 +48,24 @@ updated alias case in `bug10-router-restart-rekey.test.js` (each fails on
   duplicated `READY` and handshakes on each reconnect.
 - `Client.close({ notify: false })` closes without telling the server.
 - **A server and its clients closing at the same time no longer abort the
-  process.** libzmq 4.3.5 aborts (`Assertion failed: _state == active ...`
-  `pipe.cpp:305`, `Assertion failed: erased` `socket_base.cpp:2140`, or a
-  segfault) when both ends terminate one pipe in the same instant, which is
-  what a process shutting down a server and its clients together (e.g.
-  `Promise.all([router.close(), ...nodes.map(n => n.close())])`, or a test
-  suite's teardown) produced: the server's `unbind()` terminated the pipes a
-  moment after the clients' `disconnect()` did. Pre-existing (reproduced on
-  2.0.15 within 25 rounds of a 3-client parallel close, the cause of the
-  "one segfault in ~25 full test runs" seen while preparing 2.1). The server
-  now waits `Globals.TEARDOWN_SETTLE_MS` (5 ms, a timer turn, not a
-  `setImmediate`) between telling its clients it stops and unbinding, so the
-  clients' own terminations land first; 1000 rounds clean. Closing in any
-  serial order was never affected.
+  process (mitigation).** A process shutting down a server and its clients
+  together (e.g. `Promise.all([router.close(), ...nodes.map(n => n.close())])`,
+  or a test suite's teardown) could abort inside libzmq 4.3.5
+  (`Assertion failed: _state == active ...` `pipe.cpp:305`,
+  `Assertion failed: erased` `socket_base.cpp:2140`, or a segfault): within
+  25 rounds of a 3-client parallel close, also with the 2.0.15 JavaScript on
+  the current zeromq.js 6.8.0 (not re-tested with the zeromq.js 6.5 that 2.0.15
+  locked); it was the one segfault in ~25 full test runs seen while preparing
+  2.1. Observed: the abort needs the server's `unbind()` to run while its
+  clients' `disconnect()` of the same endpoint is in flight; raw zeromq.js
+  sockets doing the same calls did not abort. The server now waits
+  `Globals.TEARDOWN_SETTLE_MS` (5 ms, a timer turn, not a `setImmediate`)
+  between telling its clients it stops and unbinding (server side only; the
+  same delay on both sides re-synchronised them). 1000 protocol-level and 500
+  Node-level rounds clean afterwards; serial close orders were never affected.
+  The exact native sequence is not proven and a delay is not a barrier, so
+  this is a mitigation, not a guarantee; a 60-round parallel close runs as a
+  regression test.
 
 ### Docs / typings
 - CONFIGURATION.md: real health-check / ghost defaults (5 s, 3 × `PING_INTERVAL`);
