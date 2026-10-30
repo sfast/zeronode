@@ -142,8 +142,10 @@ class Socket extends EventEmitter {
         } catch (err) {
           if (err.code === 'EAGAIN' && !socket.closed && !_private.get(this).shouldStopListening &&
               _scope.loop === loop) {
-            // Yield first: with ZMQ_RCVTIMEO 0 every receive fails at once
-            await new Promise(resolve => setImmediate(resolve))
+            // A receive timeout: receive again. With ZMQ_RCVTIMEO 0 every
+            // empty receive fails at once, so wait a little instead of spinning.
+            const timeout = _scope.config.ZMQ_RCVTIMEO
+            await new Promise(resolve => timeout === 0 ? setTimeout(resolve, 20) : setImmediate(resolve))
             continue
           }
           throw err

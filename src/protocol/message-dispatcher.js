@@ -297,13 +297,25 @@ export class MessageDispatcher {
 
 /**
  * A RegExp with the g or y flag keeps state between test() calls (lastIndex):
- * matched for every message, it would match only every other one. Handlers are
- * registered (and unregistered) under an equivalent RegExp without those flags;
- * the pattern emitter keys patterns by their string form, so off*() with the
- * original pattern finds them.
+ * tested against every incoming event, a plain one would match only every
+ * other one. Handlers are registered under a view of the pattern whose test()
+ * starts from index 0 each time. Same source, flags and String() as the
+ * original, so the emitter keys it like the original (distinct from the
+ * flag-less pattern) and off*() with the original pattern finds it; sticky
+ * (y) semantics are kept (the match must start at 0).
+ * @private
+ */
+class StatelessRegExp extends RegExp {
+  test (string) {
+    this.lastIndex = 0
+    return super.test(string)
+  }
+}
+
+/**
  * @private
  */
 function statelessPattern (pattern) {
   if (!(pattern instanceof RegExp) || !/[gy]/.test(pattern.flags)) return pattern
-  return new RegExp(pattern.source, pattern.flags.replace(/[gy]/g, ''))
+  return new StatelessRegExp(pattern.source, pattern.flags)
 }
