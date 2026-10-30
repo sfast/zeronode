@@ -18,7 +18,10 @@ a peer starts, one `PEER_LEFT` when it ends, per direction. A peer may be joined
 both ways (two nodes connected to each other); each direction is a session of
 its own. A re-handshake of a peer that is still joined (e.g. after a transport
 blip the other side never noticed) emits nothing, or `PEER_UPDATED` if its
-options changed.
+options changed. **Exception:** a downstream client older than 2.0.16 sends no
+instance id, so its re-handshake cannot be told from a restart: each one is
+announced as another `PEER_JOINED` (with its current options), as in 2.0.15.
+Code that counts joins must allow for that until every client is upgraded.
 
 ---
 
@@ -63,9 +66,11 @@ node.on(NodeEvent.PEER_LEFT, ({ peerId, direction, reason, category }) => {
   // Requests pending on that peer fail instead of waiting for their timeout:
   // at once when it stopped, timed out, was replaced or found unreachable
   // (PEER_LEFT / PEER_UNREACHABLE), and when this node's server unbinds
-  // (PEER_LEFT); after a dropped link only once RECONNECT_GRACE_MS (2 s)
-  // passed without the link coming back (PEER_UNREACHABLE), so a short blip
-  // loses nothing.
+  // (PEER_LEFT; a request whose send has not settled yet keeps its timer).
+  // After a dropped upstream link: with reconnect 'always' / 'on_failure' they
+  // wait up to RECONNECT_GRACE_MS (2 s) for the link to come back, then fail
+  // (PEER_UNREACHABLE); with 'disabled' the connection is ended at once and
+  // they fail at once.
   // Always handle this to clean up resources
 })
 ```
