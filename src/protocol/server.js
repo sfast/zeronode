@@ -413,6 +413,15 @@ export default class Server extends Protocol {
       this.debug && this.logger?.error('Error sending server stop: ', err)
     }
     
+    // Requests still waiting on these clients will not be answered (as when
+    // a client leaves): reject them now instead of at their timeout
+    for (const clientId of _private.get(this).clientLastSeen.keys()) {
+      this._rejectPendingRequestsTo(clientId, {
+        code: ProtocolErrorCode.PEER_LEFT,
+        message: `Server '${this.getId()}' unbound before '${clientId}' replied`
+      })
+    }
+
     // Clear state (a resurrection requested before the unbind is void too)
     let _scope = _private.get(this)
     _scope.clientLastSeen.clear()
