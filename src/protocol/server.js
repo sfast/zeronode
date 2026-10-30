@@ -405,14 +405,21 @@ export default class Server extends Protocol {
           data: { serverId: this.getId() }
         })
       }
-      
-      // ⏱️ Wait a tick to ensure messages are delivered before unbinding
-      // This prevents ZeroMQ pipe state assertion failures
-      await new Promise(resolve => setImmediate(resolve))
     } catch (err) {
       this.debug && this.logger?.error('Error sending server stop: ', err)
     }
     
+    // Let the I/O thread deliver the stops and, when the clients are closing
+    // at the same time (a process shutting down a server and its clients
+    // together), their own pipe terminations, before the unbind terminates
+    // the same pipes from this side. libzmq 4.3.5 aborts the process when a
+    // pipe is terminated by both ends in the same instant (pipe.cpp:305,
+    // socket_base.cpp:2140); a setImmediate is too short for that, a short
+    // timer is not (a 3-client parallel close: crash within 25 rounds vs.
+    // 1000 clean rounds). Server side only: the clients keep their
+    // setImmediate, so the two ends do not line up again.
+    await teardownSettle()
+
     // Requests still waiting on these clients will not be answered (as when
     // a client leaves): reject them now instead of at their timeout
     for (const clientId of _private.get(this).clientLastSeen.keys()) {
@@ -622,6 +629,15 @@ export default class Server extends Protocol {
       }
     })
   }
+}
+
+/**
+ * A real timer turn (not a setImmediate) between telling peers we stop and
+ * tearing the transport down; see the callers
+ * @private
+ */
+function teardownSettle () {
+  return new Promise(resolve => setTimeout(resolve, Globals.TEARDOWN_SETTLE_MS))
 }
 
 function isPlainObject (value) {

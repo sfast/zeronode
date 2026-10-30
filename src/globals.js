@@ -14,6 +14,12 @@ export default {
   // Client: requests pending when the transport drops survive a reconnect
   // within this time (2s), then fail with PEER_UNREACHABLE
   RECONNECT_GRACE_MS: 2000,
+  // Server teardown: time (ms) given to the ZeroMQ I/O thread between telling
+  // the clients we stop (SERVER_STOP) and unbinding. A pipe terminated by both
+  // ends at once aborts libzmq 4.3.5; a timer turn (not setImmediate) lets the
+  // clients' own terminations land first (clients keep a setImmediate, so the
+  // two ends stay apart).
+  TEARDOWN_SETTLE_MS: 5,
   // Router proxying: max nodes on a proxy path (caller + routers) before a
   // router refuses to forward again (bounds router↔router loops)
   PROXY_MAX_HOPS: 8,

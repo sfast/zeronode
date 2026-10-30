@@ -47,6 +47,20 @@ updated alias case in `bug10-router-restart-rekey.test.js` (each fails on
   listeners (the zeromq.js observer has no `removeAllListeners()`), which
   duplicated `READY` and handshakes on each reconnect.
 - `Client.close({ notify: false })` closes without telling the server.
+- **A server and its clients closing at the same time no longer abort the
+  process.** libzmq 4.3.5 aborts (`Assertion failed: _state == active ...`
+  `pipe.cpp:305`, `Assertion failed: erased` `socket_base.cpp:2140`, or a
+  segfault) when both ends terminate one pipe in the same instant, which is
+  what a process shutting down a server and its clients together (e.g.
+  `Promise.all([router.close(), ...nodes.map(n => n.close())])`, or a test
+  suite's teardown) produced: the server's `unbind()` terminated the pipes a
+  moment after the clients' `disconnect()` did. Pre-existing (reproduced on
+  2.0.15 within 25 rounds of a 3-client parallel close, the cause of the
+  "one segfault in ~25 full test runs" seen while preparing 2.1). The server
+  now waits `Globals.TEARDOWN_SETTLE_MS` (5 ms, a timer turn, not a
+  `setImmediate`) between telling its clients it stops and unbinding, so the
+  clients' own terminations land first; 1000 rounds clean. Closing in any
+  serial order was never affected.
 
 ### Docs / typings
 - CONFIGURATION.md: real health-check / ghost defaults (5 s, 3 × `PING_INTERVAL`);
