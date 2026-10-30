@@ -319,15 +319,17 @@ export default class Node extends EventEmitter {
    * A session with a peer is (again) established. PEER_JOINED only on the
    * transition to joined; for a peer already joined in this direction (a
    * re-handshake) its options are refreshed and PEER_UPDATED is emitted if
-   * they changed. State is updated before anything is emitted.
+   * they changed. `announceAgain`: the re-handshake may be a new session that
+   * cannot be told apart (a peer older than 2.0.16): PEER_JOINED again. State
+   * is updated before anything is emitted.
    * @private
    * @returns {boolean} whether the peer newly joined
    */
-  _peerJoined (peerId, peerOptions, direction) {
+  _peerJoined (peerId, peerOptions, direction, { announceAgain = false } = {}) {
     const table = _private.get(this).peers[direction]
     const options = peerOptions || {}
 
-    if (table.has(peerId)) {
+    if (table.has(peerId) && !announceAgain) {
       const before = table.get(peerId)
       table.set(peerId, options)
       if (!_.isEqual(before, options)) {
@@ -496,12 +498,14 @@ export default class Node extends EventEmitter {
     })
     
     // Transform: Server.CLIENT_JOINED → Node.PEER_JOINED
-    server.on(ServerEvent.CLIENT_JOINED, ({ clientId, clientOptions }) => {
+    server.on(ServerEvent.CLIENT_JOINED, ({ clientId, clientOptions, sameSession }) => {
       // close() under way (e.g. called from a PEER_LEFT listener): no new session
       if (_private.get(this).closed) return
-      // Client connected TO our server; a re-handshake of a joined client
-      // (e.g. after a transport blip) is not a new join
-      this._peerJoined(clientId, clientOptions, 'downstream')
+      // Client connected TO our server. A re-handshake of the same session
+      // (same instance id, e.g. after a transport blip) is not a new join; a
+      // client older than 2.0.16 cannot prove that (no instance id), so each
+      // of its handshakes is announced, as before (it may have restarted)
+      this._peerJoined(clientId, clientOptions, 'downstream', { announceAgain: !sameSession })
     })
     
     // Transform: Server.CLIENT_LEFT → Node.PEER_LEFT

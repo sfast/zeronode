@@ -164,6 +164,12 @@ export default class Server extends Protocol {
         if (_scope.stopping) return
       }
       
+      // A re-handshake of the same session: the client was joined and the
+      // same instance id proves the same process. A client older than 2.0.16
+      // sends no instance id, so a restart cannot be told from a blip.
+      const sameSession = clientLastSeen.has(clientId) && instance !== undefined &&
+        clientInstances.get(clientId) === instance
+
       // Mark as seen (this IS the "joined" state)
       clientLastSeen.set(clientId, Date.now())
       clientInstances.set(clientId, instance)
@@ -182,7 +188,8 @@ export default class Server extends Protocol {
       // ✅ Emit CLIENT_JOINED with options (pass through to Node)
       this.emit(ServerEvent.CLIENT_JOINED, { 
         clientId,
-        clientOptions: clientOptions || {}
+        clientOptions: clientOptions || {},
+        sameSession
       })
       
       // A CLIENT_JOINED listener may have started unbind()/close(): no ack
