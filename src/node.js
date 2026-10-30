@@ -656,11 +656,13 @@ export default class Node extends EventEmitter {
     // Already connected to this server through another address (an alias of
     // it). Both connections carry this node's id, so at the server the newer
     // one has taken over (ROUTER handover) and the older one no longer gets
-    // anything: the newer one is kept, as before (not supported, see the
-    // CHANGELOG). The older client's events no longer end this session.
+    // anything: the newer one replaces it. The older client is closed
+    // silently (a CLIENT_STOP would end the shared session) and its address
+    // forgotten, after this one owns the id (so the peer does not leave).
     const holder = clients.get(remoteNodeId)
-    if (holder !== undefined && holder !== client) {
-      logger.warn(`[Node] ${address} answers as '${remoteNodeId}', already connected through another address; the newer connection replaces the older one (not supported)`)
+    const displaced = holder !== undefined && holder !== client ? holder : null
+    if (displaced) {
+      logger.warn(`[Node] ${address} answers as '${remoteNodeId}', already connected through another address; the newer connection replaces the older one`)
     }
 
     logger.info(`[Node] Connected: ${id} → ${remoteNodeId} (${address})`)
@@ -670,6 +672,10 @@ export default class Node extends EventEmitter {
     clients.set(remoteNodeId, client)
     clientsAddressIndex.set(addressHash, remoteNodeId)
     attempt.registered = true
+
+    if (displaced) {
+      this._dropDisplacedClient(displaced, remoteNodeId, address)
+    }
 
     // Track connection for auto-reconnect
     if (_scope.reconnect !== ReconnectPolicy.DISABLED) {
@@ -995,6 +1001,32 @@ export default class Node extends EventEmitter {
   }
 
   /**
+   * A newer connection to the same server (another address) took `serverId`
+   * over: forget the older connection's addresses and reconnect target, and
+   * close it silently. Called once the newer client owns the id, so nothing
+   * is reported (the peer stays joined).
+   * @private
+   */
+  _dropDisplacedClient (displaced, serverId, currentAddress) {
+    const { clientsAddressIndex, connectionTargets } = _private.get(this)
+    const currentHash = md5(currentAddress)
+
+    for (const [hash, nodeId] of Array.from(clientsAddressIndex)) {
+      if (nodeId === serverId && hash !== currentHash) clientsAddressIndex.delete(hash)
+    }
+    let displacedAddress = null
+    for (const [targetAddress, target] of Array.from(connectionTargets)) {
+      if (target.peerId === serverId && targetAddress !== currentAddress) {
+        displacedAddress = targetAddress
+        this._forgetConnectionTarget(targetAddress)
+      }
+    }
+
+    locallyEndedClients.add(displaced)
+    this._discardClient(displaced, displacedAddress || '(displaced connection)', { notify: false }).catch(() => {})
+  }
+
+  /**
    * Detach the listeners added by _attachClientEvents (Client internals stay)
    * @private
    */
@@ -1012,7 +1044,7 @@ export default class Node extends EventEmitter {
    * Emits nothing: Node listeners are removed before the client closes.
    * @private
    */
-  async _discardClient (client, address) {
+  async _discardClient (client, address, { notify = true } = {}) {
     if (discardedClients.has(client)) return
     discardedClients.add(client)
     
@@ -1030,7 +1062,7 @@ export default class Node extends EventEmitter {
     this._detachClientEvents(client)
     this._removeClientHandlers(client)
     try {
-      await client.close()
+      await client.close({ notify })
     } catch (err) {
       logger.warn(`[Node] Failed to close client for ${address}: ${err.message}`)
     }

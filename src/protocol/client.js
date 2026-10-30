@@ -398,13 +398,15 @@ export default class Client extends Protocol {
     this._stopPing()
     this._stopReconnectGrace()
     
-    // Try to notify server
+    // Try to notify server (unless closing silently)
     try {
       // ✅ Use internal API to send system event (client stop)
-      this._sendSystemTick({
-        event: ProtocolSystemEvent.CLIENT_STOP,
-        data: { clientId: this.getId() }
-      })
+      if (!_scope.silent) {
+        this._sendSystemTick({
+          event: ProtocolSystemEvent.CLIENT_STOP,
+          data: { clientId: this.getId() }
+        })
+      }
       
       // ⏱️ Wait a tick to ensure message is delivered before disconnecting
       // This is important for transports that use async delivery (e.g., setImmediate)
@@ -419,9 +421,18 @@ export default class Client extends Protocol {
     await super.disconnect()
   }
   
-  async close () {
+  /**
+   * Close for good.
+   * @param {Object} [options]
+   * @param {boolean} [options.notify=true] - tell the server (CLIENT_STOP).
+   *   false closes silently: for a connection whose server-side session now
+   *   belongs to another connection with the same id (a CLIENT_STOP would end it)
+   */
+  async close ({ notify = true } = {}) {
     // Closed for good, from this moment: a connect() is refused from now on
-    _private.get(this).closedForGood = true
+    const _scope = _private.get(this)
+    _scope.closedForGood = true
+    if (!notify) _scope.silent = true
     await this.disconnect()
     await super.close() // close underlying transport and cleanup
   }
