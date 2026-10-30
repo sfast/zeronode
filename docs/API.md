@@ -307,20 +307,22 @@ Send request to any node matching filter (automatic load balancing).
 - `options` (Object)
   - `event` (string): Event name
   - `data` (any): Request data
-  - `filter` (Object, optional): Filter criteria
-  - `predicate` (Function, optional): Custom filter function
+  - `filter` (Object, optional): Filter criteria (an options object), or
+    `{ predicate: (peerOptions) => boolean }` (local peers only: a predicate
+    cannot be forwarded to a router)
   - `down` (boolean, optional): Include downstream peers (default: true)
   - `up` (boolean, optional): Include upstream peers (default: true)
   - `timeout` (number, optional): Request timeout
-  - `metadata` (Object, optional): Additional routing metadata
 
 **Returns:** `Promise<any>` - Response data
 
 A request that fails on its way (a `ProtocolError`) says in
 `error.context.delivered` whether it reached the peer: `false` — the transport
-refused it and no handler ran (safe to retry elsewhere; `requestAny` already
-retries another candidate then); `'unknown'` — it may have run (peer left,
-reconnect grace expired). Absent on other errors.
+refused it and no handler ran (safe to retry elsewhere); `'unknown'` — it may
+have run (peer left, reconnect grace expired). Absent on other errors.
+`requestAny` itself retries another matching peer only when the chosen peer
+turned out to be gone (`PEER_UNREACHABLE` with `delivered: false`, that peer
+removed); a full queue (`SEND_FAILED`) is not retried.
 
 **Example:**
 ```javascript
@@ -351,11 +353,12 @@ Send one-way message to any node matching filter.
 - `options` (Object)
   - `event` (string): Event name
   - `data` (any): Message data
-  - `filter` (Object, optional): Filter criteria
-  - `predicate` (Function, optional): Custom filter function
+  - `filter` (Object, optional): Filter criteria, or `{ predicate }` (local
+    peers only)
   - `down` (boolean, optional): Include downstream peers (default: true)
   - `up` (boolean, optional): Include upstream peers (default: true)
-  - `metadata` (Object, optional): Additional routing metadata
+
+`tickAny` / `tickAll` take no `metadata` (use `tick({ to, metadata })`).
 
 **Returns:** `undefined` when a local peer matches (sent at once; errors are
 thrown), otherwise a `Promise<void>`: resolved once handed to a router, rejected
@@ -371,38 +374,14 @@ node.tickAny({
 })
 ```
 
-### `requestAll(options)`
-
-Send request to all nodes matching filter.
-
-**Parameters:** Same as `requestAny`
-
-**Returns:** `Promise<Array<{ nodeId, response, error }>>` - Results from all peers
-
-**Example:**
-```javascript
-const results = await node.requestAll({
-  event: 'status:get',
-  data: {},
-  filter: { role: 'worker' }
-})
-
-results.forEach(({ nodeId, response, error }) => {
-  if (error) {
-    console.error(`${nodeId} error:`, error)
-  } else {
-    console.log(`${nodeId} status:`, response)
-  }
-})
-```
-
 ### `tickAll(options)`
 
-Send one-way message to all nodes matching filter (broadcast).
+Send one-way message to all directly connected nodes matching filter (not
+forwarded through routers).
 
-**Parameters:** Same as `requestAll` (without timeout)
+**Parameters:** Same as `tickAny`
 
-**Returns:** `void`
+**Returns:** `Promise` - settles once the tick is handed to every matching peer
 
 **Example:**
 ```javascript

@@ -60,8 +60,12 @@ node.on(NodeEvent.PEER_LEFT, ({ peerId, direction, reason, category }) => {
   //   'replaced' (the server at that address answered under a new id while
   //   the old one was still joined; a PEER_JOINED for the new id follows).
   //   Note the case: upstream 'replaced', downstream 'REPLACED'.
-  // Requests pending on that peer are rejected at once (PEER_LEFT /
-  // PEER_UNREACHABLE) instead of waiting for their timeout.
+  // Requests pending on that peer fail instead of waiting for their timeout:
+  // at once when it stopped, timed out, was replaced or found unreachable
+  // (PEER_LEFT / PEER_UNREACHABLE), and when this node's server unbinds
+  // (PEER_LEFT); after a dropped link only once RECONNECT_GRACE_MS (2 s)
+  // passed without the link coming back (PEER_UNREACHABLE), so a short blip
+  // loses nothing.
   // Always handle this to clean up resources
 })
 ```
@@ -104,7 +108,9 @@ An error occurred.
 
 ```javascript
 node.on(NodeEvent.ERROR, ({ source, error }) => {
-  // source: 'server' or 'client'. Includes failures of tick handlers
+  // source: 'server', 'client', or 'node' (stage 'listener': a PEER_JOINED /
+  // PEER_LEFT listener threw while this node was connecting or re-keying;
+  // serverId names the peer). Includes failures of tick handlers
   // (error.code 'HANDLER_ERROR') and malformed incoming messages
   // ('INVALID_ENVELOPE'); the node keeps receiving after either.
   console.error(`Error from ${source}:`, error.message)

@@ -24,9 +24,10 @@ export interface NodeConfig {
   BUFFER_STRATEGY?: null | 'power-of-2';
   
   /**
-   * @deprecated Never read: the key that is read is BUFFER_STRATEGY
+   * @deprecated Never read: the key that is read is BUFFER_STRATEGY. Its old
+   * typed values are still accepted so that existing code compiles.
    */
-  PROTOCOL_BUFFER_STRATEGY?: null | 'power-of-2';
+  PROTOCOL_BUFFER_STRATEGY?: 'EXACT' | 'POWER_OF_2' | null | 'power-of-2';
   
   /**
    * Client ping interval in milliseconds (default: 10000). A server not given
@@ -786,13 +787,18 @@ export default class Node extends EventEmitter {
   // ============================================================================
   
   /**
-   * Bind as server (accept connections)
-   * @param address - Bind address (e.g., 'tcp://0.0.0.0:3000')
+   * Bind as server (accept connections). Resolves with the bound address
+   * (the actual port for port 0). Rejects TRANSPORT_ALREADY_BOUND while bound
+   * elsewhere, TRANSPORT_BIND_FAILED after close().
+   * @param address - Bind address (e.g., 'tcp://0.0.0.0:3000'); defaults to
+   *   the constructor's `bind`
    */
-  bind(address: string): Promise<void>;
+  bind(address?: string): Promise<string>;
   
   /**
-   * Unbind server (stop accepting connections)
+   * Unbind server (stop accepting connections). Rejects
+   * TRANSPORT_UNBIND_FAILED if the transport refused: still bound but not
+   * accepting sessions (bind() at the same address resumes, close() releases).
    */
   unbind(): Promise<void>;
   
@@ -803,10 +809,10 @@ export default class Node extends EventEmitter {
   connect(options: ConnectOptions): Promise<{ id: string; options: Record<string, any> } | null>;
   
   /**
-   * Disconnect from remote server
+   * Disconnect from remote server (resolves true, also when not connected)
    * @param address - Server address to disconnect from
    */
-  disconnect(address: string): Promise<void>;
+  disconnect(address: string): Promise<boolean>;
   
   /**
    * Close the node and all its connections.

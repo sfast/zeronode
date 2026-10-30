@@ -146,7 +146,7 @@ config: {
 #### CLIENT_HEALTH_CHECK_INTERVAL
 
 **Type:** `number` (milliseconds)  
-**Default:** `30000` (30 seconds)  
+**Default:** `5000` (5 seconds; 30 seconds before 2.0.16)  
 **Range:** `1000` - `60000` recommended  
 
 How often server checks client health (last ping time).
@@ -160,7 +160,7 @@ config: {
 #### CLIENT_GHOST_TIMEOUT
 
 **Type:** `number` (milliseconds)  
-**Default:** `60000` (60 seconds)  
+**Default:** `3 × PING_INTERVAL` of the server's own config (30 seconds with the default 10 s ping; 60 seconds before 2.0.16)  
 **Range:** `5000` - `300000` recommended  
 
 How long without a ping before server considers client dead.
@@ -292,18 +292,21 @@ config: {
 - **`0`**: Don't wait, discard pending messages (default, fast shutdown)
 - **`> 0`**: Wait up to N ms for messages to send
 
-#### ZMQ_SEND_HWM / ZMQ_RECV_HWM
+#### ZMQ_SNDHWM / ZMQ_RCVHWM
 
 **Type:** `number` (messages)  
-**Default:** `1000`  
+**Default:** `10000`  
 **Range:** `100` - `100000`  
 
-High water mark - maximum queued messages before blocking/dropping.
+High water mark - maximum queued messages per peer before a send blocks or
+fails (a ROUTER with the default send timeout 0 fails at once with `EAGAIN`:
+`SEND_FAILED` for a request; a reply is dropped, see the CHANGELOG known
+limitations).
 
 ```javascript
 config: {
-  ZMQ_SEND_HWM: 10000,  // Queue up to 10,000 outgoing messages
-  ZMQ_RECV_HWM: 10000   // Queue up to 10,000 incoming messages
+  ZMQ_SNDHWM: 10000,  // Queue up to 10,000 outgoing messages
+  ZMQ_RCVHWM: 10000   // Queue up to 10,000 incoming messages
 }
 ```
 
@@ -312,18 +315,22 @@ config: {
 - **Medium (1000-10000)**: Balanced (recommended)
 - **High (10000+)**: High throughput, more memory usage
 
-#### ZMQ_SEND_TIMEOUT / ZMQ_RECV_TIMEOUT
+#### ZMQ_SNDTIMEO / ZMQ_RCVTIMEO
 
 **Type:** `number` (milliseconds)  
-**Default:** `5000`  
-**Range:** `100` - `30000`  
+**Default:** send: `0` on server (ROUTER) sockets (fail at once when a peer is
+gone or its queue is full), ZeroMQ's default (wait) on client sockets;
+receive: ZeroMQ's default (wait)  
 
-Send/receive operation timeouts at socket level.
+Send/receive operation timeouts at socket level. `ZMQ_RCVTIMEO` has no use for
+zeronode: its receive loop waits for messages and simply receives again when a
+receive times out (2.1; before, a receive timeout ended reception for good).
+An infinite `ZMQ_SNDTIMEO` on a server means a peer that left does not fail
+pending sends early.
 
 ```javascript
 config: {
-  ZMQ_SEND_TIMEOUT: 5000,  // 5 second send timeout
-  ZMQ_RECV_TIMEOUT: 5000   // 5 second receive timeout
+  ZMQ_SNDTIMEO: 100  // a server send waits up to 100 ms for queue space
 }
 ```
 
