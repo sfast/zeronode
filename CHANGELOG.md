@@ -27,12 +27,14 @@ updated alias case in `bug10-router-restart-rekey.test.js` (each fails on
 - **RegExp handlers with the `g` or `y` flag no longer skip messages.** Such
   a pattern keeps state between matches (`lastIndex`), so since the 2.0.16
   receive-loop isolation a tick handler saw only every other matching tick
-  (requests were affected before). Handlers are registered under an
-  equivalent RegExp without those flags; `offTick` / `offRequest` with the
-  original pattern still work.
+  (requests were affected before). Handlers are registered under a view of
+  the pattern that matches from index 0 every time; its key, `offTick` /
+  `offRequest` with the original pattern, and sticky (`y`) semantics are
+  unchanged, and `/x/g` stays a registration distinct from `/x/`.
 - **A receive timeout no longer ends reception.** With `ZMQ_RCVTIMEO` set, a
   socket idle past it stopped receiving for good (pre-existing). The receive
-  loop now receives again while the socket is open.
+  loop now receives again while the socket is open (with `ZMQ_RCVTIMEO: 0` it
+  waits 20 ms between empty receives; the option has no use for zeronode).
 - **One server reached through two addresses:** the newer connection now
   replaces the older one, which is closed silently (no `CLIENT_STOP`, which
   would end the shared session) and whose address and reconnect target are
