@@ -975,3 +975,122 @@ describe('2.1 review (Codex, round 8): bind() after close()', function () {
     fs.rmSync(address.slice(6), { force: true })
   })
 })
+
+describe('2.1.0-rc.2 (Codex full-range review of b00e31e..880fb05)', function () {
+  this.timeout(10000)
+
+  let nodes = []
+  const closers = []
+  const track = (node) => { nodes.push(node); return node }
+
+  afterEach(async () => {
+    for (const fn of closers.splice(0)) await fn().catch(() => {})
+    for (const node of nodes.reverse()) await node.close().catch(() => {})
+    nodes = []
+  })
+
+  // M1: a client older than 2.0.16 sends no instance id with its handshake
+  const legacyClient = async (id) => {
+    const { default: Client } = await import('../../src/protocol/client.js')
+    const { ProtocolSystemEvent } = await import('../../src/protocol/protocol.js')
+    const client = new Client({ id, config: { logger: quiet() } })
+    const send = client._sendSystemTick.bind(client)
+    client._sendSystemTick = (params) => send(params.event === ProtocolSystemEvent.HANDSHAKE_INIT_FROM_CLIENT
+      ? { ...params, metadata: undefined }
+      : params)
+    return client
+  }
+
+  it('M1: a restarted pre-2.0.16 client with the same id is announced again (PEER_JOINED)', async () => {
+    const server = track(new Node({ id: `m1-srv-${uid()}` }))
+    await server.bind('tcp://127.0.0.1:0')
+    const events = recorder(server)
+    const sharedId = `m1-legacy-${uid()}`
+
+    const first = await legacyClient(sharedId)
+    await first.connect(server.getAddress(), 2000)
+    // It dies without telling the server (no CLIENT_STOP)
+    await first.close({ notify: false })
+
+    // The restarted process: same id, same options, no instance id either
+    const second = await legacyClient(sharedId)
+    closers.push(() => second.close())
+    await second.connect(server.getAddress(), 2000)
+    await until(() => events.filter(e => e.startsWith('joined')).length === 2, 3000, 'second PEER_JOINED')
+    expect(events).to.deep.equal([`joined downstream ${sharedId}`, `joined downstream ${sharedId}`])
+  })
+
+  it('M2: RegExp handlers with the g / y flag see every matching tick and request', async () => {
+    const server = track(new Node({ id: `m2-srv-${uid()}` }))
+    await server.bind('tcp://127.0.0.1:0')
+    const ticks = []
+    server.onTick(/^job$/g, (envelope) => ticks.push(envelope.data))
+    server.onTick(/^job$/y, (envelope) => ticks.push(`y${envelope.data}`))
+    server.onRequest(/^ask$/g, () => 'answer')
+    const client = track(new Node({ id: `m2-cli-${uid()}` }))
+    await client.connect({ address: server.getAddress() })
+
+    for (let i = 1; i <= 4; i++) client.tick({ to: server.getId(), event: 'job', data: i })
+    await until(() => ticks.length === 8, 3000, 'all ticks')
+    expect(ticks).to.have.members([1, 2, 3, 4, 'y1', 'y2', 'y3', 'y4'])
+    for (let i = 0; i < 3; i++) {
+      expect(await client.request({ to: server.getId(), event: 'ask', timeout: 2000 })).to.equal('answer')
+    }
+    // offTick with the same RegExp still removes the handler
+    server.offTick(/^job$/g)
+    server.offTick(/^job$/y)
+    client.tick({ to: server.getId(), event: 'job', data: 5 })
+    await wait(150)
+    expect(ticks).to.have.length(8)
+  })
+
+  it('M3: with ZMQ_RCVTIMEO set, a socket idle past it keeps receiving', async () => {
+    const config = { logger: quiet(), ZMQ_RCVTIMEO: 200, PING_INTERVAL: 60000 }
+    const server = track(new Node({ id: `m3-srv-${uid()}`, config }))
+    server.onRequest('who', () => 'server')
+    await server.bind('tcp://127.0.0.1:0')
+    const client = track(new Node({ id: `m3-cli-${uid()}`, config }))
+    await client.connect({ address: server.getAddress() })
+
+    await wait(700) // several receive timeouts on both sides
+    expect(await client.request({ to: server.getId(), event: 'who', timeout: 2000 })).to.equal('server')
+  })
+
+  it('m1: unbind() rejects the requests still pending on the downstream clients', async () => {
+    const server = track(new Node({ id: `u1-srv-${uid()}`, config: { logger: quiet() } }))
+    await server.bind('tcp://127.0.0.1:0')
+    const client = track(new Node({ id: `u1-cli-${uid()}`, config: { logger: quiet(), reconnect: 'disabled' } }))
+    client.onRequest('slow', () => new Promise(() => {}))
+    await client.connect({ address: server.getAddress() })
+    await until(() => server.getNodesDownstream().length === 1, 2000, 'client joined')
+
+    const pending = server.request({ to: client.getId(), event: 'slow', timeout: 8000 }).then(() => null, (e) => e)
+    await wait(100)
+    const started = Date.now()
+    await server.unbind()
+    const err = await pending
+    expect(err?.code).to.equal('PEER_LEFT')
+    expect(Date.now() - started).to.be.below(1000)
+  })
+
+  it('m2: a dealer connected, disconnected and connected again reports READY once', async () => {
+    const { Router: RouterSocket, Dealer: DealerSocket } = await import('../../src/transport/zeromq/index.js')
+    const { TransportEvent } = await import('../../src/transport/events.js')
+    const router = new RouterSocket({ id: `rd-r-${uid()}` })
+    await router.bind('tcp://127.0.0.1:0')
+    const dealer = new DealerSocket({ id: `rd-d-${uid()}` })
+    closers.push(async () => { await dealer.close(); await router.close() })
+
+    const firstReady = new Promise(resolve => dealer.once(TransportEvent.READY, resolve))
+    await dealer.connect(router.getAddress())
+    await firstReady
+    await dealer.disconnect()
+
+    let ready = 0
+    dealer.on(TransportEvent.READY, () => ready++)
+    await dealer.connect(router.getAddress())
+    await until(() => ready > 0, 2000, 'READY')
+    await wait(150)
+    expect(ready).to.equal(1)
+  })
+})

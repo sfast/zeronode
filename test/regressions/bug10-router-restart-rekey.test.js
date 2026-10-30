@@ -22,6 +22,7 @@ import path from 'path'
 import * as zmq from 'zeromq'
 import Node, { Router, NodeEvent } from '../../src/index.js'
 
+const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms))
 const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 const ipcFiles = []
 const ipcAddress = () => {
@@ -350,7 +351,7 @@ describe('Regression bug 10: one server reached at two addresses (id collision a
     client = server = null
   })
 
-  it('the newer connection is used, with a warning (two connections are not supported)', async () => {
+  it('the newer connection replaces the older one, with a warning', async () => {
     server = new Node({ id: `bug10-alias-srv-${uid()}` })
     server.onRequest('who', () => 'server')
     await server.bind('tcp://127.0.0.1:0')
@@ -365,9 +366,19 @@ describe('Regression bug 10: one server reached at two addresses (id collision a
     expect(logger.lines.some(l => l.level === 'warn' && /already connected through another address/.test(l.text))).to.equal(true)
 
     // At the server the newer connection took this node's id over; it is the
-    // one routed through, and the older one's events do not end its session
+    // one routed through. The older connection is closed (silently: no
+    // CLIENT_STOP for the shared id) and its address forgotten (2.1.0-rc.2)
     expect(client.getNodesUpstream()).to.deep.equal([server.getId()])
+    expect(client.getServerIdByAddress(first), 'older address forgotten').to.equal(null)
+    expect(client.getServerIdByAddress(alias)).to.equal(server.getId())
+    await wait(500) // the older DEALER would have reconnected and taken the id back by now
     expect(await client.request({ to: server.getId(), event: 'who', timeout: 2000 })).to.equal('server')
+
+    // disconnect() of the older address touches nothing; of the alias, it ends the session
+    await client.disconnect(first)
+    expect(client.getNodesUpstream()).to.deep.equal([server.getId()])
+    await client.disconnect(alias)
+    expect(client.getNodesUpstream()).to.deep.equal([])
   })
 })
 
