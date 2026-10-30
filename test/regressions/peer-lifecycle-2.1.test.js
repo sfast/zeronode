@@ -12,7 +12,8 @@
  *   each other): each direction has its own state
  * - server side: CLIENT_STOP from a client that is not joined, and a
  *   resurrection ping, no longer produce extra CLIENT_LEFT events
- * - unbind()/close() report PEER_LEFT (UNBOUND, local) for downstream peers
+ * - unbind()/close() report one PEER_LEFT per downstream peer (CLIENT_STOP if
+ *   the client answered the stop in time, else UNBOUND, local)
  *
  * ZeroMQ transport, port 0.
  */
@@ -181,7 +182,7 @@ describe('2.1 (6): peer events are edge-triggered', function () {
     expect(server.getPeerOptions(client.getId()).v).to.equal(2)
   })
 
-  it('unbind(): PEER_LEFT (UNBOUND, local) once per downstream peer', async () => {
+  it('unbind(): exactly one PEER_LEFT per downstream peer (CLIENT_STOP if it answered the stop, else UNBOUND)', async () => {
     const server = track(new Node({ id: `el-srv-${uid()}` }))
     await server.bind('tcp://127.0.0.1:0')
     const events = recorder(server)
@@ -191,9 +192,15 @@ describe('2.1 (6): peer events are edge-triggered', function () {
 
     await server.unbind()
     await wait(100)
-    expect(events).to.deep.equal([
-      `joined downstream ${client.getId()}`,
-      `left downstream ${client.getId()} UNBOUND local`
+    // The server tells its clients it stops and waits a moment before
+    // unbinding: a client that answers with CLIENT_STOP within that window is
+    // recorded as a graceful departure, one that does not as UNBOUND (local).
+    // Either way: one PEER_LEFT, no more.
+    expect(events).to.have.length(2)
+    expect(events[0]).to.equal(`joined downstream ${client.getId()}`)
+    expect(events[1]).to.be.oneOf([
+      `left downstream ${client.getId()} UNBOUND local`,
+      `left downstream ${client.getId()} CLIENT_STOP graceful`
     ])
   })
 

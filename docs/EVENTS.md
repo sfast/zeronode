@@ -57,7 +57,8 @@ node.on(NodeEvent.PEER_LEFT, ({ peerId, direction, reason, category }) => {
   // reason (downstream): 'CLIENT_STOP', 'TIMEOUT' (no ping),
   //   'UNREACHABLE' (a send found no route: crashed/killed),
   //   'REPLACED' (a new instance connected with the same id),
-  //   'UNBOUND' (this node's server was unbound or closed)
+  //   'UNBOUND' (this node's server was unbound or closed before the client
+  //   answered the stop; a client that answers in time leaves as 'CLIENT_STOP')
   // reason (upstream): 'TRANSPORT_NOT_READY', 'TRANSPORT_FAILED',
   //   'server_left', 'closed',
   //   'replaced' (the server at that address answered under a new id while

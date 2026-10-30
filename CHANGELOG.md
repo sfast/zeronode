@@ -135,8 +135,9 @@ patch from the commit before these if they are not wanted yet.
 - Peer state is kept per direction: two nodes connected to each other have
   two sessions (one ending no longer drops the other). Routing to such a peer
   prefers this node's own connection to it.
-- `unbind()` / `close()` emit `PEER_LEFT` (`reason: 'UNBOUND'`, `local`) for
-  each downstream peer.
+- `unbind()` / `close()` emit one `PEER_LEFT` per downstream peer: `CLIENT_STOP`
+  (`graceful`) if the client answered the server's stop in time, otherwise
+  `UNBOUND` (`local`).
 - Server: `CLIENT_STOP` from a client that is not joined no longer emits
   `CLIENT_LEFT`; a ping from a timed-out client asks it to handshake (again
   after a ping interval if unanswered) without marking it joined, so its
