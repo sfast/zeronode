@@ -1130,3 +1130,22 @@ describe('2.1.0-rc.2 (Codex full-range review of b00e31e..880fb05)', function ()
     expect(ready).to.equal(1)
   })
 })
+
+describe('2.1.0-rc.2: a server and its clients closing at the same time do not abort the process', function () {
+  // libzmq 4.3.5 aborts (pipe.cpp:305 / socket_base.cpp:2140) when both ends
+  // terminate a pipe in the same instant; the teardown now lets the peers'
+  // terminations land first. Run in a child: the failure mode is a native abort.
+  this.timeout(60000)
+
+  it('60 rounds of a 3-client parallel close exit cleanly', async () => {
+    const { fork } = await import('child_process')
+    const { fileURLToPath } = await import('url')
+    const child = fork(fileURLToPath(new URL('./fixtures/parallel-close-child.js', import.meta.url)), ['60', '3'],
+      { stdio: ['ignore', 'ignore', 'pipe', 'ipc'] })
+    let stderr = ''
+    child.stderr.on('data', (chunk) => { stderr += chunk })
+    const [code, signal] = await new Promise(resolve => child.once('exit', (c, s) => resolve([c, s])))
+    expect(signal, `child killed by ${signal}: ${stderr.slice(0, 300)}`).to.equal(null)
+    expect(code, `child exit ${code}: ${stderr.slice(0, 300)}`).to.equal(0)
+  })
+})
